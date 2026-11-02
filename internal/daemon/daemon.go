@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/version"
 )
 
@@ -34,6 +35,22 @@ func DefaultConfig() Config {
 // Run starts the daemon and blocks until ctx is cancelled.
 func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		return err
+	}
+	store, err := core.OpenStore(ctx, filepath.Join(cfg.DataDir, "conduit.db"))
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	engine := core.NewEngine(store, log)
+	externals := engine.LoadExternalDir(ctx, filepath.Join(cfg.DataDir, "modules"))
+	defer func() {
+		engine.Close()
+		for _, x := range externals {
+			_ = x.Stop()
+		}
+	}()
+	if err := engine.Start(ctx); err != nil {
 		return err
 	}
 	srv := &http.Server{

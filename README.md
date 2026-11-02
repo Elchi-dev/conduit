@@ -33,7 +33,7 @@ is provided, and every install chooses:
 
 ## Build from source
 
-Requirements: Go 1.24+, Node 22 with pnpm 10, and for the desktop shell Rust
+Requirements: Go 1.26+, Node 22 with pnpm 10, and for the desktop shell Rust
 stable plus the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```sh

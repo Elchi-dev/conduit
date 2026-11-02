@@ -13,12 +13,15 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 1 of 16 (repo skeleton) — done 2026-11-03.
-- **Works today:** `conduitd` and `conduit-hub` start and answer `/healthz`
-  and version endpoints; placeholder web UI; Tauri shell compiles with the
-  daemon as a sidecar; CI for Go, web and desktop on Linux, macOS and Windows.
-- **Next:** phase 2, core — storage, event bus, permission engine, audit log
-  with undo, module registry, external-module protocol.
+- **Phase:** 2 of 16 (core) — done 2026-11-03.
+- **Works today:** the core engine (`internal/core`): store, events, policy
+  with presets and panic, approvals, hash-chained audit with undo, dry runs,
+  external modules over JSON-RPC. The daemon opens its database and loads
+  external modules, but only exposes `/healthz` and version over HTTP.
+  Placeholder web UI; Tauri shell compiles with the daemon as a sidecar; CI
+  for Go, web and desktop on Linux, macOS and Windows.
+- **Next:** phase 3, daemon API — auth, API keys, REST from the OpenAPI spec,
+  WebSocket events, approvals and panic endpoints.
 
 ## Rules for working in this repo
 

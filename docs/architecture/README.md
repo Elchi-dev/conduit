@@ -25,8 +25,9 @@ takes the same path:
 | --- | --- | --- |
 | Module contract | `pkg/sdk` | [modules.md](modules.md) |
 | Core (registry, events, policy, audit, storage) | `internal/core` | [core.md](core.md) |
-| Daemon HTTP, WebSocket, MCP | `internal/daemon` | [daemon.md](daemon.md) |
+| Daemon HTTP API, events, MCP | `internal/daemon` | [daemon.md](daemon.md) |
 | Hub | `internal/hub` | [hub.md](hub.md) |
+| Vault | `internal/vault`, `modules/vault` | [vault.md](vault.md) |
 | Web app | `web/`, `internal/ui` | [web.md](web.md) |
 | Desktop and Android shell | `apps/desktop` | [desktop.md](desktop.md) |
 

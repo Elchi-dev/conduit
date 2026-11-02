@@ -3,6 +3,29 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 5 — vault, leak watch and onboarding presets
+
+**Landed**
+
+- Vault: Argon2id-derived key wrapping a random data key; every secret
+  sealed with XChaCha20-Poly1305 bound to its name; optional OS keychain
+  unlock; lock on demand and on emergency stop.
+- Vault module with list, generate, save (or generate), import `.env`,
+  reveal, one-time codes (TOTP, RFC 6238 test vector verified), delete.
+- Sensitive actions: input and output never reach the audit log, approvals
+  or events (tested end to end).
+- Modules can only resolve `secret://` references from their own settings.
+- Leak watch (signature feature 7, scanning): find vault secret values in
+  text or in a folder tree, reported by name and line, never by value.
+- Vault setup and unlock screen; onboarding presets (Developer, Gaming PC,
+  Homelab, Team) filter the module catalog.
+- Built-in singleton modules are created on start.
+
+**Changed from plan**
+
+- Automatic rotation of leaked credentials stays a documented scaffold, as
+  planned for v0.1.0.
+
 ## 2026-11-03 · Phase 4 — web app and design system
 
 **Landed**

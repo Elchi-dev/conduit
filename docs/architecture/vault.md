@@ -1,0 +1,48 @@
+# Vault design
+
+Code: `internal/vault` (storage and crypto), `modules/vault` (the module).
+
+## Keys
+
+```
+passphrase ──Argon2id(salt, t=3, m=64 MiB, p=2)──▶ key-encryption key
+                                                       │ XChaCha20-Poly1305
+                                                       ▼
+                                   wrapped data key (stored in vault_meta)
+data key (256-bit, random) ──XChaCha20-Poly1305, AD = secret name──▶ each secret
+```
+
+- The data key never touches disk in clear. In memory it exists only while
+  the vault is unlocked and is zeroed on lock.
+- Each secret has its own random 192-bit nonce. Binding the secret's name as
+  associated data means a ciphertext copied to another row fails to decrypt
+  instead of returning the wrong secret.
+- Changing the passphrase only re-wraps the data key (planned; the format
+  supports it without re-encrypting secrets).
+- "Remember on this computer" stores the data key in the OS keychain under the
+  service `dev.elchi.conduit.vault`, with an account derived from the data
+  directory, so several daemons on one machine don't collide. On start the
+  remembered key is checked against a stored secret before it is trusted.
+
+## Who can read a secret
+
+1. **People** use the `reveal` action, which is destructive and therefore
+   needs approval for anyone but a signed-in person.
+2. **Modules** call `Host.Secret(ref)`. The engine only resolves references
+   that appear in that module instance's own settings, so a module can't
+   enumerate or read other secrets.
+3. **Agents** never see values unless a person approves `reveal` or `totp`
+   for them, or a rule explicitly allows it.
+
+Sensitive actions are redacted everywhere Conduit persists or broadcasts:
+audit entries keep field names and the `name` of the secret, and replace
+every other value with `"[redacted]"`.
+
+## Threat notes
+
+- Someone with the database file but not the passphrase (or keychain) sees
+  secret names, kinds and timestamps, and cannot decrypt values.
+- Someone with code execution as the daemon's user while the vault is unlocked
+  can read secrets from memory; the emergency stop locks the vault.
+- The audit log's hash chain makes later edits to records of secret access
+  detectable.

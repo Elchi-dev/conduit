@@ -1,19 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { api, ok, type Manifest } from "../api/client";
 import { defaults, SchemaForm, type JSONSchema } from "../components/SchemaForm";
 import "./pages.css";
+
+export const presetNames = [
+  ["", "Everything"],
+  ["developer", "Developer"],
+  ["gamer", "Gaming PC"],
+  ["homelab", "Homelab"],
+  ["team", "Team"],
+] as const;
 
 export function Modules() {
   const modules = useQuery({ queryKey: ["modules"], queryFn: () => ok(api.GET("/modules")) });
   const instances = useQuery({ queryKey: ["instances"], queryFn: () => ok(api.GET("/instances")) });
   const [adding, setAdding] = useState<Manifest | null>(null);
   const [filter, setFilter] = useState("");
+  const search = useSearch();
+  const [preset, setPreset] = useState(() => new URLSearchParams(search).get("preset") ?? "");
 
   const count = (id: string) => instances.data?.filter((i) => i.module === id).length ?? 0;
   const list = (modules.data ?? []).filter(
-    (m) => !filter || `${m.name} ${m.description} ${m.category ?? ""}`.toLowerCase().includes(filter.toLowerCase()),
+    (m) =>
+      (!filter || `${m.name} ${m.description} ${m.category ?? ""}`.toLowerCase().includes(filter.toLowerCase())) &&
+      (!preset || m.presets?.includes(preset)),
   );
   const byCategory = new Map<string, Manifest[]>();
   for (const m of list) {
@@ -27,7 +39,16 @@ export function Modules() {
         <h1>Modules</h1>
         <p>Each module connects one kind of thing — a mailbox, a server, a dashboard. Connect as many of each as you need.</p>
       </div>
-      <input className="input" style={{ maxWidth: 320 }} placeholder="Filter modules" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      <div className="spread">
+        <input className="input" style={{ maxWidth: 320 }} placeholder="Filter modules" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <div className="inline" role="radiogroup" aria-label="Show modules for">
+          {presetNames.map(([id, label]) => (
+            <button key={id} role="radio" aria-checked={preset === id} className={`btn sm ${preset === id ? "primary" : "quiet"}`} onClick={() => setPreset(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       {modules.data?.length === 0 && (
         <div className="empty">
           <h2>No modules installed</h2>

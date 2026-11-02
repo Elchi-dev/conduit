@@ -1,6 +1,10 @@
 # Modules
 
 One page per module: setup, actions with risk levels, resources, events and
-recommended policies. Pages are added as modules land.
+recommended policies.
+
+| Module | Page | Presets |
+| --- | --- | --- |
+| Vault | [vault.md](vault.md) | all |
 
 To write your own module, start with `docs/architecture/modules.md`.

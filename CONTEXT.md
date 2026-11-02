@@ -13,12 +13,12 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 4 of 16 (web app) — done 2026-11-03.
-- **Works today:** core engine; accounts, sessions, API keys; the daemon REST
-  API and event stream; the full web app (served by the daemon with
-  `make daemon`). No built-in modules yet, so the app shows empty states.
-- **Next:** phase 5, vault (encrypted secrets, `secret://` resolution, leak
-  watch) and onboarding presets; then phases 6–8 add the built-in modules.
+- **Phase:** 5 of 16 (vault) — done 2026-11-03.
+- **Works today:** core engine; accounts, sessions, API keys; daemon REST API
+  and events; the web app; the vault module with leak watch. Built-in
+  modules are registered in `internal/daemon/builtins.go`.
+- **Next:** phase 6, system modules — this computer (processes, resources,
+  temperatures, game mode), servers over SSH (systemd, logs), Docker.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

@@ -220,6 +220,7 @@ textarea {
 .field {
   display: grid;
   gap: 6px;
+  align-content: start;
 }
 .field > span {
   font-size: var(--t-sm);

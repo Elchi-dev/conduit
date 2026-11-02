@@ -30,6 +30,20 @@ action becomes an agent tool automatically.
 Risk is the coarsest input to the permission engine; policies can be as
 specific as a single action on a single instance.
 
+## Sensitive actions
+
+Actions marked `sensitive` carry secret material. Conduit never writes their
+input or output to the audit log, approvals or events: field names and the
+`name` field are kept, every other value becomes `"[redacted]"`. Sensitive
+actions cannot be undone through the log.
+
+## Secrets
+
+Credential fields in a config schema should be marked `"x-secret": true`.
+Their value is a vault reference (`secret://name`). A module resolves it with
+`Host.Secret`, which only succeeds for references that appear in that
+instance's own settings.
+
 ## Instances
 
 A module can be configured several times (two mail accounts, three Grafana

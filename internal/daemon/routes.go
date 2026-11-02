@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -85,6 +87,12 @@ func (s *Server) routes() []route {
 		{"GET /api/v1/panic", s.need("", s.panicStatus)},
 		{"POST /api/v1/panic", s.need("", s.panic)},
 		{"DELETE /api/v1/panic", s.need("admin:*:*", s.unpanic)},
+
+		// Vault
+		{"GET /api/v1/vault", s.need("modules:*:read", s.vaultStatus)},
+		{"POST /api/v1/vault/setup", s.need("admin:*:*", s.vaultSetup)},
+		{"POST /api/v1/vault/unlock", s.need("admin:*:*", s.vaultUnlock)},
+		{"POST /api/v1/vault/lock", s.need("", s.vaultLock)},
 
 		// API keys
 		{"GET /api/v1/keys", s.need("keys:*:manage", s.listKeys)},
@@ -649,6 +657,9 @@ func (s *Server) panic(w http.ResponseWriter, r *http.Request) {
 		keep = p.Session.ID
 	}
 	sessions, _ := s.Auth.RevokeSessions(ctx, "", keep)
+	if s.Vault != nil {
+		_ = s.Vault.Lock(false)
+	}
 	s.Log.Warn("PANIC MODE ON", "by", p.Actor.Subject(), "deniedApprovals", n, "revokedAgentKeys", keys, "endedSessions", sessions)
 	writeJSON(w, http.StatusOK, panicResp{Frozen: true, DeniedApprovals: n, RevokedAgentKeys: keys, EndedSessions: sessions})
 }
@@ -663,6 +674,84 @@ func (s *Server) unpanic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"frozen": false})
+}
+
+// --- vault -------------------------------------------------------------------
+
+func (s *Server) vaultStatus(w http.ResponseWriter, r *http.Request) {
+	st, err := s.Vault.Status(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) vaultSetup(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.Vault.Setup(r.Context(), req.Passphrase); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.auditVault(r, "vault_setup")
+	s.vaultStatus(w, r)
+}
+
+func (s *Server) vaultUnlock(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
+	var req struct {
+		Passphrase string `json:"passphrase"`
+		Remember   bool   `json:"remember"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.Vault.Unlock(r.Context(), req.Passphrase, req.Remember); err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, vault.ErrBadPassphrase) {
+			code = http.StatusUnauthorized
+		}
+		writeErr(w, code, err.Error())
+		return
+	}
+	s.auditVault(r, "vault_unlock")
+	s.vaultStatus(w, r)
+}
+
+// vaultLock is open to any authenticated caller: locking only ever reduces
+// access, so an agent noticing something wrong may do it.
+func (s *Server) vaultLock(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Forget bool `json:"forget"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.Vault.Lock(req.Forget); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.auditVault(r, "vault_lock")
+	s.vaultStatus(w, r)
+}
+
+func (s *Server) auditVault(r *http.Request, action string) {
+	p, _ := principal(r)
+	_, _ = s.Engine.Audit.Append(context.WithoutCancel(r.Context()), core.Entry{Actor: p.Actor, Module: "vault", Instance: "vault", Action: action, Risk: sdk.RiskWrite, Decision: core.Allow, Status: "ok"})
+	s.Engine.Bus.Publish(sdk.Event{Type: "instance.saved", Module: "vault", Instance: "vault"})
 }
 
 // --- API keys ------------------------------------------------------------------

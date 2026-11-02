@@ -395,3 +395,50 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestVaultSecretsNeverLogged(t *testing.T) {
+	app, c, _, _ := setup(t)
+	if err := registerBuiltins(app); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureSingletons(context.Background(), app); err != nil {
+		t.Fatal(err)
+	}
+	if code := c.do("POST", "/api/v1/vault/setup", map[string]string{"passphrase": "a long vault passphrase"}, nil); code != 200 {
+		t.Fatalf("vault setup = %d", code)
+	}
+	const secret = "hunter2-hunter2-hunter2"
+	if code := c.do("POST", "/api/v1/instances/vault/actions/set", map[string]any{"input": map[string]string{"name": "mail/work", "value": secret}}, nil); code != 200 {
+		t.Fatalf("set = %d", code)
+	}
+	var out core.Outcome
+	if code := c.do("POST", "/api/v1/instances/vault/actions/reveal", map[string]any{"input": map[string]string{"name": "mail/work"}}, &out); code != 200 {
+		t.Fatalf("reveal = %d", code)
+	}
+	if !strings.Contains(string(out.Result.Output), secret) {
+		t.Fatal("caller should receive the value")
+	}
+	var entries []core.Entry
+	c.do("GET", "/api/v1/audit?limit=50", nil, &entries)
+	for _, e := range entries {
+		if strings.Contains(string(e.Input)+string(e.Output), secret) {
+			t.Fatalf("secret leaked into audit entry %d (%s)", e.Seq, e.Action)
+		}
+	}
+	if !strings.Contains(string(entries[0].Input), "mail/work") {
+		t.Fatalf("audit should still name the secret: %s", entries[0].Input)
+	}
+	// Agents need approval to reveal (destructive), and panic locks the vault.
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "a", "kind": "agent", "scopes": []string{"actions:*:invoke"}}, &k)
+	agent := client{t: t, base: c.base, token: k.Secret}
+	if code := agent.do("POST", "/api/v1/instances/vault/actions/reveal", map[string]any{"input": map[string]string{"name": "mail/work"}}, nil); code != 202 {
+		t.Fatalf("agent reveal = %d, want 202", code)
+	}
+	c.do("POST", "/api/v1/panic", nil, nil)
+	var st map[string]bool
+	c.do("GET", "/api/v1/vault", nil, &st)
+	if st["unlocked"] {
+		t.Fatal("panic should lock the vault")
+	}
+}

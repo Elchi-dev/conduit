@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -292,7 +293,7 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 		return Outcome{}, fmt.Errorf("action %q does not support dry runs", spec.Name)
 	}
 
-	base := Entry{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, DryRun: call.DryRun, Input: call.Input, Undoes: opt.undoes}
+	base := Entry{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, DryRun: call.DryRun, Input: redact(spec, call.Input), Undoes: opt.undoes}
 
 	decision, err := e.Policy.Decide(ctx, actor, in.Module, in.ID, spec.Name, spec.Risk)
 	if err != nil {
@@ -317,7 +318,7 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 				plan = r.Plan
 			}
 		}
-		appr, err := e.Approvals.Request(ctx, Approval{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, Input: call.Input, Plan: plan})
+		appr, err := e.Approvals.Request(ctx, Approval{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, Input: redact(spec, call.Input), Plan: plan})
 		if err != nil {
 			return out, err
 		}
@@ -344,8 +345,10 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 		}
 	default:
 		base.Status = "ok"
-		base.Output = res.Output
-		base.Undo = res.Undo
+		base.Output = redact(spec, res.Output)
+		if !spec.Sensitive {
+			base.Undo = res.Undo
+		}
 	}
 	entry, aerr := e.Audit.Append(ctx, base)
 	out.Audit = entry
@@ -413,6 +416,29 @@ func (e *Engine) Close() {
 	}
 }
 
+// redacted replaces secret material in the audit log, approvals and events.
+var redacted = json.RawMessage(`"[redacted]"`)
+
+// redact keeps the field names of a sensitive action's JSON object (so the
+// log still says which secret was touched) but drops every value except
+// those under the keys "name" and "names".
+func redact(spec sdk.ActionSpec, b json.RawMessage) json.RawMessage {
+	if !spec.Sensitive || len(b) == 0 || string(b) == "null" {
+		return b
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return redacted
+	}
+	for k := range m {
+		if k != "name" && k != "names" {
+			m[k] = redacted
+		}
+	}
+	out, _ := json.Marshal(m)
+	return out
+}
+
 func findAction(m sdk.Manifest, name string) (sdk.ActionSpec, bool) {
 	for _, a := range m.Actions {
 		if a.Name == name {
@@ -429,14 +455,49 @@ type host struct {
 	instance string
 }
 
+// Secret resolves a vault reference for a module. A module may only resolve
+// references that appear in its own instance's configuration, so a
+// compromised or buggy module cannot read arbitrary secrets.
 func (h *host) Secret(ctx context.Context, ref string) (string, error) {
 	h.e.mu.RLock()
 	r := h.e.secrets
+	in, ok := h.e.instances[h.instance]
 	h.e.mu.RUnlock()
 	if r == nil {
 		return "", errors.New("vault is not available")
 	}
+	if !ok || !configRefs(in.Config)[ref] {
+		return "", fmt.Errorf("%s is not referenced by this instance's settings", ref)
+	}
 	return r.Resolve(ctx, ref)
+}
+
+// configRefs collects every "secret://…" string in a JSON document.
+func configRefs(cfg json.RawMessage) map[string]bool {
+	out := map[string]bool{}
+	var v any
+	if json.Unmarshal(cfg, &v) != nil {
+		return out
+	}
+	var walk func(any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case string:
+			if strings.HasPrefix(t, "secret://") {
+				out[t] = true
+			}
+		case []any:
+			for _, x := range t {
+				walk(x)
+			}
+		case map[string]any:
+			for _, x := range t {
+				walk(x)
+			}
+		}
+	}
+	walk(v)
+	return out
 }
 
 func (h *host) Publish(_ context.Context, ev sdk.Event) {

@@ -59,7 +59,7 @@ func TestExternalModuleRoundTrip(t *testing.T) {
 	}
 	events, stop := e.Bus.Subscribe("remote.", 4)
 	defer stop()
-	in, err := e.SaveInstance(ctx, Instance{Module: "remote", Enabled: true})
+	in, err := e.SaveInstance(ctx, Instance{Module: "remote", Enabled: true, Config: json.RawMessage(`{"token":"secret://token"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,5 +80,25 @@ func TestExternalModuleRoundTrip(t *testing.T) {
 	}
 	if h := e.Health(ctx, in.ID); h.Status != "ok" {
 		t.Fatalf("health = %+v", h)
+	}
+}
+
+func TestSecretMustBeReferencedByInstance(t *testing.T) {
+	ctx := context.Background()
+	dr, mw := io.Pipe()
+	mr, dw := io.Pipe()
+	go sdk.Serve(&secretUser{}, mr, mw)
+	x, err := ConnectExternal(ctx, dr, dw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ := OpenStore(ctx, t.TempDir()+"/y.db")
+	defer st.Close()
+	e := NewEngine(st, nil)
+	e.SetSecrets(staticSecrets{"secret://token": "hunter2"})
+	_ = e.Register(x)
+	in, _ := e.SaveInstance(ctx, Instance{Module: "remote", Enabled: true, Config: json.RawMessage(`{"other":"secret://different"}`)})
+	if _, err := e.Invoke(ctx, user, sdk.Call{Instance: in.ID, Action: "whoami"}, InvokeOptions{}); err == nil {
+		t.Fatal("module read a secret its settings do not reference")
 	}
 }

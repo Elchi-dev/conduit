@@ -504,6 +504,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the vault is set up and unlocked */
+        get: operations["getVault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create the vault with a passphrase (owner or admin, signed in) */
+        post: operations["setupVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unlock with the passphrase (owner or admin, signed in) */
+        post: operations["unlockVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lock the vault (anyone authenticated) */
+        post: operations["lockVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/keys": {
         parameters: {
             query?: never;
@@ -662,6 +730,8 @@ export interface components {
             };
             reversible?: boolean;
             dryRun?: boolean;
+            /** @description Input and output hold secret material and are never logged */
+            sensitive?: boolean;
         };
         ResourceSpec: {
             kind: string;
@@ -820,6 +890,12 @@ export interface components {
             presets: components["schemas"]["Preset"][];
             frozen: boolean;
             rules: components["schemas"]["Rule"][];
+        };
+        VaultStatus: {
+            setUp: boolean;
+            unlocked: boolean;
+            secrets: number;
+            remembered: boolean;
         };
         /** @enum {string} */
         KeyKind: "live" | "test" | "agent";
@@ -1801,6 +1877,109 @@ export interface operations {
                 content?: never;
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VaultStatus"];
+                };
+            };
+        };
+    };
+    setupVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    passphrase: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Set up and unlocked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VaultStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    unlockVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    passphrase: string;
+                    /** @description Keep the key in this computer's keychain so the vault unlocks on start */
+                    remember?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Unlocked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VaultStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    lockVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Also remove the key from the keychain */
+                    forget?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Locked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VaultStatus"];
+                };
+            };
         };
     };
     listKeys: {

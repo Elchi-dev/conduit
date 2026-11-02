@@ -26,6 +26,7 @@ tags:
   - name: approvals
   - name: policy
   - name: panic
+  - name: vault
   - name: keys
   - name: events
 paths:
@@ -462,6 +463,55 @@ paths:
         "200": { description: Panic mode off }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /vault:
+    get:
+      operationId: getVault
+      tags: [vault]
+      summary: Whether the vault is set up and unlocked
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/VaultStatus" } } } }
+
+  /vault/setup:
+    post:
+      operationId: setupVault
+      tags: [vault]
+      summary: Create the vault with a passphrase (owner or admin, signed in)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [passphrase], properties: { passphrase: { type: string, minLength: 12 } } } } }
+      responses:
+        "200": { description: Set up and unlocked, content: { application/json: { schema: { $ref: "#/components/schemas/VaultStatus" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /vault/unlock:
+    post:
+      operationId: unlockVault
+      tags: [vault]
+      summary: Unlock with the passphrase (owner or admin, signed in)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [passphrase]
+              properties:
+                passphrase: { type: string }
+                remember: { type: boolean, description: Keep the key in this computer's keychain so the vault unlocks on start }
+      responses:
+        "200": { description: Unlocked, content: { application/json: { schema: { $ref: "#/components/schemas/VaultStatus" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /vault/lock:
+    post:
+      operationId: lockVault
+      tags: [vault]
+      summary: Lock the vault (anyone authenticated)
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { forget: { type: boolean, description: Also remove the key from the keychain } } } } }
+      responses:
+        "200": { description: Locked, content: { application/json: { schema: { $ref: "#/components/schemas/VaultStatus" } } } }
+
   /keys:
     get:
       operationId: listKeys
@@ -626,6 +676,7 @@ components:
         output: { type: object, additionalProperties: true, description: JSON Schema }
         reversible: { type: boolean }
         dryRun: { type: boolean }
+        sensitive: { type: boolean, description: Input and output hold secret material and are never logged }
     ResourceSpec:
       type: object
       required: [kind, title]
@@ -788,6 +839,14 @@ components:
         presets: { type: array, items: { $ref: "#/components/schemas/Preset" } }
         frozen: { type: boolean }
         rules: { type: array, items: { $ref: "#/components/schemas/Rule" } }
+    VaultStatus:
+      type: object
+      required: [setUp, unlocked, secrets, remembered]
+      properties:
+        setUp: { type: boolean }
+        unlocked: { type: boolean }
+        secrets: { type: integer }
+        remembered: { type: boolean }
     KeyKind: { type: string, enum: [live, test, agent] }
     ApiKey:
       type: object

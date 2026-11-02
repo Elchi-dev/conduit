@@ -5,6 +5,7 @@ import { api, ok, type ActionSpec, type Outcome } from "../api/client";
 import { PlanView } from "../components/PlanView";
 import { defaults, SchemaForm, type JSONSchema } from "../components/SchemaForm";
 import { ResultView } from "../components/ResultView";
+import { VaultGate } from "../modules/vault/VaultGate";
 import { ago } from "../lib/format";
 import "./pages.css";
 
@@ -66,8 +67,8 @@ export function InstancePage({ id }: { id: string }) {
             <h1>{i.name}</h1>
           </div>
           <p>
-            {m.name}
-            {h?.message ? `: ${h.message}` : h?.status === "ok" ? ", working normally" : ""}
+            {m.name !== i.name && `${m.name}. `}
+            {h?.message || (h?.status === "ok" ? "Working normally." : "")}
           </p>
         </div>
         <div className="inline">
@@ -78,6 +79,8 @@ export function InstancePage({ id }: { id: string }) {
       </div>
 
       {editing && <InstanceSettings id={id} schema={m.configSchema as JSONSchema} initial={i.config as Record<string, unknown>} name={i.name} enabled={i.enabled} onDelete={() => confirm(`Disconnect ${i.name}? Its history stays in the timeline.`) && del.mutate()} />}
+
+      {m.id === "vault" && <VaultGate />}
 
       <div className="instance-grid">
         <nav className="actions panel" aria-label="Actions">

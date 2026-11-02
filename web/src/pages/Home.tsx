@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { api, ok } from "../api/client";
 import { actorLabel, ago } from "../lib/format";
 import { ApprovalCard } from "./Approvals";
+import { presetNames } from "./Modules";
 import "./pages.css";
 
 function greeting() {
@@ -28,8 +29,11 @@ export function Home() {
   const down = list.filter((_, n) => health[n]?.data && health[n].data!.status !== "ok");
   const waiting = pending.data ?? [];
 
+  // The vault and this computer exist from the start; "nothing connected"
+  // means nothing beyond those.
+  const connected = list.filter((i) => i.id !== "vault" && i.id !== "system");
   const summary =
-    list.length === 0
+    connected.length === 0 && list.length === 0
       ? "Nothing is connected yet."
       : down.length === 0
         ? `All ${list.length} connected ${list.length === 1 ? "system is" : "systems are"} working.`
@@ -45,15 +49,23 @@ export function Home() {
         </p>
       </div>
 
-      {list.length === 0 && (
+      {connected.length === 0 && (
         <div className="empty start">
           <h2>Connect your first system</h2>
           <p className="muted">
             Start with whatever you check most: your mail, a server, your PC itself. Each one gets a lamp in the top row.
+            What will you use Conduit for?
           </p>
-          <Link href="/modules" className="btn primary" style={{ justifySelf: "start" }}>
-            Browse modules
-          </Link>
+          <div className="inline">
+            {presetNames.slice(1).map(([id, label]) => (
+              <Link key={id} href={`/modules?preset=${id}`} className="btn">
+                {label}
+              </Link>
+            ))}
+            <Link href="/modules" className="btn quiet">
+              Show everything
+            </Link>
+          </div>
         </div>
       )}
 

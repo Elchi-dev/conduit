@@ -5,6 +5,7 @@ package daemon
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/ui"
+	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
 )
 
@@ -42,6 +44,7 @@ type App struct {
 	Store  *core.Store
 	Engine *core.Engine
 	Auth   *auth.Service
+	Vault  *vault.Vault
 	Server *Server
 }
 
@@ -56,7 +59,13 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	}
 	engine := core.NewEngine(store, log)
 	authSvc := auth.New(store)
-	app := &App{Store: store, Engine: engine, Auth: authSvc, Server: &Server{Engine: engine, Auth: authSvc, Log: log, UI: ui.Handler()}}
+	sum := sha256.Sum256([]byte(dataDir))
+	v := vault.New(store, vault.OSKeychain{Account: hex.EncodeToString(sum[:8])})
+	engine.SetSecrets(v)
+	app := &App{Store: store, Engine: engine, Auth: authSvc, Vault: v, Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Log: log, UI: ui.Handler()}}
+	if v.UnlockFromKeychain(ctx) {
+		log.Info("vault unlocked from the system keychain")
+	}
 
 	n, err := authSvc.UserCount(ctx)
 	if err != nil {
@@ -90,7 +99,9 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		return err
 	}
 	defer app.Close()
-	registerBuiltins(app)
+	if err := registerBuiltins(app); err != nil {
+		return err
+	}
 	externals := app.Engine.LoadExternalDir(ctx, filepath.Join(cfg.DataDir, "modules"))
 	defer func() {
 		for _, x := range externals {
@@ -98,6 +109,9 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		}
 	}()
 	if err := app.Engine.Start(ctx); err != nil {
+		return err
+	}
+	if err := ensureSingletons(ctx, app); err != nil {
 		return err
 	}
 	go housekeeping(ctx, app)
@@ -124,8 +138,29 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	}
 }
 
-// registerBuiltins adds the compiled-in modules. Filled in as modules land.
-func registerBuiltins(app *App) {}
+// registerBuiltins adds the compiled-in modules.
+func registerBuiltins(app *App) error {
+	for _, m := range builtins(app) {
+		if err := app.Engine.Register(m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureSingletons creates the one instance of modules that have exactly
+// one per daemon (the vault, this computer).
+func ensureSingletons(ctx context.Context, app *App) error {
+	for id, name := range singletons {
+		if _, ok := app.Engine.Instance(id); ok {
+			continue
+		}
+		if _, err := app.Engine.SaveInstance(ctx, core.Instance{ID: id, Module: id, Name: name, Enabled: true}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func housekeeping(ctx context.Context, app *App) {
 	t := time.NewTicker(time.Hour)

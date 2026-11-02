@@ -12,12 +12,14 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/vault"
 )
 
 // Server is the daemon's HTTP API.
 type Server struct {
 	Engine *core.Engine
 	Auth   *auth.Service
+	Vault  *vault.Vault
 	Log    *slog.Logger
 	// SetupToken must be presented to create the owner account. It is printed
 	// to the log and written to <data>/setup-token on first start.

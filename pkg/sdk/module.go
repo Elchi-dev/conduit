@@ -66,6 +66,9 @@ type ActionSpec struct {
 	Reversible bool `json:"reversible,omitempty"`
 	// DryRun actions accept Call.DryRun and return a Plan instead of acting.
 	DryRun bool `json:"dryRun,omitempty"`
+	// Sensitive actions carry secret material in their input or output.
+	// Conduit never writes either to the audit log, approvals or events.
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 // ResourceSpec declares a kind of thing the module can list and open.

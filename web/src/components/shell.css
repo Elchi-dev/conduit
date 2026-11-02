@@ -94,7 +94,8 @@
   background: var(--ok);
   box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 70%, transparent);
 }
-.lamp.degraded .bulb {
+.lamp.degraded .bulb,
+.lamp.unconfigured .bulb {
   background: var(--signal);
   box-shadow: 0 0 7px color-mix(in srgb, var(--signal) 75%, transparent);
 }

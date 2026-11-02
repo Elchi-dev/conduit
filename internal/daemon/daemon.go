@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/auth"
+	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/ui"
 	"github.com/elchi-dev/conduit/internal/vault"
@@ -42,12 +43,13 @@ func DefaultConfig() Config {
 // App is a running daemon's parts, exposed so modules and tests can be
 // registered before serving.
 type App struct {
-	Store  *core.Store
-	Engine *core.Engine
-	Auth   *auth.Service
-	Vault  *vault.Vault
-	Notify *notify.Module
-	Server *Server
+	Store       *core.Store
+	Engine      *core.Engine
+	Auth        *auth.Service
+	Vault       *vault.Vault
+	Notify      *notify.Module
+	Automations *automation.Service
+	Server      *Server
 }
 
 // Open prepares a daemon in dataDir without serving it.
@@ -64,7 +66,9 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	sum := sha256.Sum256([]byte(dataDir))
 	v := vault.New(store, vault.OSKeychain{Account: hex.EncodeToString(sum[:8])})
 	engine.SetSecrets(v)
-	app := &App{Store: store, Engine: engine, Auth: authSvc, Vault: v, Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Log: log, UI: ui.Handler()}}
+	autos := automation.New(engine)
+	app := &App{Store: store, Engine: engine, Auth: authSvc, Vault: v, Automations: autos,
+		Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Automations: autos, Log: log, UI: ui.Handler()}}
 	if v.UnlockFromKeychain(ctx) {
 		log.Info("vault unlocked from the system keychain")
 	}
@@ -114,6 +118,9 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		return err
 	}
 	if err := ensureSingletons(ctx, app); err != nil {
+		return err
+	}
+	if err := app.Automations.Start(ctx); err != nil {
 		return err
 	}
 	go housekeeping(ctx, app)

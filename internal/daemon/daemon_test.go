@@ -378,10 +378,11 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 		}
 	}
 	served := map[string]bool{}
-	for _, r := range (&Server{}).routes() {
+	srv := &Server{}
+	for _, r := range append(srv.routes(), srv.automationRoutes()...) {
 		method, path, _ := strings.Cut(r.pattern, " ")
-		if path == "/healthz" {
-			continue
+		if path == "/healthz" || strings.HasPrefix(path, "/hooks/") {
+			continue // outside the /api/v1 base; documented in docs/api/webhooks.md
 		}
 		path = strings.TrimPrefix(path, "/api/v1")
 		served[method+" "+path] = true

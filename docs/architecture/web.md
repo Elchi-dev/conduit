@@ -39,6 +39,16 @@ Conduit is a control room, not a chat app.
 - **Copy:** sentence case, plain verbs, buttons say exactly what happens
   ("Approve", "Revoke", "Lift emergency stop"). Empty states say what to do.
 
+## Charts
+
+Outputs shaped `{"series": [{"name", "points": [[unix, value], …]}]}` render as
+a line chart (`LineChart.tsx`): one y-axis, 2 px lines, a legend for two or
+more series, crosshair tooltip and a table view. Series colours are the
+`--series-1…8` tokens in fixed order, validated against both chart surfaces
+(dark `#2b2f34`, light `#ffffff`) for colour-vision separation; slots under
+3:1 contrast are covered by the always-present legend and table view. More
+than eight series are cut, never given generated colours.
+
 ## Schema-driven screens
 
 Every module gets a working screen with no frontend code:

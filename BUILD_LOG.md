@@ -3,6 +3,31 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 8 — metrics, uptime checks, automations, daily brief
+
+**Landed**
+
+- **Metrics**: Prometheus alerts, targets, instant queries and charts over
+  time; Grafana dashboard search with links; health follows firing alerts.
+- **Websites and APIs**: uptime checks with expected status/content,
+  latency, certificate expiry and down/up/expiring events; outgoing requests.
+- **Automations**: schedule, event (with field matching), webhook and manual
+  triggers; up to 20 steps with templated inputs; run history. Trust model:
+  people's automations get scoped allow rules, agents' drafts stay disabled
+  until a person enables them. Loop protection. Secret webhook addresses with
+  rate limits.
+- **Daily brief** (signature feature 10): down/degraded systems, approvals,
+  unread mail, today's events, recent failures and expiring keys; one click
+  schedules it every weekday morning.
+- Line charts with a validated colour palette, legend, crosshair and table
+  view; links in tables open in a new tab.
+- Automations screen with a step builder that reuses each action's form.
+
+**Changed from plan**
+
+- Grafana panels open in Grafana rather than being embedded (embedding needs
+  server-side Grafana settings); documented.
+
 ## 2026-11-03 · Phase 7 — mail, calendar and notifications
 
 **Landed**

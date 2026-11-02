@@ -484,3 +484,108 @@ pre.log {
 .readout .meter {
   height: 22px;
 }
+
+/* ---------- charts ---------- */
+
+.chart {
+  display: grid;
+  gap: 8px;
+}
+.chart-plot {
+  position: relative;
+}
+.chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: none;
+}
+.chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.chart .tick {
+  fill: var(--muted);
+  font: 400 11px var(--font-ui);
+}
+.chart .crosshair {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.chart .dot {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+.chart-tip {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  min-width: 160px;
+  max-width: 320px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  pointer-events: none;
+  display: grid;
+  gap: 3px;
+}
+.tip-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+.tip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+/* ---------- automations ---------- */
+
+.auto-row {
+  grid-template-columns: 1fr auto auto auto;
+}
+.auto-row .usage {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+}
+.steps-list {
+  margin: 0;
+  padding-left: 20px;
+}
+.step-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+@media (max-width: 760px) {
+  .auto-row {
+    grid-template-columns: 1fr auto;
+  }
+}

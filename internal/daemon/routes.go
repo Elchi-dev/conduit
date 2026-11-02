@@ -20,7 +20,11 @@ import (
 // listed in api/openapi/daemon.yaml; a test enforces it.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	for _, rt := range s.routes() {
+	routes := s.routes()
+	if s.Automations != nil {
+		routes = append(routes, s.automationRoutes()...)
+	}
+	for _, rt := range routes {
 		mux.HandleFunc(rt.pattern, rt.h)
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {

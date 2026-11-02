@@ -572,6 +572,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** All automations */
+        get: operations["listAutomations"];
+        put?: never;
+        /**
+         * Create an automation
+         * @description Saved by a signed-in person, its steps may run without asking (scoped
+         *     policy rules are added for exactly those actions). Saved by an API key
+         *     or agent, it is stored disabled and untrusted until a person enables it.
+         */
+        post: operations["createAutomation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One automation */
+        get: operations["getAutomation"];
+        /** Change an automation */
+        put: operations["updateAutomation"];
+        post?: never;
+        /** Delete an automation and its rules */
+        delete: operations["deleteAutomation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run now and wait for the result */
+        post: operations["runAutomation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent runs */
+        get: operations["listAutomationRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/keys": {
         parameters: {
             query?: never;
@@ -896,6 +972,67 @@ export interface components {
             unlocked: boolean;
             secrets: number;
             remembered: boolean;
+        };
+        Trigger: {
+            /** @enum {string} */
+            kind: "schedule" | "event" | "webhook" | "manual";
+            /** @description Five fields, e.g. "30 7 * * 1-5" */
+            cron?: string;
+            timezone?: string;
+            /** @description Event type or prefix */
+            event?: string;
+            /** @description Dotted path in the event → required value, e.g. {"data.name": "Shop"} */
+            match?: {
+                [key: string]: string;
+            };
+        };
+        Step: {
+            instance: string;
+            action: string;
+            /** @description Strings may use {{trigger.<path>}} and {{steps.<n>.output.<path>}} */
+            input?: unknown;
+            continueOnError?: boolean;
+        };
+        AutomationInput: {
+            name: string;
+            enabled?: boolean;
+            trigger: components["schemas"]["Trigger"];
+            steps: components["schemas"]["Step"][];
+        };
+        Automation: {
+            id: string;
+            name: string;
+            enabled: boolean;
+            trigger: components["schemas"]["Trigger"];
+            steps: components["schemas"]["Step"][];
+            /** @description For webhook triggers: POST to <daemon>/hooks/<token>. Shown to people only. */
+            hookPath?: string;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description A person saved or enabled it */
+            trusted: boolean;
+        };
+        AutomationRun: {
+            id: string;
+            automation: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt?: string;
+            trigger: unknown;
+            /** @enum {string} */
+            status: "running" | "ok" | "error" | "denied";
+            error?: string;
+            steps: {
+                action: string;
+                status: string;
+                output?: unknown;
+                error?: string;
+                audit?: number;
+            }[];
         };
         /** @enum {string} */
         KeyKind: "live" | "test" | "agent";
@@ -1978,6 +2115,175 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VaultStatus"];
+                };
+            };
+        };
+    };
+    listAutomations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Automation"][];
+                };
+            };
+        };
+    };
+    createAutomation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Automation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getAutomation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Automation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAutomation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationInput"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Automation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteAutomation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    runAutomation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Finished */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRun"];
+                };
+            };
+            /** @description Turned off */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listAutomationRuns: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRun"][];
                 };
             };
         };

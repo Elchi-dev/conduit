@@ -27,6 +27,7 @@ tags:
   - name: policy
   - name: panic
   - name: vault
+  - name: automations
   - name: keys
   - name: events
 paths:
@@ -512,6 +513,78 @@ paths:
       responses:
         "200": { description: Locked, content: { application/json: { schema: { $ref: "#/components/schemas/VaultStatus" } } } }
 
+  /automations:
+    get:
+      operationId: listAutomations
+      tags: [automations]
+      summary: All automations
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Automation" } } } } }
+    post:
+      operationId: createAutomation
+      tags: [automations]
+      summary: Create an automation
+      description: |
+        Saved by a signed-in person, its steps may run without asking (scoped
+        policy rules are added for exactly those actions). Saved by an API key
+        or agent, it is stored disabled and untrusted until a person enables it.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AutomationInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Automation" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /automations/{id}:
+    get:
+      operationId: getAutomation
+      tags: [automations]
+      summary: One automation
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Automation" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateAutomation
+      tags: [automations]
+      summary: Change an automation
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AutomationInput" } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/Automation" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteAutomation
+      tags: [automations]
+      summary: Delete an automation and its rules
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Deleted }
+
+  /automations/{id}/run:
+    post:
+      operationId: runAutomation
+      tags: [automations]
+      summary: Run now and wait for the result
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Finished, content: { application/json: { schema: { $ref: "#/components/schemas/AutomationRun" } } } }
+        "409": { description: Turned off, or ran less than 5 seconds ago }
+
+  /automations/{id}/runs:
+    get:
+      operationId: listAutomationRuns
+      tags: [automations]
+      summary: Recent runs
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AutomationRun" } } } } }
+
   /keys:
     get:
       operationId: listKeys
@@ -847,6 +920,67 @@ components:
         unlocked: { type: boolean }
         secrets: { type: integer }
         remembered: { type: boolean }
+    Trigger:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [schedule, event, webhook, manual] }
+        cron: { type: string, description: 'Five fields, e.g. "30 7 * * 1-5"' }
+        timezone: { type: string }
+        event: { type: string, description: Event type or prefix }
+        match: { type: object, additionalProperties: { type: string }, description: 'Dotted path in the event → required value, e.g. {"data.name": "Shop"}' }
+    Step:
+      type: object
+      required: [instance, action]
+      properties:
+        instance: { type: string }
+        action: { type: string }
+        input: { description: 'Strings may use {{trigger.<path>}} and {{steps.<n>.output.<path>}}' }
+        continueOnError: { type: boolean }
+    AutomationInput:
+      type: object
+      required: [name, trigger, steps]
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+        trigger: { $ref: "#/components/schemas/Trigger" }
+        steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
+    Automation:
+      type: object
+      required: [id, name, enabled, trigger, steps, createdBy, createdAt, updatedAt, trusted]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        enabled: { type: boolean }
+        trigger: { $ref: "#/components/schemas/Trigger" }
+        steps: { type: array, items: { $ref: "#/components/schemas/Step" } }
+        hookPath: { type: string, description: 'For webhook triggers: POST to <daemon>/hooks/<token>. Shown to people only.' }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        trusted: { type: boolean, description: A person saved or enabled it, so its steps run without asking }
+    AutomationRun:
+      type: object
+      required: [id, automation, startedAt, trigger, status, steps]
+      properties:
+        id: { type: string }
+        automation: { type: string }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        trigger: {}
+        status: { type: string, enum: [running, ok, error, denied] }
+        error: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [action, status]
+            properties:
+              action: { type: string }
+              status: { type: string }
+              output: {}
+              error: { type: string }
+              audit: { type: integer }
     KeyKind: { type: string, enum: [live, test, agent] }
     ApiKey:
       type: object

@@ -43,3 +43,6 @@ export function actorLabel(a?: { kind: string; name?: string; id: string }): str
       return "Conduit";
   }
 }
+
+/** Built-in features that have an instance but aren't "connected systems". */
+export const featureInstances = new Set(["automations", "brief"]);

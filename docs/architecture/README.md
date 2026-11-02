@@ -28,6 +28,7 @@ takes the same path:
 | Daemon HTTP API, events, MCP | `internal/daemon` | [daemon.md](daemon.md) |
 | Hub | `internal/hub` | [hub.md](hub.md) |
 | Vault | `internal/vault`, `modules/vault` | [vault.md](vault.md) |
+| Automations | `internal/automation` | [automations.md](automations.md) |
 | Web app | `web/`, `internal/ui` | [web.md](web.md) |
 | Desktop and Android shell | `apps/desktop` | [desktop.md](desktop.md) |
 

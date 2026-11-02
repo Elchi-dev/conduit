@@ -1,4 +1,5 @@
 import { json } from "../lib/format";
+import { isSeriesOutput, LineChart } from "./LineChart";
 
 type Row = Record<string, unknown>;
 
@@ -79,6 +80,7 @@ function ObjectView({ value, depth }: { value: Row; depth: number }) {
  * table, an object as readouts, a long string as a log, anything else as JSON.
  */
 export function ResultView({ value, depth = 0 }: { value: unknown; depth?: number }) {
+  if (isSeriesOutput(value)) return <LineChart series={value.series} />;
   if (isRows(value)) {
     const cols = Array.from(new Set(value.flatMap((r) => Object.keys(r)))).slice(0, 8);
     return (
@@ -96,7 +98,15 @@ export function ResultView({ value, depth = 0 }: { value: unknown; depth?: numbe
               <tr key={i}>
                 {cols.map((c) => (
                   <td key={c} className={typeof r[c] === "number" ? "num" : undefined}>
-                    {c.toLowerCase().includes("percent") && typeof r[c] === "number" ? <Meter value={r[c] as number} /> : cell(r[c])}
+                    {c.toLowerCase().includes("percent") && typeof r[c] === "number" ? (
+                      <Meter value={r[c] as number} />
+                    ) : typeof r[c] === "string" && /^https?:\/\//.test(r[c] as string) ? (
+                      <a href={r[c] as string} target="_blank" rel="noreferrer noopener">
+                        Open
+                      </a>
+                    ) : (
+                      cell(r[c])
+                    )}
                   </td>
                 ))}
               </tr>

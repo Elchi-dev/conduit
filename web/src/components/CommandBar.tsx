@@ -7,6 +7,7 @@ const pages = [
   ["Overview", "/"],
   ["Approvals", "/approvals"],
   ["Timeline", "/timeline"],
+  ["Automations", "/automations"],
   ["Modules", "/modules"],
   ["Agent rules", "/policy"],
   ["API keys", "/keys"],

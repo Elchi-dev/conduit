@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { api, ok } from "../api/client";
-import { actorLabel, ago } from "../lib/format";
+import { actorLabel, ago, featureInstances } from "../lib/format";
 import { ApprovalCard } from "./Approvals";
 import { presetNames } from "./Modules";
 import "./pages.css";
@@ -31,7 +31,7 @@ export function Home() {
 
   // The vault and this computer exist from the start; "nothing connected"
   // means nothing beyond those.
-  const connected = list.filter((i) => i.id !== "vault" && i.id !== "system");
+  const connected = list.filter((i) => i.id !== "vault" && i.id !== "system" && !featureInstances.has(i.id));
   const summary =
     connected.length === 0 && list.length === 0
       ? "Nothing is connected yet."

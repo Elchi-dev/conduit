@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { api, ok, type S } from "../api/client";
 import { useLiveEvents } from "../lib/events";
+import { featureInstances } from "../lib/format";
 import { CommandBar } from "./CommandBar";
 import { LampStrip } from "./LampStrip";
 import "./shell.css";
@@ -13,6 +14,8 @@ const nav = [
   { href: "/", label: "Overview" },
   { href: "/approvals", label: "Approvals" },
   { href: "/timeline", label: "Timeline" },
+  { href: "/automations", label: "Automations" },
+  { href: "/i/brief", label: "Daily brief" },
   { href: "/modules", label: "Modules" },
 ];
 const navAdmin = [
@@ -33,7 +36,8 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
     refetchInterval: 30_000,
   });
   const policy = useQuery({ queryKey: ["policy"], queryFn: () => ok(api.GET("/policy")) });
-  const instances = useQuery({ queryKey: ["instances"], queryFn: () => ok(api.GET("/instances")) });
+  const all = useQuery({ queryKey: ["instances"], queryFn: () => ok(api.GET("/instances")) });
+  const instances = { data: all.data?.filter((i) => !featureInstances.has(i.id)) };
 
   const stop = useMutation({
     mutationFn: () => ok(api.POST("/panic")),

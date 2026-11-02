@@ -12,5 +12,9 @@ recommended policies.
 | Mail | [mail.md](mail.md) | all |
 | Calendar | [calendar.md](calendar.md) | developer, gamer, team |
 | Notifications | [notify.md](notify.md) | all |
+| Metrics | [metrics.md](metrics.md) | developer, homelab, team |
+| Websites and APIs | [web.md](web.md) | developer, homelab, team |
+| Daily brief | [brief.md](brief.md) | all |
+| Automations | [../architecture/automations.md](../architecture/automations.md) | all |
 
 To write your own module, start with `docs/architecture/modules.md`.

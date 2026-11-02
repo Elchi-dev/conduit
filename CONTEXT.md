@@ -13,14 +13,14 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 3 of 16 (daemon API) — done 2026-11-03.
-- **Works today:** core engine (policy, approvals, audit chain, undo, dry
-  runs, panic, external modules); accounts, sessions and API keys; the full
-  daemon REST API and SSE event stream (`api/openapi/daemon.yaml`). No
-  built-in modules yet. Placeholder web UI; Tauri shell compiles; CI on three
-  OSes.
-- **Next:** phase 4, frontend shell — design system, layout, command bar,
-  schema-driven module views, approvals inbox, timeline, key management.
+- **Phase:** 4 of 16 (web app) — done 2026-11-03.
+- **Works today:** core engine; accounts, sessions, API keys; the daemon REST
+  API and event stream; the full web app (served by the daemon with
+  `make daemon`). No built-in modules yet, so the app shows empty states.
+- **Next:** phase 5, vault (encrypted secrets, `secret://` resolution, leak
+  watch) and onboarding presets; then phases 6–8 add the built-in modules.
+- **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
+  (Chrome is at /usr/bin/google-chrome in the build environment).
 
 ## Rules for working in this repo
 

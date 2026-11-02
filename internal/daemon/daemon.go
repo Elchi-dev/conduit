@@ -16,6 +16,7 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/ui"
 	"github.com/elchi-dev/conduit/internal/version"
 )
 
@@ -55,7 +56,7 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	}
 	engine := core.NewEngine(store, log)
 	authSvc := auth.New(store)
-	app := &App{Store: store, Engine: engine, Auth: authSvc, Server: &Server{Engine: engine, Auth: authSvc, Log: log}}
+	app := &App{Store: store, Engine: engine, Auth: authSvc, Server: &Server{Engine: engine, Auth: authSvc, Log: log, UI: ui.Handler()}}
 
 	n, err := authSvc.UserCount(ctx)
 	if err != nil {

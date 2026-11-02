@@ -507,7 +507,7 @@ paths:
       summary: Issue a replacement; the old key works until the grace period ends
       parameters: [{ $ref: "#/components/parameters/Id" }]
       requestBody:
-        content: { application/json: { schema: { type: object, properties: { graceSeconds: { type: integer, default: 86400 } } } } }
+        content: { application/json: { schema: { type: object, properties: { graceSeconds: { type: integer, description: Seconds the old key keeps working (default 86400) } } } } }
       responses:
         "201": { description: Rotated, content: { application/json: { schema: { $ref: "#/components/schemas/CreatedKey" } } } }
 
@@ -622,8 +622,8 @@ components:
         title: { type: string }
         description: { type: string }
         risk: { $ref: "#/components/schemas/Risk" }
-        input: { type: object, description: JSON Schema }
-        output: { type: object, description: JSON Schema }
+        input: { type: object, additionalProperties: true, description: JSON Schema }
+        output: { type: object, additionalProperties: true, description: JSON Schema }
         reversible: { type: boolean }
         dryRun: { type: boolean }
     ResourceSpec:
@@ -632,7 +632,7 @@ components:
       properties:
         kind: { type: string }
         title: { type: string }
-        schema: { type: object }
+        schema: { type: object, additionalProperties: true }
         listAction: { type: string }
         getAction: { type: string }
         viewHint: { type: string, enum: [table, log, chart, detail] }
@@ -642,7 +642,7 @@ components:
       properties:
         type: { type: string }
         description: { type: string }
-        schema: { type: object }
+        schema: { type: object, additionalProperties: true }
     Manifest:
       type: object
       required: [id, name, version, description, actions]
@@ -653,7 +653,7 @@ components:
         description: { type: string }
         icon: { type: string }
         category: { type: string }
-        configSchema: { type: object, description: JSON Schema for an instance's settings }
+        configSchema: { type: object, additionalProperties: true, description: JSON Schema for an instance's settings }
         actions: { type: array, items: { $ref: "#/components/schemas/ActionSpec" } }
         resources: { type: array, items: { $ref: "#/components/schemas/ResourceSpec" } }
         events: { type: array, items: { $ref: "#/components/schemas/EventSpec" } }
@@ -671,7 +671,7 @@ components:
         id: { type: string }
         module: { type: string }
         name: { type: string }
-        config: { type: object }
+        config: { type: object, additionalProperties: true }
         enabled: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -681,7 +681,7 @@ components:
       properties:
         module: { type: string, description: Required on create }
         name: { type: string }
-        config: { type: object }
+        config: { type: object, additionalProperties: true }
         enabled: { type: boolean }
     Change:
       type: object
@@ -816,7 +816,7 @@ components:
         kind: { $ref: "#/components/schemas/KeyKind" }
         scopes: { type: array, items: { type: string }, description: 'See docs/api/keys.md, e.g. "actions:*:invoke"' }
         ipAllow: { type: array, items: { type: string }, description: IPs or CIDR ranges }
-        ratePerMin: { type: integer, default: 120 }
+        ratePerMin: { type: integer, description: Requests per minute (default 120) }
         expiresAt: { type: string, format: date-time }
     CreatedKey:
       type: object

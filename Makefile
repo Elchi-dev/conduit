@@ -7,15 +7,16 @@ LDFLAGS := -s -w \
 	-X github.com/elchi-dev/conduit/internal/version.Date=$(DATE)
 TRIPLE  ?= $(shell rustc -vV 2>/dev/null | sed -n 's/host: //p')
 
-.PHONY: all build daemon hub web test lint fmt dev desktop clean
+.PHONY: all build daemon daemon-dev hub web test lint fmt dev desktop clean
 
 all: build
 
-build: web daemon hub
+build: daemon hub
 
-## daemon: build bin/conduitd (embeds the web UI once phase 4 lands)
-daemon:
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/conduitd ./cmd/conduitd
+## daemon: build bin/conduitd with the web UI embedded
+daemon: web
+	rm -rf internal/ui/dist && cp -r web/dist internal/ui/dist
+	CGO_ENABLED=0 go build -tags ui -trimpath -ldflags "$(LDFLAGS)" -o bin/conduitd ./cmd/conduitd
 
 ## hub: build bin/conduit-hub
 hub:
@@ -24,6 +25,10 @@ hub:
 ## web: build the app UI
 web:
 	cd web && pnpm install --frozen-lockfile && pnpm build
+
+## daemon-dev: build bin/conduitd without the embedded UI (fast)
+daemon-dev:
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/conduitd ./cmd/conduitd
 
 test:
 	go test -race ./...
@@ -40,7 +45,7 @@ dev: daemon
 	./bin/conduitd
 
 ## desktop: build the Tauri shell with the daemon as its sidecar
-desktop: daemon web
+desktop: daemon
 	mkdir -p apps/desktop/src-tauri/binaries
 	cp bin/conduitd apps/desktop/src-tauri/binaries/conduitd-$(TRIPLE)
 	cd apps/desktop/src-tauri && cargo build --release

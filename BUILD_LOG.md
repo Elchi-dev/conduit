@@ -3,6 +3,36 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 4 — web app and design system
+
+**Landed**
+
+- Design system: control-room palette (slate, warm ink, amber only for
+  "needs you"), Schibsted Grotesk and IBM Plex Mono bundled locally, light
+  and dark themes, focus rings, reduced-motion support, narrow-screen layout.
+- Shell with the lamp row (live health of every connected system), left
+  rail, command bar (Ctrl/⌘+K: pages and every action on every system) and
+  an always-visible emergency stop.
+- Screens: setup, sign-in, overview, approvals with dry-run plans, timeline
+  with search, undo and chain verification, module catalog and connect form,
+  per-system action runner, agent rules (presets, rules with expiry, lifting
+  the emergency stop), API keys (create, shown once, rotate, revoke, usage),
+  settings.
+- Schema-driven forms and result views, so any module (built-in or external)
+  gets a usable screen with no frontend code.
+- TypeScript client types generated from the OpenAPI spec; live updates over
+  the event stream.
+- The daemon embeds and serves the UI (`-tags ui`, `make daemon`).
+- Screenshot review in headless Chrome; fixed punctuation spacing from
+  tabular figures, a class-name clash and link-button underlines.
+
+**Changed from plan**
+
+- `wouter` and plain CSS tokens instead of TanStack Router and
+  vanilla-extract (ADR 0004).
+- TypeScript 7 lacks the compiler API that the type generator needs, so
+  `pnpm gen:api` runs the generator with TypeScript 5 in isolation.
+
 ## 2026-11-03 · Phase 3 — daemon API, accounts and API keys
 
 **Landed**

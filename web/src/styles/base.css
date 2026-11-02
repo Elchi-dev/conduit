@@ -1,0 +1,343 @@
+@import "@fontsource/schibsted-grotesk/400.css";
+@import "@fontsource/schibsted-grotesk/500.css";
+@import "@fontsource/schibsted-grotesk/600.css";
+@import "@fontsource/schibsted-grotesk/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/*
+  Conduit design tokens.
+  A control room, not a chat app: slate panels, warm ink, indicator lamps.
+  Amber means "needs you" and is used for nothing else.
+*/
+:root {
+  --bg: #23262a;
+  --panel: #2b2f34;
+  --panel-2: #32373d;
+  --line: #3a3f45;
+  --line-strong: #4a5057;
+  --ink: #e6e3dc;
+  --ink-2: #b4b8bc;
+  --muted: #8d939a;
+  --signal: #f2a93b;
+  --signal-ink: #2a1d07;
+  --ok: #6fbf8e;
+  --fault: #e5625a;
+  --off: #59606a;
+  --focus: #8fb8ff;
+
+  --font-ui: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* type scale (1.2 minor third from 14px) */
+  --t-xs: 12px;
+  --t-sm: 13px;
+  --t-md: 14px;
+  --t-lg: 17px;
+  --t-xl: 21px;
+  --t-2xl: 28px;
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --rail: 216px;
+  --bar: 52px;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #eef0f2;
+    --panel: #ffffff;
+    --panel-2: #f6f7f8;
+    --line: #d9dde1;
+    --line-strong: #c3c9cf;
+    --ink: #1e2328;
+    --ink-2: #3d444b;
+    --muted: #68707a;
+    --signal: #c97a06;
+    --signal-ink: #ffffff;
+    --ok: #2f8a57;
+    --fault: #c23a32;
+    --off: #a3aab2;
+    --focus: #2c6bd6;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --panel-2: #f6f7f8;
+  --line: #d9dde1;
+  --line-strong: #c3c9cf;
+  --ink: #1e2328;
+  --ink-2: #3d444b;
+  --muted: #68707a;
+  --signal: #c97a06;
+  --signal-ink: #ffffff;
+  --ok: #2f8a57;
+  --fault: #c23a32;
+  --off: #a3aab2;
+  --focus: #2c6bd6;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 var(--t-md) / 1.45 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures only where numbers line up; the UI face also widens
+   punctuation under tnum, so it must not apply to running text. */
+.num,
+time,
+.table td,
+.count {
+  font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+h1 {
+  font-size: var(--t-2xl);
+  line-height: 1.15;
+}
+h2 {
+  font-size: var(--t-lg);
+}
+h3 {
+  font-size: var(--t-md);
+}
+p {
+  margin: 0;
+}
+a {
+  color: inherit;
+}
+
+code,
+.data {
+  font-family: var(--font-data);
+  font-size: 0.92em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---------- primitives ---------- */
+
+.btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  font-weight: 500;
+  font-size: var(--t-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover {
+  border-color: var(--muted);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn.primary {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+.btn.signal {
+  background: var(--signal);
+  color: var(--signal-ink);
+  border-color: var(--signal);
+}
+.btn.danger {
+  color: var(--fault);
+  border-color: color-mix(in srgb, var(--fault) 55%, transparent);
+  background: transparent;
+}
+.btn.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+}
+.btn.quiet:hover {
+  background: var(--panel-2);
+}
+.btn.sm {
+  height: 26px;
+  padding: 0 8px;
+  font-size: var(--t-xs);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field > span {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.field small {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+.input,
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.field textarea {
+  min-height: 96px;
+  font-family: var(--font-data);
+  font-size: var(--t-sm);
+  resize: vertical;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-sm);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.rows {
+  display: grid;
+}
+.row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+}
+.row:first-child {
+  border-top: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: var(--t-sm);
+}
+.xs {
+  font-size: var(--t-xs);
+}
+.stack {
+  display: grid;
+  gap: 16px;
+}
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.spread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.error {
+  padding: 10px 12px;
+  border-left: 3px solid var(--fault);
+  background: color-mix(in srgb, var(--fault) 10%, transparent);
+  font-size: var(--t-sm);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+}
+.tag.read {
+  color: var(--muted);
+}
+.tag.write {
+  color: var(--ink);
+}
+.tag.destructive {
+  color: var(--fault);
+  border-color: color-mix(in srgb, var(--fault) 50%, transparent);
+}
+
+pre.json {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font: 400 var(--t-sm) / 1.5 var(--font-data);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

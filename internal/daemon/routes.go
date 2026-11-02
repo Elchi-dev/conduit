@@ -21,6 +21,9 @@ func (s *Server) Handler() http.Handler {
 	for _, rt := range s.routes() {
 		mux.HandleFunc(rt.pattern, rt.h)
 	}
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
+		writeErr(w, http.StatusNotFound, "no such endpoint")
+	})
 	if s.UI != nil {
 		mux.Handle("/", s.UI)
 	}

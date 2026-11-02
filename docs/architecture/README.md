@@ -27,6 +27,7 @@ takes the same path:
 | Core (registry, events, policy, audit, storage) | `internal/core` | [core.md](core.md) |
 | Daemon HTTP, WebSocket, MCP | `internal/daemon` | [daemon.md](daemon.md) |
 | Hub | `internal/hub` | [hub.md](hub.md) |
+| Web app | `web/`, `internal/ui` | [web.md](web.md) |
 | Desktop and Android shell | `apps/desktop` | [desktop.md](desktop.md) |
 
 Pages are written as each subsystem lands. Non-obvious choices are recorded as

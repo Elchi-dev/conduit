@@ -7,11 +7,18 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:api": "pnpm dlx --package openapi-typescript@7 --package typescript@5 openapi-typescript ../api/openapi/daemon.yaml -o src/api/schema.d.ts"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/schibsted-grotesk": "^5.3.0",
+    "@tanstack/react-query": "^5.105.3",
+    "cmdk": "^1.1.1",
+    "openapi-fetch": "^0.17.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "wouter": "^3.13.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

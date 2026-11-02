@@ -3,6 +3,31 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 6 — this computer, servers and Docker
+
+**Landed**
+
+- **This computer** (automatic): overview, processes, temperatures, launch
+  profiles (undo ends the process), end-a-process with dry run, and game
+  mode (signature feature 8, first cut): pauses listed processes, publishes
+  events, optional automatic start when a listed game runs.
+- **Server (SSH)**: status, services, service details, journal logs, files,
+  read file, start/stop (undoable), restart (dry run), run command. Host keys
+  are pinned; first connect shows the fingerprint to check.
+- **Docker**: local socket, Windows pipe, SSH-tunnelled remote socket or TCP;
+  containers, Compose stacks, stats, logs (multiplexed stream decoded),
+  images, start/stop/pause/resume (undoable), restart and whole-stack actions
+  with dry runs.
+- Shared SSH client with reconnects, output caps and shell quoting.
+- Tests against an in-process SSH server and a fake Docker API.
+- Result views: objects render as readouts, percentages as meters, lists of
+  objects as tables with readable headers.
+
+**Changed from plan**
+
+- No Docker SDK dependency; the module speaks the Engine API directly over
+  the chosen transport.
+
 ## 2026-11-03 · Phase 5 — vault, leak watch and onboarding presets
 
 **Landed**

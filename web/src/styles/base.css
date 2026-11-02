@@ -103,14 +103,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Tabular figures only where numbers line up; the UI face also widens
-   punctuation under tnum, so it must not apply to running text. */
-.num,
-time,
-.table td,
-.count {
-  font-variant-numeric: tabular-nums;
-}
+/* The UI face widens punctuation under tabular figures, so tnum is never
+   used with it; numbers that must line up (table columns) use the data face. */
 
 h1,
 h2,

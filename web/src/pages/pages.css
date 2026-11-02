@@ -409,3 +409,78 @@ pre.log {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- result readouts ---------- */
+
+.objview {
+  display: grid;
+  gap: 18px;
+}
+.objview-section {
+  display: grid;
+  gap: 8px;
+}
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.readout {
+  /* Each cell draws its own top and left line; the container clips the
+     outer ones, so partly filled rows don't show empty grey cells. */
+  margin: -1px 0 0 -1px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+.readout dt {
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.readout dd {
+  margin: 0;
+  font-size: var(--t-lg);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.meter {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 90px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+.meter-fill.ok {
+  background: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.meter-fill.signal {
+  background: color-mix(in srgb, var(--signal) 55%, transparent);
+}
+.meter-fill.fault {
+  background: color-mix(in srgb, var(--fault) 55%, transparent);
+}
+.meter-label {
+  position: relative;
+  padding: 0 6px;
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+.readout .meter {
+  height: 22px;
+}

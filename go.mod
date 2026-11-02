@@ -2,7 +2,10 @@ module github.com/elchi-dev/conduit
 
 go 1.26.0
 
-require modernc.org/sqlite v1.61.1
+require (
+	golang.org/x/crypto v0.58.0
+	modernc.org/sqlite v1.61.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect

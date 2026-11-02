@@ -3,31 +3,570 @@ info:
   title: Conduit Daemon API
   version: 0.1.0
   description: |
-    The daemon API exposes every module action, resource and event.
-    It is the single source of truth: Go handlers and the TypeScript client
-    are generated from this file. See docs/api/README.md.
+    The daemon API exposes every module action, resource and event, plus
+    accounts, API keys, approvals, policy, the audit log and panic mode.
+
+    This file is the source of truth. A test in internal/daemon fails if a
+    served route is missing here or a documented route is not served, and the
+    TypeScript client in web/ is generated from it.
+
+    Authenticate with `Authorization: Bearer <token>`, where the token is a
+    session token (`cds_…`) from login, or an API key (`cdt_live_…`,
+    `cdt_test_…`, `cdt_agent_…`). Browsers also get an HttpOnly session cookie.
+    Every action call still passes the permission policy, whatever the scopes.
 servers:
   - url: http://127.0.0.1:7600/api/v1
+security:
+  - bearer: []
+tags:
+  - name: system
+  - name: auth
+  - name: modules
+  - name: audit
+  - name: approvals
+  - name: policy
+  - name: panic
+  - name: keys
+  - name: events
 paths:
   /version:
     get:
       operationId: getVersion
-      summary: Build information of the running daemon
       tags: [system]
+      summary: Build information of the running daemon
       security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Version" } } } }
+
+  /setup:
+    get:
+      operationId: getSetup
+      tags: [auth]
+      summary: Whether the owner account still needs to be created
+      security: []
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: object, required: [needsSetup], properties: { needsSetup: { type: boolean } } } } }
+    post:
+      operationId: setup
+      tags: [auth]
+      summary: Create the owner account (first start only)
+      description: Requires the one-time setup token printed in the daemon log and written to `<data dir>/setup-token`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, email, password]
+              properties:
+                token: { type: string }
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 10 }
+                device: { type: string }
+      responses:
+        "201": { description: Owner created and signed in, content: { application/json: { schema: { $ref: "#/components/schemas/SessionResponse" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Setup was already completed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Sign in with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                device: { type: string, description: Shown in the session list, e.g. "Pixel 9" }
+      responses:
+        "200": { description: Signed in, content: { application/json: { schema: { $ref: "#/components/schemas/SessionResponse" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: End the current session
+      responses:
+        "204": { description: Signed out }
+
+  /me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: The caller, as the policy sees it
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Version" }
+              schema:
+                type: object
+                required: [user, actor, scopes]
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  actor: { $ref: "#/components/schemas/Actor" }
+                  scopes: { type: array, items: { type: string } }
+                  key: { $ref: "#/components/schemas/ApiKey" }
+
+  /me/password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change password and sign out every other session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [current, new], properties: { current: { type: string }, new: { type: string, minLength: 10 } } }
+      responses:
+        "204": { description: Changed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /me/sessions:
+    get:
+      operationId: listSessions
+      tags: [auth]
+      summary: The caller's active sessions
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Session" } } } } }
+
+  /me/sessions/{id}:
+    delete:
+      operationId: revokeSession
+      tags: [auth]
+      summary: Sign out one session
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Signed out }
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [auth]
+      summary: All local accounts (admin)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/User" } } } } }
+    post:
+      operationId: createUser
+      tags: [auth]
+      summary: Add a local account (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, role]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string, minLength: 10 }
+                role: { type: string, enum: [admin, member, viewer] }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /modules:
+    get:
+      operationId: listModules
+      tags: [modules]
+      summary: Installed modules (scope modules:*:read)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Manifest" } } } } }
+
+  /modules/{id}:
+    get:
+      operationId: getModule
+      tags: [modules]
+      summary: One module's manifest
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Manifest" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /instances:
+    get:
+      operationId: listInstances
+      tags: [modules]
+      summary: Configured module instances
+      parameters:
+        - { name: module, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Instance" } } } } }
+    post:
+      operationId: createInstance
+      tags: [modules]
+      summary: Configure a new instance of a module (scope instances:*:manage)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/InstanceInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Instance" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /instances/{id}:
+    get:
+      operationId: getInstance
+      tags: [modules]
+      summary: One instance with its health
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Instance" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateInstance
+      tags: [modules]
+      summary: Change an instance's name, settings or enabled state
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/InstanceInput" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Instance" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteInstance
+      tags: [modules]
+      summary: Remove an instance
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /instances/{id}/health:
+    get:
+      operationId: getInstanceHealth
+      tags: [modules]
+      summary: Health check of one instance
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+
+  /instances/{id}/actions/{action}:
+    post:
+      operationId: invokeAction
+      tags: [modules]
+      summary: Call an action (scope actions:<module>:invoke)
+      description: |
+        Runs through the permission policy. `200` means it ran (or, for a dry
+        run, returns the plan). `202` means it is waiting for a person to
+        approve; poll `GET /approvals/{id}` and call again once approved.
+        People's calls wait for the approval by default; programs' don't.
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { name: action, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: { description: Action input, matching the action's input schema }
+                dryRun: { type: boolean }
+                wait: { type: boolean }
+      responses:
+        "200": { description: Done, content: { application/json: { schema: { $ref: "#/components/schemas/Outcome" } } } }
+        "202": { description: Waiting for approval, content: { application/json: { schema: { $ref: "#/components/schemas/Outcome" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: The module reported an error (audited) }
+
+  /audit:
+    get:
+      operationId: listAudit
+      tags: [audit]
+      summary: The audit log, newest first (the timeline)
+      parameters:
+        - { name: module, in: query, schema: { type: string } }
+        - { name: instance, in: query, schema: { type: string } }
+        - { name: actor, in: query, schema: { type: string }, description: 'Actor subject, e.g. "agent:key_5kq2m8x4c1v7"' }
+        - { name: q, in: query, schema: { type: string }, description: Text search over action, module, input and output }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: until, in: query, schema: { type: string, format: date-time } }
+        - { name: before, in: query, schema: { type: integer }, description: Page backwards from this sequence number }
+        - { name: limit, in: query, schema: { type: integer, maximum: 500 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } } } } }
+
+  /audit/verify:
+    get:
+      operationId: verifyAudit
+      tags: [audit]
+      summary: Verify the hash chain of the whole log
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, entries]
+                properties:
+                  ok: { type: boolean }
+                  entries: { type: integer }
+                  brokenAt: { type: integer }
+                  problem: { type: string }
+
+  /audit/{seq}:
+    get:
+      operationId: getAudit
+      tags: [audit]
+      summary: One audit entry
+      parameters: [{ $ref: "#/components/parameters/Seq" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuditEntry" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /audit/{seq}/undo:
+    post:
+      operationId: undoAudit
+      tags: [audit]
+      summary: Undo a reversible action (scope audit:*:undo)
+      description: The reversal is a normal call; it passes the policy and is audited.
+      parameters: [{ $ref: "#/components/parameters/Seq" }]
+      responses:
+        "200": { description: Undone, content: { application/json: { schema: { $ref: "#/components/schemas/Outcome" } } } }
+        "202": { description: Waiting for approval, content: { application/json: { schema: { $ref: "#/components/schemas/Outcome" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /approvals:
+    get:
+      operationId: listApprovals
+      tags: [approvals]
+      summary: Approvals, newest first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, denied, expired] } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Approval" } } } } }
+
+  /approvals/{id}:
+    get:
+      operationId: getApproval
+      tags: [approvals]
+      summary: One approval
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Approval" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /approvals/{id}/approve:
+    post:
+      operationId: approve
+      tags: [approvals]
+      summary: Approve (people only; never API keys)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Approved, content: { application/json: { schema: { $ref: "#/components/schemas/Approval" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Not pending }
+
+  /approvals/{id}/deny:
+    post:
+      operationId: deny
+      tags: [approvals]
+      summary: Deny (people only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Denied, content: { application/json: { schema: { $ref: "#/components/schemas/Approval" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Not pending }
+
+  /policy:
+    get:
+      operationId: getPolicy
+      tags: [policy]
+      summary: Active preset, panic state and rules
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Policy" } } } }
+
+  /policy/preset:
+    put:
+      operationId: setPreset
+      tags: [policy]
+      summary: Change the baseline autonomy preset (people only)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [preset], properties: { preset: { $ref: "#/components/schemas/Preset" } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Policy" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /policy/rules:
+    post:
+      operationId: putRule
+      tags: [policy]
+      summary: Create or replace a rule (people only)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Rule" } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/Rule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /policy/rules/{id}:
+    delete:
+      operationId: deleteRule
+      tags: [policy]
+      summary: Delete a rule (people only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Deleted }
+
+  /panic:
+    get:
+      operationId: getPanic
+      tags: [panic]
+      summary: Whether panic mode is on
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [frozen], properties: { frozen: { type: boolean } } } } } }
+    post:
+      operationId: panic
+      tags: [panic]
+      summary: Emergency stop
+      description: |
+        Freezes every agent, API key and automation; denies all pending
+        approvals; revokes every agent key; signs out every other session.
+        Anyone authenticated can pull it.
+      responses:
+        "200":
+          description: Panic mode on
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [frozen, deniedApprovals, revokedAgentKeys, endedSessions]
+                properties:
+                  frozen: { type: boolean }
+                  deniedApprovals: { type: integer }
+                  revokedAgentKeys: { type: integer }
+                  endedSessions: { type: integer }
+    delete:
+      operationId: unpanic
+      tags: [panic]
+      summary: Lift panic mode (owner or admin, signed in)
+      responses:
+        "200": { description: Panic mode off }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /keys:
+    get:
+      operationId: listKeys
+      tags: [keys]
+      summary: The caller's API keys (all=1 for every key, admin)
+      parameters:
+        - { name: all, in: query, schema: { type: string, enum: ["1"] } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ApiKey" } } } } }
+    post:
+      operationId: createKey
+      tags: [keys]
+      summary: Create an API key (people only). The secret is returned once.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NewKey" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/CreatedKey" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /keys/{id}:
+    get:
+      operationId: getKey
+      tags: [keys]
+      summary: One key's metadata
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ApiKey" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: revokeKey
+      tags: [keys]
+      summary: Revoke a key immediately
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /keys/{id}/rotate:
+    post:
+      operationId: rotateKey
+      tags: [keys]
+      summary: Issue a replacement; the old key works until the grace period ends
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { graceSeconds: { type: integer, default: 86400 } } } } }
+      responses:
+        "201": { description: Rotated, content: { application/json: { schema: { $ref: "#/components/schemas/CreatedKey" } } } }
+
+  /keys/{id}/usage:
+    get:
+      operationId: getKeyUsage
+      tags: [keys]
+      summary: Recent requests made with a key (30 days)
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { name: limit, in: query, schema: { type: integer, maximum: 1000 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [at, method, path, status, ip]
+                  properties:
+                    at: { type: string, format: date-time }
+                    method: { type: string }
+                    path: { type: string }
+                    status: { type: integer }
+                    ip: { type: string }
+
+  /events:
+    get:
+      operationId: streamEvents
+      tags: [events]
+      summary: Live event stream (server-sent events)
+      description: |
+        Each message's `event` field is the event type (e.g. `action.ok`,
+        `approval.requested`, `panic.on`); `data` is an EventEnvelope.
+      parameters:
+        - { name: prefix, in: query, schema: { type: string }, description: Only events whose type starts with this }
+      responses:
+        "200": { description: Stream, content: { text/event-stream: { schema: { type: string } } } }
+
 components:
   securitySchemes:
-    apiKey:
+    bearer:
       type: http
       scheme: bearer
-      description: A Conduit API key (cdt_live_…, cdt_test_… or cdt_agent_…) or a session token.
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string } }
+    Seq: { name: seq, in: path, required: true, schema: { type: integer } }
+  responses:
+    BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthorized: { description: Not signed in or key rejected, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    Error:
+      type: object
+      required: [error]
+      properties: { error: { type: string } }
     Version:
       type: object
       required: [version, commit, date, go, os, arch]
@@ -38,5 +577,259 @@ components:
         go: { type: string }
         os: { type: string }
         arch: { type: string }
-security:
-  - apiKey: []
+    Role: { type: string, enum: [owner, admin, member, viewer] }
+    User:
+      type: object
+      required: [id, name, email, role, createdAt, disabled]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        createdAt: { type: string, format: date-time }
+        disabled: { type: boolean }
+    Session:
+      type: object
+      required: [id, userId, device, createdAt, lastSeenAt, expiresAt]
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        device: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    SessionResponse:
+      type: object
+      required: [user, session, token]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        session: { $ref: "#/components/schemas/Session" }
+        token: { type: string, description: For native clients; browsers use the cookie }
+    ActorKind: { type: string, enum: [user, agent, key, automation, system] }
+    Actor:
+      type: object
+      required: [id, kind]
+      properties:
+        id: { type: string }
+        kind: { $ref: "#/components/schemas/ActorKind" }
+        name: { type: string }
+    Risk: { type: string, enum: [read, write, destructive] }
+    ActionSpec:
+      type: object
+      required: [name, title, description, risk]
+      properties:
+        name: { type: string }
+        title: { type: string }
+        description: { type: string }
+        risk: { $ref: "#/components/schemas/Risk" }
+        input: { type: object, description: JSON Schema }
+        output: { type: object, description: JSON Schema }
+        reversible: { type: boolean }
+        dryRun: { type: boolean }
+    ResourceSpec:
+      type: object
+      required: [kind, title]
+      properties:
+        kind: { type: string }
+        title: { type: string }
+        schema: { type: object }
+        listAction: { type: string }
+        getAction: { type: string }
+        viewHint: { type: string, enum: [table, log, chart, detail] }
+    EventSpec:
+      type: object
+      required: [type, description]
+      properties:
+        type: { type: string }
+        description: { type: string }
+        schema: { type: object }
+    Manifest:
+      type: object
+      required: [id, name, version, description, actions]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        version: { type: string }
+        description: { type: string }
+        icon: { type: string }
+        category: { type: string }
+        configSchema: { type: object, description: JSON Schema for an instance's settings }
+        actions: { type: array, items: { $ref: "#/components/schemas/ActionSpec" } }
+        resources: { type: array, items: { $ref: "#/components/schemas/ResourceSpec" } }
+        events: { type: array, items: { $ref: "#/components/schemas/EventSpec" } }
+        presets: { type: array, items: { type: string } }
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, degraded, down, unconfigured] }
+        message: { type: string }
+    Instance:
+      type: object
+      required: [id, module, name, config, enabled, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        module: { type: string }
+        name: { type: string }
+        config: { type: object }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        health: { $ref: "#/components/schemas/Health" }
+    InstanceInput:
+      type: object
+      properties:
+        module: { type: string, description: Required on create }
+        name: { type: string }
+        config: { type: object }
+        enabled: { type: boolean }
+    Change:
+      type: object
+      required: [target, op]
+      properties:
+        target: { type: string }
+        op: { type: string }
+        before: {}
+        after: {}
+    Plan:
+      type: object
+      required: [summary, changes]
+      properties:
+        summary: { type: string }
+        changes: { type: array, items: { $ref: "#/components/schemas/Change" } }
+    Undo:
+      type: object
+      required: [action, input, description]
+      properties:
+        action: { type: string }
+        input: {}
+        description: { type: string }
+    Result:
+      type: object
+      properties:
+        output: {}
+        plan: { $ref: "#/components/schemas/Plan" }
+        undo: { $ref: "#/components/schemas/Undo" }
+    Decision:
+      type: object
+      required: [effect, reason]
+      properties:
+        effect: { $ref: "#/components/schemas/Effect" }
+        reason: { type: string }
+        ruleId: { type: string }
+    Effect: { type: string, enum: [allow, ask, deny] }
+    AuditEntry:
+      type: object
+      required: [seq, at, actor, module, instance, action, risk, decision, status, dryRun, input, output, prevHash, hash]
+      properties:
+        seq: { type: integer }
+        at: { type: string, format: date-time }
+        actor: { $ref: "#/components/schemas/Actor" }
+        module: { type: string }
+        instance: { type: string }
+        action: { type: string }
+        risk: { $ref: "#/components/schemas/Risk" }
+        decision: { $ref: "#/components/schemas/Effect" }
+        status: { type: string, enum: [ok, error, denied, planned] }
+        dryRun: { type: boolean }
+        input: {}
+        output: {}
+        error: { type: string }
+        undo: { $ref: "#/components/schemas/Undo" }
+        undoneBy: { type: integer }
+        undoes: { type: integer }
+        prevHash: { type: string }
+        hash: { type: string }
+    Approval:
+      type: object
+      required: [id, createdAt, actor, module, instance, action, risk, input, status, expiresAt]
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        actor: { $ref: "#/components/schemas/Actor" }
+        module: { type: string }
+        instance: { type: string }
+        action: { type: string }
+        risk: { $ref: "#/components/schemas/Risk" }
+        input: {}
+        plan: { $ref: "#/components/schemas/Plan" }
+        status: { type: string, enum: [pending, approved, denied, expired] }
+        decidedBy: { type: string }
+        decidedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    Outcome:
+      type: object
+      required: [result, decision, audit]
+      properties:
+        result: { $ref: "#/components/schemas/Result" }
+        decision: { $ref: "#/components/schemas/Decision" }
+        audit: { $ref: "#/components/schemas/AuditEntry" }
+        approval: { $ref: "#/components/schemas/Approval" }
+    Preset: { type: string, enum: [read-only, ask-writes, ask-destructive, full-autonomy] }
+    Rule:
+      type: object
+      required: [effect]
+      properties:
+        id: { type: string }
+        position: { type: integer }
+        subject: { type: string, description: '"*", "kind:agent" or "<kind>:<id>"' }
+        module: { type: string }
+        instance: { type: string }
+        action: { type: string }
+        risk: { type: string }
+        effect: { $ref: "#/components/schemas/Effect" }
+        expiresAt: { type: string, format: date-time }
+        note: { type: string }
+    Policy:
+      type: object
+      required: [preset, presets, frozen, rules]
+      properties:
+        preset: { $ref: "#/components/schemas/Preset" }
+        presets: { type: array, items: { $ref: "#/components/schemas/Preset" } }
+        frozen: { type: boolean }
+        rules: { type: array, items: { $ref: "#/components/schemas/Rule" } }
+    KeyKind: { type: string, enum: [live, test, agent] }
+    ApiKey:
+      type: object
+      required: [id, name, kind, prefix, ownerId, scopes, ipAllow, ratePerMin, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/KeyKind" }
+        prefix: { type: string, description: Safe to display, e.g. cdt_live_5kq2m8x4c1v7 }
+        ownerId: { type: string }
+        scopes: { type: array, items: { type: string } }
+        ipAllow: { type: array, items: { type: string } }
+        ratePerMin: { type: integer }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time }
+        revokeReason: { type: string }
+        rotatedTo: { type: string }
+        graceUntil: { type: string, format: date-time }
+    NewKey:
+      type: object
+      required: [name, scopes]
+      properties:
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/KeyKind" }
+        scopes: { type: array, items: { type: string }, description: 'See docs/api/keys.md, e.g. "actions:*:invoke"' }
+        ipAllow: { type: array, items: { type: string }, description: IPs or CIDR ranges }
+        ratePerMin: { type: integer, default: 120 }
+        expiresAt: { type: string, format: date-time }
+    CreatedKey:
+      type: object
+      required: [key, secret]
+      properties:
+        key: { $ref: "#/components/schemas/ApiKey" }
+        secret: { type: string, description: The full key. Shown exactly once. }
+    EventEnvelope:
+      type: object
+      required: [type, module, at]
+      properties:
+        type: { type: string }
+        module: { type: string }
+        instance: { type: string }
+        data: {}
+        at: { type: string, format: date-time }

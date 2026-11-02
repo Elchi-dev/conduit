@@ -1,10 +1,12 @@
 // Package daemon wires the Conduit daemon together: storage, the module
-// registry, the permission engine and the HTTP surface.
+// engine, accounts and keys, and the HTTP surface.
 package daemon
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/version"
 )
@@ -32,30 +35,75 @@ func DefaultConfig() Config {
 	return Config{Listen: "127.0.0.1:7600", DataDir: filepath.Join(dir, "conduit")}
 }
 
+// App is a running daemon's parts, exposed so modules and tests can be
+// registered before serving.
+type App struct {
+	Store  *core.Store
+	Engine *core.Engine
+	Auth   *auth.Service
+	Server *Server
+}
+
+// Open prepares a daemon in dataDir without serving it.
+func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return nil, err
+	}
+	store, err := core.OpenStore(ctx, filepath.Join(dataDir, "conduit.db"))
+	if err != nil {
+		return nil, err
+	}
+	engine := core.NewEngine(store, log)
+	authSvc := auth.New(store)
+	app := &App{Store: store, Engine: engine, Auth: authSvc, Server: &Server{Engine: engine, Auth: authSvc, Log: log}}
+
+	n, err := authSvc.UserCount(ctx)
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	if n == 0 {
+		tok := randomHex(16)
+		app.Server.SetupToken = tok
+		path := filepath.Join(dataDir, "setup-token")
+		if err := os.WriteFile(path, []byte(tok+"\n"), 0o600); err != nil {
+			log.Warn("could not write setup token file", "err", err)
+		}
+		log.Info("first start: create the owner account with this setup token", "token", tok, "file", path)
+	} else {
+		_ = os.Remove(filepath.Join(dataDir, "setup-token"))
+	}
+	return app, nil
+}
+
+// Close releases the daemon's resources.
+func (a *App) Close() {
+	a.Engine.Close()
+	a.Store.Close()
+}
+
 // Run starts the daemon and blocks until ctx is cancelled.
 func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
-	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
-		return err
-	}
-	store, err := core.OpenStore(ctx, filepath.Join(cfg.DataDir, "conduit.db"))
+	app, err := Open(ctx, cfg.DataDir, log)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
-	engine := core.NewEngine(store, log)
-	externals := engine.LoadExternalDir(ctx, filepath.Join(cfg.DataDir, "modules"))
+	defer app.Close()
+	registerBuiltins(app)
+	externals := app.Engine.LoadExternalDir(ctx, filepath.Join(cfg.DataDir, "modules"))
 	defer func() {
-		engine.Close()
 		for _, x := range externals {
 			_ = x.Stop()
 		}
 	}()
-	if err := engine.Start(ctx); err != nil {
+	if err := app.Engine.Start(ctx); err != nil {
 		return err
 	}
+	go housekeeping(ctx, app)
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           Routes(),
+		Handler:           app.Server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)
@@ -75,20 +123,28 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	}
 }
 
-// Routes returns the daemon's HTTP handler.
-func Routes() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
-	mux.HandleFunc("GET /api/v1/version", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, version.Get())
-	})
-	return mux
+// registerBuiltins adds the compiled-in modules. Filled in as modules land.
+func registerBuiltins(app *App) {}
+
+func housekeeping(ctx context.Context, app *App) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			_ = app.Auth.PruneUsage(ctx)
+		}
+	}
 }
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
+
+func constantEq(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }

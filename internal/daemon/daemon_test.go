@@ -1,23 +1,397 @@
 package daemon
 
 import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
+	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
-func TestHealthz(t *testing.T) {
-	rec := httptest.NewRecorder()
-	Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+type lamp struct {
+	mu sync.Mutex
+	on bool
+}
+
+func (l *lamp) Manifest() sdk.Manifest {
+	return sdk.Manifest{ID: "lamp", Name: "Lamp", Version: "1.0.0", Actions: []sdk.ActionSpec{
+		{Name: "status", Risk: sdk.RiskRead},
+		{Name: "toggle", Risk: sdk.RiskWrite, Reversible: true, DryRun: true},
+	}}
+}
+func (l *lamp) Configure(context.Context, sdk.Host, string, json.RawMessage) error { return nil }
+func (l *lamp) Health(context.Context, string) sdk.Health                          { return sdk.Health{Status: "ok"} }
+func (l *lamp) Close(string) error                                                 { return nil }
+func (l *lamp) Invoke(_ context.Context, c sdk.Call) (sdk.Result, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if c.Action == "status" {
+		b, _ := json.Marshal(l.on)
+		return sdk.Result{Output: b}, nil
+	}
+	if c.DryRun {
+		return sdk.Result{Plan: &sdk.Plan{Summary: "toggle"}}, nil
+	}
+	l.on = !l.on
+	return sdk.Result{Undo: &sdk.Undo{Action: "toggle", Description: "toggle back"}}, nil
+}
+
+type client struct {
+	t     *testing.T
+	base  string
+	token string
+}
+
+func (c client) do(method, path string, body any, out any) int {
+	c.t.Helper()
+	var r io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		r = bytes.NewReader(b)
+	}
+	req, _ := http.NewRequest(method, c.base+path, r)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if out != nil {
+		_ = json.NewDecoder(res.Body).Decode(out)
+	}
+	return res.StatusCode
+}
+
+func setup(t *testing.T) (*App, client, *lamp, string) {
+	t.Helper()
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	app, err := Open(ctx, t.TempDir(), log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Close)
+	l := &lamp{}
+	_ = app.Engine.Register(l)
+	srv := httptest.NewServer(app.Server.Handler())
+	t.Cleanup(srv.Close)
+	c := client{t: t, base: srv.URL}
+
+	var st map[string]bool
+	c.do("GET", "/api/v1/setup", nil, &st)
+	if !st["needsSetup"] {
+		t.Fatal("fresh daemon should need setup")
+	}
+	if code := c.do("POST", "/api/v1/setup", map[string]string{"token": "wrong", "email": "a@b.co", "password": "correct horse"}, nil); code != 403 {
+		t.Fatalf("setup with wrong token = %d", code)
+	}
+	var sess sessionResp
+	if code := c.do("POST", "/api/v1/setup", map[string]string{"token": app.Server.SetupToken, "name": "Owner", "email": "owner@example.com", "password": "correct horse"}, &sess); code != 201 {
+		t.Fatalf("setup = %d", code)
+	}
+	if code := c.do("POST", "/api/v1/setup", map[string]string{"token": app.Server.SetupToken, "email": "x@example.com", "password": "correct horse"}, nil); code != 409 {
+		t.Fatalf("second setup = %d, want 409", code)
+	}
+	c.token = sess.Token
+	var in core.Instance
+	if code := c.do("POST", "/api/v1/instances", map[string]any{"module": "lamp", "name": "Desk lamp"}, &in); code != 201 {
+		t.Fatalf("create instance = %d", code)
+	}
+	return app, c, l, in.ID
+}
+
+func TestHealthzAndVersion(t *testing.T) {
+	_, c, _, _ := setup(t)
+	if code := c.do("GET", "/healthz", nil, nil); code != 200 {
+		t.Fatalf("healthz = %d", code)
+	}
+	var v map[string]string
+	c.do("GET", "/api/v1/version", nil, &v)
+	if v["version"] == "" {
+		t.Fatal("no version")
 	}
 }
 
-func TestVersion(t *testing.T) {
-	rec := httptest.NewRecorder()
-	Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/version", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+func TestUnauthenticated(t *testing.T) {
+	_, c, _, _ := setup(t)
+	c.token = ""
+	if code := c.do("GET", "/api/v1/modules", nil, nil); code != 401 {
+		t.Fatalf("modules without auth = %d", code)
+	}
+	c.token = "cdt_live_nope_nope"
+	if code := c.do("GET", "/api/v1/modules", nil, nil); code != 401 {
+		t.Fatalf("modules with bogus key = %d", code)
+	}
+}
+
+func TestLoginAndInvokeAsUser(t *testing.T) {
+	_, c, l, id := setup(t)
+	var sess sessionResp
+	c2 := client{t: t, base: c.base}
+	if code := c2.do("POST", "/api/v1/auth/login", map[string]string{"email": "owner@example.com", "password": "wrong password"}, nil); code != 401 {
+		t.Fatalf("bad login = %d", code)
+	}
+	if code := c2.do("POST", "/api/v1/auth/login", map[string]string{"email": "OWNER@example.com", "password": "correct horse"}, &sess); code != 200 {
+		t.Fatalf("login = %d", code)
+	}
+	c2.token = sess.Token
+	var out core.Outcome
+	if code := c2.do("POST", "/api/v1/instances/"+id+"/actions/toggle", map[string]any{}, &out); code != 200 {
+		t.Fatalf("toggle = %d", code)
+	}
+	if !l.on || out.Audit.Undo == nil {
+		t.Fatalf("lamp not on or no undo: %+v", out.Audit)
+	}
+	if code := c2.do("POST", "/api/v1/audit/"+itoa(out.Audit.Seq)+"/undo", nil, nil); code != 200 {
+		t.Fatalf("undo = %d", code)
+	}
+	if l.on {
+		t.Fatal("undo did not toggle back")
+	}
+	var v core.VerifyResult
+	c2.do("GET", "/api/v1/audit/verify", nil, &v)
+	if !v.OK {
+		t.Fatalf("audit chain broken: %+v", v)
+	}
+	if code := c2.do("POST", "/api/v1/auth/logout", nil, nil); code != 204 {
+		t.Fatalf("logout = %d", code)
+	}
+	if code := c2.do("GET", "/api/v1/me", nil, nil); code != 401 {
+		t.Fatalf("me after logout = %d", code)
+	}
+}
+
+func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+type keyResp struct {
+	Key struct {
+		ID     string `json:"id"`
+		Prefix string `json:"prefix"`
+	} `json:"key"`
+	Secret string `json:"secret"`
+}
+
+func TestAgentKeyApprovalFlow(t *testing.T) {
+	_, c, l, id := setup(t)
+	// Agent keys may not hold scopes that let them approve themselves.
+	if code := c.do("POST", "/api/v1/keys", map[string]any{"name": "bad", "kind": "agent", "scopes": []string{"admin:*:*"}}, nil); code != 400 {
+		t.Fatalf("agent admin key = %d, want 400", code)
+	}
+	var k keyResp
+	if code := c.do("POST", "/api/v1/keys", map[string]any{"name": "desktop agent", "kind": "agent", "scopes": []string{"actions:*:invoke", "modules:*:read", "approvals:*:read"}}, &k); code != 201 {
+		t.Fatalf("create key = %d", code)
+	}
+	if !strings.HasPrefix(k.Secret, "cdt_agent_") || !strings.HasPrefix(k.Secret, k.Key.Prefix+"_") {
+		t.Fatalf("bad key format %q / %q", k.Secret, k.Key.Prefix)
+	}
+	agent := client{t: t, base: c.base, token: k.Secret}
+
+	// Reads pass; writes wait for approval (default preset ask-writes).
+	if code := agent.do("POST", "/api/v1/instances/"+id+"/actions/status", nil, nil); code != 200 {
+		t.Fatalf("agent read = %d", code)
+	}
+	var pending core.Outcome
+	if code := agent.do("POST", "/api/v1/instances/"+id+"/actions/toggle", map[string]any{}, &pending); code != 202 || pending.Approval == nil {
+		t.Fatalf("agent write = %d, approval %v", code, pending.Approval)
+	}
+	if pending.Approval.Plan == nil {
+		t.Fatal("approval should include the dry-run plan")
+	}
+	// The agent cannot approve, even though it can see approvals.
+	if code := agent.do("POST", "/api/v1/approvals/"+pending.Approval.ID+"/approve", nil, nil); code != 403 {
+		t.Fatalf("agent self-approve = %d", code)
+	}
+	if code := c.do("POST", "/api/v1/approvals/"+pending.Approval.ID+"/approve", nil, nil); code != 200 {
+		t.Fatalf("owner approve = %d", code)
+	}
+	// Non-waiting calls don't execute after approval; the agent retries.
+	// (Waiting calls are covered in core tests.) Allow agent writes by rule:
+	if code := c.do("POST", "/api/v1/policy/rules", map[string]any{"subject": "agent:" + k.Key.ID, "module": "lamp", "effect": "allow"}, nil); code != 200 {
+		t.Fatalf("put rule = %d", code)
+	}
+	if code := agent.do("POST", "/api/v1/instances/"+id+"/actions/toggle", map[string]any{}, nil); code != 200 {
+		t.Fatalf("agent write with rule = %d", code)
+	}
+	if !l.on {
+		t.Fatal("lamp should be on")
+	}
+	// Agents cannot change policy.
+	if code := agent.do("PUT", "/api/v1/policy/preset", map[string]string{"preset": "full-autonomy"}, nil); code != 403 {
+		t.Fatalf("agent change preset = %d", code)
+	}
+	var usage []map[string]any
+	c.do("GET", "/api/v1/keys/"+k.Key.ID+"/usage", nil, &usage)
+	if len(usage) < 3 {
+		t.Fatalf("usage not recorded: %d", len(usage))
+	}
+}
+
+func TestPanicRevokesAgentKeys(t *testing.T) {
+	_, c, _, id := setup(t)
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "agent", "kind": "agent", "scopes": []string{"actions:*:invoke"}}, &k)
+	var live keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "script", "kind": "live", "scopes": []string{"actions:*:invoke"}}, &live)
+
+	var pr panicResp
+	if code := c.do("POST", "/api/v1/panic", nil, &pr); code != 200 || pr.RevokedAgentKeys != 1 {
+		t.Fatalf("panic = %d %+v", code, pr)
+	}
+	agent := client{t: t, base: c.base, token: k.Secret}
+	if code := agent.do("POST", "/api/v1/instances/"+id+"/actions/status", nil, nil); code != 401 {
+		t.Fatalf("agent after panic = %d, want 401", code)
+	}
+	script := client{t: t, base: c.base, token: live.Secret}
+	if code := script.do("POST", "/api/v1/instances/"+id+"/actions/status", nil, nil); code != 403 {
+		t.Fatalf("live key during panic = %d, want 403 (frozen)", code)
+	}
+	if code := script.do("DELETE", "/api/v1/panic", nil, nil); code != 403 {
+		t.Fatalf("key lifting panic = %d", code)
+	}
+	if code := c.do("DELETE", "/api/v1/panic", nil, nil); code != 200 {
+		t.Fatalf("owner unpanic = %d", code)
+	}
+	if code := script.do("POST", "/api/v1/instances/"+id+"/actions/status", nil, nil); code != 200 {
+		t.Fatalf("live key after unpanic = %d", code)
+	}
+}
+
+func TestKeyRotationAndScopes(t *testing.T) {
+	_, c, _, id := setup(t)
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "ro", "kind": "test", "scopes": []string{"modules:*:read"}, "ipAllow": []string{"127.0.0.1"}}, &k)
+	ro := client{t: t, base: c.base, token: k.Secret}
+	if code := ro.do("GET", "/api/v1/instances", nil, nil); code != 200 {
+		t.Fatalf("scoped read = %d", code)
+	}
+	if code := ro.do("POST", "/api/v1/instances/"+id+"/actions/status", nil, nil); code != 403 {
+		t.Fatalf("missing invoke scope = %d", code)
+	}
+	var rotated keyResp
+	if code := c.do("POST", "/api/v1/keys/"+k.Key.ID+"/rotate", map[string]int{"graceSeconds": 1}, &rotated); code != 201 {
+		t.Fatalf("rotate = %d", code)
+	}
+	if code := ro.do("GET", "/api/v1/instances", nil, nil); code != 200 {
+		t.Fatalf("old key inside grace = %d", code)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if code := ro.do("GET", "/api/v1/instances", nil, nil); code != 401 {
+		t.Fatalf("old key after grace = %d", code)
+	}
+	nw := client{t: t, base: c.base, token: rotated.Secret}
+	if code := nw.do("GET", "/api/v1/instances", nil, nil); code != 200 {
+		t.Fatalf("new key = %d", code)
+	}
+	if code := c.do("DELETE", "/api/v1/keys/"+rotated.Key.ID, nil, nil); code != 204 {
+		t.Fatalf("revoke = %d", code)
+	}
+	if code := nw.do("GET", "/api/v1/instances", nil, nil); code != 401 {
+		t.Fatalf("revoked key = %d", code)
+	}
+}
+
+func TestIPAllowList(t *testing.T) {
+	_, c, _, _ := setup(t)
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "far", "scopes": []string{"modules:*:read"}, "ipAllow": []string{"10.0.0.0/8"}}, &k)
+	far := client{t: t, base: c.base, token: k.Secret}
+	if code := far.do("GET", "/api/v1/modules", nil, nil); code != 401 {
+		t.Fatalf("request from outside allow-list = %d", code)
+	}
+}
+
+func TestEventsStream(t *testing.T) {
+	_, c, _, id := setup(t)
+	req, _ := http.NewRequest("GET", c.base+"/api/v1/events?prefix=action.", nil)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	br := bufio.NewReader(res.Body)
+	if line, _ := br.ReadString('\n'); !strings.HasPrefix(line, ": connected") {
+		t.Fatalf("first line %q", line)
+	}
+	go c.do("POST", "/api/v1/instances/"+id+"/actions/status", nil, nil)
+	done := make(chan string, 1)
+	go func() {
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if strings.HasPrefix(line, "event: ") {
+				done <- strings.TrimSpace(line[7:])
+				return
+			}
+		}
+	}()
+	select {
+	case ev := <-done:
+		if ev != "action.ok" {
+			t.Fatalf("event %q", ev)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no event")
+	}
+}
+
+// TestRoutesMatchOpenAPI keeps the spec the source of truth: every route the
+// daemon serves must be documented, and every documented path must exist.
+func TestRoutesMatchOpenAPI(t *testing.T) {
+	spec, err := os.ReadFile("../../api/openapi/daemon.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	documented := map[string]bool{}
+	pathRe := regexp.MustCompile(`^  (/\S*):\s*$`)
+	methodRe := regexp.MustCompile(`^    (get|post|put|delete|patch):\s*$`)
+	var cur string
+	for _, line := range strings.Split(string(spec), "\n") {
+		if m := pathRe.FindStringSubmatch(line); m != nil {
+			cur = m[1]
+			continue
+		}
+		if m := methodRe.FindStringSubmatch(line); m != nil && cur != "" {
+			documented[strings.ToUpper(m[1])+" "+cur] = true
+		}
+		if !strings.HasPrefix(line, "  ") && strings.TrimSpace(line) != "" {
+			cur = ""
+		}
+	}
+	served := map[string]bool{}
+	for _, r := range (&Server{}).routes() {
+		method, path, _ := strings.Cut(r.pattern, " ")
+		if path == "/healthz" {
+			continue
+		}
+		path = strings.TrimPrefix(path, "/api/v1")
+		served[method+" "+path] = true
+		if !documented[method+" "+path] {
+			t.Errorf("route %s %s is not in api/openapi/daemon.yaml", method, path)
+		}
+	}
+	for d := range documented {
+		if !served[d] {
+			t.Errorf("documented %s is not served", d)
+		}
 	}
 }

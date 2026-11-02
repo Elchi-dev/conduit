@@ -3,6 +3,32 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 3 — daemon API, accounts and API keys
+
+**Landed**
+
+- Local accounts with roles (owner, admin, member, viewer), Argon2id
+  passwords, sessions (token for native clients, HttpOnly cookie for
+  browsers), session list and sign-out, password change.
+- First-start setup guarded by a one-time token in the log and
+  `<data>/setup-token`.
+- API keys: `live`, `test` and `agent` kinds; scopes; IP allow-lists;
+  per-key rate limits; expiry; rotation with a grace period; revocation;
+  30-day usage log. Secrets hashed, shown once.
+- The full daemon REST API (modules, instances, actions with dry runs,
+  audit and undo, approvals, policy, panic, keys) and a server-sent event
+  stream. Spec in `api/openapi/daemon.yaml`; a test keeps routes and spec in
+  sync.
+- Panic button (signature feature 5): one call freezes everything, denies
+  pending approvals, revokes agent keys and ends other sessions.
+- Hard rules independent of scopes: only people decide approvals, change
+  policy, create keys or lift panic.
+
+**Changed from plan**
+
+- Server-sent events instead of WebSockets, and hand-written handlers with a
+  spec-parity test instead of generated stubs (ADR 0003).
+
 ## 2026-11-03 · Phase 2 — core
 
 **Landed**

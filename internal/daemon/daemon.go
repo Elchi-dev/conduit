@@ -20,6 +20,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/ui"
 	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
+	"github.com/elchi-dev/conduit/modules/notify"
 )
 
 // Config holds daemon settings.
@@ -45,6 +46,7 @@ type App struct {
 	Engine *core.Engine
 	Auth   *auth.Service
 	Vault  *vault.Vault
+	Notify *notify.Module
 	Server *Server
 }
 
@@ -115,6 +117,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		return err
 	}
 	go housekeeping(ctx, app)
+	go forwardAlerts(ctx, app)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

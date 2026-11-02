@@ -1,7 +1,10 @@
 package daemon
 
 import (
+	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/docker"
+	"github.com/elchi-dev/conduit/modules/mail"
+	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/system"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
@@ -10,11 +13,17 @@ import (
 
 // builtins lists the modules compiled into the daemon.
 func builtins(app *App) []sdk.Module {
+	if app.Notify == nil {
+		app.Notify = notify.New()
+	}
 	return []sdk.Module{
 		&vaultmod.Module{V: app.Vault},
 		&system.Module{},
 		servers.New(),
 		docker.New(),
+		mail.New(),
+		calendar.New(),
+		app.Notify,
 	}
 }
 

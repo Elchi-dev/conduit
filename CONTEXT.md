@@ -13,12 +13,13 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 6 of 16 (system, servers, Docker) — done 2026-11-03.
+- **Phase:** 7 of 16 (mail, calendar, notifications) — done 2026-11-03.
 - **Works today:** core engine; accounts, sessions, API keys; daemon REST API
-  and events; the web app; built-in modules vault, this computer, servers
-  over SSH and Docker (`internal/daemon/builtins.go`).
-- **Next:** phase 7, mail (IMAP/SMTP for any provider), calendar (CalDAV,
-  ICS) and notifications (ntfy, Telegram, Discord, email, desktop).
+  and events; the web app; built-in modules vault, this computer, servers,
+  Docker, mail, calendar and notifications; approval forwarding to phones.
+- **Next:** phase 8, metrics (Grafana and Prometheus), HTTP checks and
+  webhooks, automations (schedules, event triggers, action chains) and the
+  daily brief.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

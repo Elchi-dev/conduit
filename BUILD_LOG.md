@@ -3,6 +3,29 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 7 — mail, calendar and notifications
+
+**Landed**
+
+- **Mail** over IMAP/SMTP with provider presets (Gmail, Outlook, iCloud,
+  Fastmail, Yahoo, Proton Bridge, custom): inbox, search, read (HTML
+  converted to text, never rendered), folders, read/unread/flag (undoable),
+  move (undo moves back using the server's new UID), drafts, send with dry
+  run and threading. Optional new-mail events. Tested against an in-memory
+  IMAP server.
+- **Calendar** over CalDAV (read and write) or private ICS feeds (read):
+  today, agenda with recurrence expansion, calendars, create (undo deletes),
+  delete within your own calendars.
+- **Notifications**: ntfy, Telegram, Discord, Slack, signed webhook and
+  desktop channels with minimum priority.
+- Approval requests and emergency stops are forwarded to every channel that
+  opts in, with a link to the approvals screen (tested end to end).
+
+**Changed from plan**
+
+- OAuth sign-in for Gmail and Outlook is not in v0.1.0; app passwords work
+  today, as planned. Google Calendar is read through its private ICS address.
+
 ## 2026-11-03 · Phase 6 — this computer, servers and Docker
 
 **Landed**

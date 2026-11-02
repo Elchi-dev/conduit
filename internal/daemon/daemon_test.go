@@ -442,3 +442,36 @@ func TestVaultSecretsNeverLogged(t *testing.T) {
 		t.Fatal("panic should lock the vault")
 	}
 }
+
+func TestApprovalForwardedToChannel(t *testing.T) {
+	app, c, _, id := setup(t)
+	if err := registerBuiltins(app); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 4)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got <- string(b)
+	}))
+	defer hook.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go forwardAlerts(ctx, app)
+	time.Sleep(50 * time.Millisecond)
+
+	if code := c.do("POST", "/api/v1/instances", map[string]any{"module": "notify", "name": "Phone", "config": map[string]any{"channel": "webhook", "url": hook.URL, "approvals": true, "appUrl": "http://pc:7600"}}, nil); code != 201 {
+		t.Fatalf("create channel = %d", code)
+	}
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "a", "kind": "agent", "scopes": []string{"actions:*:invoke"}}, &k)
+	agent := client{t: t, base: c.base, token: k.Secret}
+	agent.do("POST", "/api/v1/instances/"+id+"/actions/toggle", map[string]any{}, nil)
+	select {
+	case body := <-got:
+		if !strings.Contains(body, "Approval needed") || !strings.Contains(body, "http://pc:7600/approvals") {
+			t.Fatalf("unexpected notification: %s", body)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("approval was not forwarded")
+	}
+}

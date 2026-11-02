@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: Conduit Hub API
+  version: 0.1.0
+  description: |
+    The hub API covers accounts, organizations, devices, the module registry,
+    webhooks and the update feed. Every hub is independent: accounts are not
+    shared between hub operators. See docs/protocol/README.md.
+servers:
+  - url: https://hub.example.com/v1
+paths:
+  /version:
+    get:
+      operationId: getHubVersion
+      summary: Build information of the hub
+      tags: [system]
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+  schemas:
+    Version:
+      type: object
+      required: [version, commit, date, go, os, arch]
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        date: { type: string }
+        go: { type: string }
+        os: { type: string }
+        arch: { type: string }
+security:
+  - apiKey: []

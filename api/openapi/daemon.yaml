@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: Conduit Daemon API
+  version: 0.1.0
+  description: |
+    The daemon API exposes every module action, resource and event.
+    It is the single source of truth: Go handlers and the TypeScript client
+    are generated from this file. See docs/api/README.md.
+servers:
+  - url: http://127.0.0.1:7600/api/v1
+paths:
+  /version:
+    get:
+      operationId: getVersion
+      summary: Build information of the running daemon
+      tags: [system]
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: A Conduit API key (cdt_live_…, cdt_test_… or cdt_agent_…) or a session token.
+  schemas:
+    Version:
+      type: object
+      required: [version, commit, date, go, os, arch]
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        date: { type: string }
+        go: { type: string }
+        os: { type: string }
+        arch: { type: string }
+security:
+  - apiKey: []

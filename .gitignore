@@ -1,0 +1,31 @@
+# Go
+/bin/
+/dist/
+*.test
+coverage.out
+
+# Node
+node_modules/
+web/dist/
+site/dist/
+.astro/
+
+# Rust / Tauri
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/schemas/
+
+# Local data and secrets
+*.db
+*.db-wal
+*.db-shm
+*.keystore
+*.jks
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

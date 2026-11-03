@@ -1,0 +1,337 @@
+---
+import Base from "../../layouts/Base.astro";
+import { apis, md, tagTitle, typeHTML, type Prop } from "../../lib/openapi";
+
+export function getStaticPaths() {
+  return apis.map((a) => ({ params: { api: a.slug } }));
+}
+
+const api = apis.find((a) => a.slug === Astro.params.api)!;
+const names = new Set(api.schemas.map((s) => s.name));
+const t = (s: string) => typeHTML(s, names);
+const used = (props: Prop[]) => props.length > 0;
+---
+<Base page="api" title={api.title} description={`${api.title} reference, generated from its OpenAPI spec.`}>
+  <div class="wrap ref">
+    <nav class="toc" aria-label={api.title}>
+      <a class="toc-back" href="/api/">All APIs</a>
+      {api.groups.map((g) => (
+        <div class="toc-group">
+          <a class="toc-head" href={`#tag-${g.tag}`}>{tagTitle(g.tag)}</a>
+          <ul>
+            {g.ops.map((o) => (
+              <li><a href={`#${o.id}`}><span class={`m m-${o.method.toLowerCase()}`}>{o.method}</span> {o.summary || o.path}</a></li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      <div class="toc-group"><a class="toc-head" href="#schemas">Schemas</a></div>
+    </nav>
+
+    <article class="prose main">
+      <h1>{api.title}</h1>
+      <p class="facts">
+        Base URL <code>{api.server}</code>, version <span class="data">{api.version}</span>
+      </p>
+      <Fragment set:html={md(api.description, names)} />
+
+      {api.groups.map((g) => (
+        <section class="tag" id={`tag-${g.tag}`}>
+          <h2>{tagTitle(g.tag)}</h2>
+          {g.ops.map((o) => (
+            <div class="op" id={o.id}>
+              <h3 class="op-line">
+                <span class={`m m-${o.method.toLowerCase()}`}>{o.method}</span>
+                <code class="path">{o.path}</code>
+                <a class="pin" href={`#${o.id}`} aria-label={`Link to ${o.method} ${o.path}`}>#</a>
+              </h3>
+              {o.summary && <p class="summary">{o.summary}</p>}
+              {o.description && <Fragment set:html={md(o.description, names)} />}
+              {!o.auth && <p class="note-line">No authentication needed.</p>}
+
+              {o.params.length > 0 && (
+                <>
+                  <h4>Parameters</h4>
+                  <table>
+                    <thead><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr></thead>
+                    <tbody>
+                      {o.params.map((p) => (
+                        <tr>
+                          <td><code>{p.name}</code>{p.required && <span class="req">required</span>}</td>
+                          <td>{p.in}</td>
+                          <td class="ty" set:html={t(p.type)} />
+                          <td set:html={md(p.description, names)} />
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              {o.body && (
+                <>
+                  <h4>
+                    Request body{o.body.ref ? <>: <a href={`#schema-${o.body.ref}`}>{o.body.ref}</a></> : !used(o.body.props) && o.body.type ? <>: <span class="ty" set:html={t(o.body.type)} /></> : null}
+                    {!o.body.required && <span class="opt">optional</span>}
+                  </h4>
+                  {o.body.description && <Fragment set:html={md(o.body.description, names)} />}
+                  {used(o.body.props) && (
+                    <table>
+                      <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+                      <tbody>
+                        {o.body.props.map((p) => (
+                          <tr class={p.depth ? "nested" : undefined}>
+                            <td><code>{p.name}</code>{p.required && <span class="req">required</span>}</td>
+                            <td class="ty" set:html={t(p.type)} />
+                            <td set:html={md(p.description, names)} />
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
+
+              <h4>Responses</h4>
+              <ul class="resps">
+                {o.responses.map((r) => (
+                  <li>
+                    <span class={`st st-${r.status[0]}`}>{r.status}</span>
+                    <span>{r.description}</span>
+                    {r.type && <span class="ty" set:html={t(r.type)} />}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      ))}
+
+      <section class="tag" id="schemas">
+        <h2>Schemas</h2>
+        {api.schemas.map((s) => (
+          <div class="schema" id={`schema-${s.name}`}>
+            <h3 class="op-line"><code class="path">{s.name}</code><a class="pin" href={`#schema-${s.name}`} aria-label={`Link to ${s.name}`}>#</a></h3>
+            {s.description && <Fragment set:html={md(s.description, names)} />}
+            {s.props.length > 0 ? (
+              <table>
+                <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+                <tbody>
+                  {s.props.map((p) => (
+                    <tr class={p.depth ? "nested" : undefined}>
+                      <td><code>{p.name}</code>{p.required && <span class="req">required</span>}</td>
+                      <td class="ty" set:html={t(p.type)} />
+                      <td set:html={md(p.description, names)} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p class="ty" set:html={t(s.type)} />
+            )}
+          </div>
+        ))}
+      </section>
+    </article>
+  </div>
+</Base>
+<style>
+  .ref {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 56px;
+    padding-top: 40px;
+    padding-bottom: 40px;
+  }
+  .toc {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    font-size: 14px;
+    padding-right: 4px;
+  }
+  .toc-back {
+    display: block;
+    color: var(--muted);
+    text-decoration: none;
+    margin-bottom: 16px;
+  }
+  .toc-back:hover {
+    color: var(--ink);
+  }
+  .toc-group + .toc-group {
+    margin-top: 16px;
+  }
+  .toc-head {
+    font-weight: 700;
+    text-decoration: none;
+    font-size: 15px;
+  }
+  .toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 6px 0 0;
+    display: grid;
+    gap: 3px;
+  }
+  .toc ul a {
+    color: var(--muted);
+    text-decoration: none;
+    display: grid;
+    grid-template-columns: 52px 1fr;
+    align-items: baseline;
+    line-height: 1.35;
+  }
+  .toc ul a:hover {
+    color: var(--ink);
+  }
+  .m {
+    font-family: var(--font-data);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+  .m-post,
+  .m-put,
+  .m-patch {
+    color: var(--signal);
+  }
+  .m-delete {
+    color: var(--fault);
+  }
+  .main {
+    max-width: 82ch;
+  }
+  .facts {
+    color: var(--muted);
+  }
+  .tag {
+    margin-top: 56px;
+  }
+  .tag > h2 {
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  .op,
+  .schema {
+    padding: 22px 0 18px;
+    border-bottom: 1px solid var(--line);
+    scroll-margin-top: 16px;
+  }
+  .op-line {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 0 0 6px !important;
+    font-size: 17px !important;
+  }
+  .op-line .m {
+    font-size: 13px;
+    min-width: 48px;
+  }
+  .op-line .path {
+    background: none !important;
+    padding: 0 !important;
+    font-size: 16px;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+  .pin {
+    color: var(--muted) !important;
+    text-decoration: none !important;
+    font-weight: 400;
+    opacity: 0;
+  }
+  .op:hover .pin,
+  .schema:hover .pin,
+  .pin:focus-visible {
+    opacity: 1;
+  }
+  .summary {
+    color: var(--ink) !important;
+    margin: 0 0 8px;
+  }
+  .note-line {
+    font-size: 15px;
+    color: var(--muted) !important;
+  }
+  h4 {
+    font-size: 15px;
+    margin: 18px 0 6px;
+    color: var(--ink);
+  }
+  .opt {
+    margin-left: 8px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .req {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .main table {
+    margin: 6px 0 10px !important;
+    font-size: 14.5px !important;
+  }
+  .main td :global(p) {
+    margin: 0;
+  }
+  .main td :global(p + p) {
+    margin-top: 6px;
+  }
+  .ty {
+    font-family: var(--font-data);
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .ty :global(a) {
+    color: var(--ink);
+  }
+  tr.nested td:first-child {
+    padding-left: 14px;
+  }
+  .resps {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 0;
+    display: grid;
+    gap: 4px;
+    font-size: 15px;
+  }
+  .resps li {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    color: var(--ink-2);
+  }
+  .st {
+    font-family: var(--font-data);
+    font-size: 13px;
+    min-width: 34px;
+  }
+  .st-2 {
+    color: var(--ok);
+  }
+  .st-4,
+  .st-5 {
+    color: var(--fault);
+  }
+  @media (max-width: 900px) {
+    .ref {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    .toc {
+      position: static;
+      max-height: 320px;
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      padding: 14px 16px;
+    }
+  }
+</style>

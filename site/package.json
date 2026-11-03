@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "copy-scripts": "node -e \"for (const f of ['install.sh','install.ps1']) require('fs').copyFileSync('../scripts/'+f, 'public/'+f)\"",
+    "build": "pnpm run copy-scripts && astro build",
     "preview": "astro preview"
   },
   "dependencies": {
@@ -18,5 +19,8 @@
       "esbuild",
       "sharp"
     ]
+  },
+  "devDependencies": {
+    "yaml": "2.6.1"
   }
 }

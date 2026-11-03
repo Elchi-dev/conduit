@@ -32,6 +32,7 @@ tags:
   - name: assistant
   - name: keys
   - name: events
+  - name: webhooks
 paths:
   /version:
     get:

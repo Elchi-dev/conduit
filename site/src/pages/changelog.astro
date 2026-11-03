@@ -1,0 +1,103 @@
+---
+import Base from "../layouts/Base.astro";
+import { releases } from "../lib/releases";
+
+const rendered = await Promise.all(releases.map(async (r) => ({ ...r, body: await r.html() })));
+const fmt = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+---
+<Base page="changelog" title="Changelog" description="What changed in each Conduit release.">
+  <div class="wrap log">
+    <header class="log-head">
+      <h1>Changelog</h1>
+      <p class="lede">Every release, newest first. Downloads are on the <a href="/download/">download page</a>; the full history of how each part was built is in the repository's <a href="https://github.com/Elchi-dev/conduit/blob/main/BUILD_LOG.md">build log</a>.</p>
+    </header>
+    {rendered.length === 0 && <p class="muted">No releases yet.</p>}
+    {rendered.map((r) => (
+      <section class="release" id={r.version}>
+        <div class="when">
+          <h2><a href={`#${r.version}`}>{r.version}</a></h2>
+          {r.date && <time datetime={r.date}>{fmt(r.date)}</time>}
+        </div>
+        <div class="prose body"><Fragment set:html={r.body} /></div>
+      </section>
+    ))}
+  </div>
+</Base>
+<style>
+  .log {
+    padding-top: 56px;
+    padding-bottom: 40px;
+  }
+  .log-head {
+    max-width: 62ch;
+    margin-bottom: 40px;
+  }
+  h1 {
+    font-size: 44px;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px;
+  }
+  .lede {
+    color: var(--ink-2);
+    margin: 0;
+  }
+  .lede a {
+    text-underline-offset: 3px;
+  }
+  .release {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 40px;
+    padding: 32px 0;
+    border-top: 1px solid var(--line);
+  }
+  .when {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+  }
+  .when h2 {
+    font-family: var(--font-data);
+    font-size: 24px;
+    font-weight: 500;
+    margin: 0;
+  }
+  .when h2 a {
+    text-decoration: none;
+  }
+  .when h2 a:hover {
+    color: var(--signal);
+  }
+  .when time {
+    display: block;
+    color: var(--muted);
+    font-size: 15px;
+    margin-top: 4px;
+  }
+  .body :global(h3:first-child),
+  .body :global(p:first-child) {
+    margin-top: 0;
+  }
+  .body :global(h3) {
+    font-size: 19px;
+    margin: 28px 0 8px;
+  }
+  @media (max-width: 760px) {
+    .release {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .when {
+      position: static;
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+    .when time {
+      margin: 0;
+    }
+    h1 {
+      font-size: 34px;
+    }
+  }
+</style>

@@ -55,3 +55,10 @@ notified on every channel that takes approvals. The agent checks back with
 `conduit_approval_status` and, once approved, calls the same tool again with
 the same arguments. Denials are final; the server instructions tell agents
 not to work around them.
+
+## Using other MCP servers through Conduit
+
+**Assistant and agents → Use tools from other MCP servers** mounts any MCP
+server (a command such as `npx -y @modelcontextprotocol/server-github`, or an
+HTTPS endpoint) as a Conduit module. Its tools then appear to your agents
+through Conduit, under your rules and in your timeline.

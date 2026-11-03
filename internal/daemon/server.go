@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/ai"
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
@@ -23,6 +24,9 @@ type Server struct {
 	Vault  *vault.Vault
 	// Automations may be nil in tests that don't use them.
 	Automations *automation.Service
+	Providers   *ai.Providers
+	Assistant   *ai.Agent
+	Bridge      *ai.Bridge
 	Log         *slog.Logger
 	// SetupToken must be presented to create the owner account. It is printed
 	// to the log and written to <data>/setup-token on first start.

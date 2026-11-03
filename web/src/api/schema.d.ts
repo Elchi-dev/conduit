@@ -307,6 +307,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What changed around a moment
+         * @description Changes, failures and blocked attempts before `at` (successful reads are counted, not listed).
+         */
+        get: operations["whatChanged"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/{seq}": {
         parameters: {
             query?: never;
@@ -648,6 +668,170 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Configured AI model providers */
+        get: operations["listProviders"];
+        put?: never;
+        /** Add a provider (owner or admin, signed in) */
+        post: operations["createProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/providers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a provider */
+        put: operations["updateProvider"];
+        post?: never;
+        /** Remove a provider */
+        delete: operations["deleteProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Known providers with their endpoints and a suggested model */
+        get: operations["listProviderPresets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/detect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Model servers running on this computer (Ollama, LM Studio) */
+        get: operations["detectProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your conversations with the assistant */
+        get: operations["listConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/conversations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One conversation with its messages */
+        get: operations["getConversation"];
+        put?: never;
+        post?: never;
+        /** Delete a conversation */
+        delete: operations["deleteConversation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a message to the assistant (people only)
+         * @description Streams newline-delimited JSON `AssistantStep` objects as the assistant
+         *     works: its text, each tool it calls, each result (including approval
+         *     requests), and finally `done` with the conversation id. The assistant
+         *     acts as an agent, so agent rules and approvals apply.
+         */
+        post: operations["chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Outside MCP servers mounted as modules */
+        get: operations["listMCPServers"];
+        put?: never;
+        /** Mount an MCP server (people only; stdio servers run a command on this machine) */
+        post: operations["addMCPServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change and remount an MCP server */
+        put: operations["updateMCPServer"];
+        post?: never;
+        /** Unmount and remove an MCP server */
+        delete: operations["removeMCPServer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/keys": {
         parameters: {
             query?: never;
@@ -967,6 +1151,36 @@ export interface components {
             frozen: boolean;
             rules: components["schemas"]["Rule"][];
         };
+        ChangeEntry: {
+            entry: number;
+            /** Format: date-time */
+            at: string;
+            who: string;
+            what: string;
+            status: string;
+            error?: string;
+            undo?: string;
+        };
+        MCPServer: {
+            id?: string;
+            name: string;
+            /** @enum {string} */
+            transport: "stdio" | "http";
+            command?: string;
+            args?: string[];
+            /** @description Values may be secret:// references */
+            env?: {
+                [key: string]: string;
+            };
+            url?: string;
+            /** @description Values may be secret:// references */
+            headers?: {
+                [key: string]: string;
+            };
+            riskOverrides?: {
+                [key: string]: "read" | "write" | "destructive";
+            };
+        };
         VaultStatus: {
             setUp: boolean;
             unlocked: boolean;
@@ -1033,6 +1247,57 @@ export interface components {
                 error?: string;
                 audit?: number;
             }[];
+        };
+        Provider: {
+            id?: string;
+            name?: string;
+            /**
+             * @description "openai" means any OpenAI-compatible API (OpenAI, Gemini, Mistral, OpenRouter, Ollama, LM Studio, vLLM, gateways)
+             * @enum {string}
+             */
+            kind: "anthropic" | "openai";
+            baseUrl: string;
+            model: string;
+            /** @description Vault reference; empty for local servers */
+            apiKey?: string;
+            headers?: {
+                [key: string]: string;
+            };
+            default?: boolean;
+        };
+        AssistantMessage: {
+            /** @enum {string} */
+            role: "user" | "assistant" | "tool";
+            text?: string;
+            toolCalls?: {
+                id: string;
+                name: string;
+                args?: unknown;
+            }[];
+            toolCallId?: string;
+            isError?: boolean;
+        };
+        Conversation: {
+            id: string;
+            title: string;
+            provider: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            messages?: components["schemas"]["AssistantMessage"][];
+        };
+        AssistantStep: {
+            /** @enum {string} */
+            type: "text" | "tool" | "result" | "done" | "error";
+            text?: string;
+            tool?: string;
+            title?: string;
+            args?: unknown;
+            isError?: boolean;
+            approval?: components["schemas"]["Approval"];
+            audit?: number;
+            conversation?: string;
         };
         /** @enum {string} */
         KeyKind: "live" | "test" | "agent";
@@ -1697,6 +1962,38 @@ export interface operations {
             };
         };
     };
+    whatChanged: {
+        parameters: {
+            query?: {
+                at?: string;
+                minutes?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        from: string;
+                        /** Format: date-time */
+                        to: string;
+                        changes: components["schemas"]["ChangeEntry"][];
+                        failures: components["schemas"]["ChangeEntry"][];
+                        blocked: components["schemas"]["ChangeEntry"][];
+                        readsOmitted: number;
+                    };
+                };
+            };
+        };
+    };
     getAudit: {
         parameters: {
             query?: never;
@@ -2285,6 +2582,318 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AutomationRun"][];
                 };
+            };
+        };
+    };
+    listProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"][];
+                };
+            };
+        };
+    };
+    createProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Provider"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    updateProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Provider"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"];
+                };
+            };
+        };
+    };
+    deleteProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listProviderPresets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"][];
+                };
+            };
+        };
+    };
+    detectProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"][];
+                };
+            };
+        };
+    };
+    listConversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"][];
+                };
+            };
+        };
+    };
+    getConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    conversation?: string;
+                    message: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Stream of steps */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-ndjson": components["schemas"]["AssistantStep"];
+                };
+            };
+        };
+    };
+    listMCPServers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPServer"][];
+                };
+            };
+        };
+    };
+    addMCPServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPServer"];
+            };
+        };
+        responses: {
+            /** @description Mounted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPServer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    updateMCPServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPServer"];
+            };
+        };
+        responses: {
+            /** @description Mounted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPServer"];
+                };
+            };
+        };
+    };
+    removeMCPServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -18,7 +18,7 @@ export function Home() {
     queryFn: () => ok(api.GET("/approvals", { params: { query: { status: "pending" } } })),
   });
   const recent = useQuery({ queryKey: ["audit", "home"], queryFn: () => ok(api.GET("/audit", { params: { query: { limit: 12 } } })) });
-  const list = instances.data ?? [];
+  const list = (instances.data ?? []).filter((i) => !featureInstances.has(i.id));
   const health = useQueries({
     queries: list.map((i) => ({
       queryKey: ["instances", i.id, "health"],
@@ -31,7 +31,7 @@ export function Home() {
 
   // The vault and this computer exist from the start; "nothing connected"
   // means nothing beyond those.
-  const connected = list.filter((i) => i.id !== "vault" && i.id !== "system" && !featureInstances.has(i.id));
+  const connected = list.filter((i) => i.id !== "vault" && i.id !== "system");
   const summary =
     connected.length === 0 && list.length === 0
       ? "Nothing is connected yet."

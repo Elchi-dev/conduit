@@ -3,6 +3,31 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 9 — AI layer
+
+**Landed**
+
+- Tool catalog from every connected system plus Conduit tools (overview,
+  preview, approval status, what changed, timeline, undo, emergency stop),
+  filtered by scopes and annotated with read-only/destructive hints.
+- MCP server over streamable HTTP (`/mcp`) and stdio (`conduitd mcp`);
+  tested end to end including the approval round-trip.
+- Providers: Anthropic and any OpenAI-compatible API (cloud, Ollama, LM
+  Studio, custom gateways), keys from the vault, local model detection.
+- Built-in assistant as a drawer on every screen and from the command bar,
+  streaming its steps, with inline approval cards; conversations per user.
+  Verified in a real browser against a fake model.
+- MCP bridge: outside MCP servers mounted as modules (stdio or HTTP), risk
+  from tool annotations; tested by mounting one Conduit into another.
+- Signature features: agent dry-run (2), "What changed?" (4) as tool, API
+  and timeline panel, record → automate (3) from the timeline.
+- Configuration changes are now audited.
+
+**Fixed**
+
+- Dry-run plans with no changes were sent as `null` and crashed the approval
+  card; the engine now always sends a list.
+
 ## 2026-11-03 · Phase 8 — metrics, uptime checks, automations, daily brief
 
 **Landed**

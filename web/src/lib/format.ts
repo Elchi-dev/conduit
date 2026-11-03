@@ -34,11 +34,11 @@ export function actorLabel(a?: { kind: string; name?: string; id: string }): str
     case "user":
       return who;
     case "agent":
-      return `Agent ${who}`;
+      return a.name ? who : `Agent ${who}`;
     case "key":
-      return `Key ${who}`;
+      return a.name ? who : `Key ${who}`;
     case "automation":
-      return `Automation ${who}`;
+      return a.name ? `Automation "${who}"` : `Automation ${who}`;
     default:
       return "Conduit";
   }

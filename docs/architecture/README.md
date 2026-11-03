@@ -29,6 +29,7 @@ takes the same path:
 | Hub | `internal/hub` | [hub.md](hub.md) |
 | Vault | `internal/vault`, `modules/vault` | [vault.md](vault.md) |
 | Automations | `internal/automation` | [automations.md](automations.md) |
+| AI layer: tools, MCP, providers, assistant, bridge | `internal/ai` | [ai.md](ai.md) |
 | Web app | `web/`, `internal/ui` | [web.md](web.md) |
 | Desktop and Android shell | `apps/desktop` | [desktop.md](desktop.md) |
 

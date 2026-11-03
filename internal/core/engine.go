@@ -95,6 +95,13 @@ func (e *Engine) Register(m sdk.Module) error {
 	return nil
 }
 
+// Unregister removes a module (used when an MCP server is unmounted).
+func (e *Engine) Unregister(id string) {
+	e.mu.Lock()
+	delete(e.modules, id)
+	e.mu.Unlock()
+}
+
 // Modules returns the manifests of every registered module, sorted by name.
 func (e *Engine) Modules() []sdk.Manifest {
 	e.mu.RLock()
@@ -316,6 +323,9 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 			dry.DryRun = true
 			if r, err := m.Invoke(ctx, dry); err == nil {
 				plan = r.Plan
+				if plan != nil && plan.Changes == nil {
+					plan.Changes = []sdk.Change{}
+				}
 			}
 		}
 		appr, err := e.Approvals.Request(ctx, Approval{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, Input: redact(spec, call.Input), Plan: plan})
@@ -334,6 +344,9 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 	}
 
 	res, err := m.Invoke(ctx, call)
+	if res.Plan != nil && res.Plan.Changes == nil {
+		res.Plan.Changes = []sdk.Change{}
+	}
 	out.Result = res
 	switch {
 	case err != nil:

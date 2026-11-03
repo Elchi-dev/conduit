@@ -39,7 +39,7 @@ export function Approvals() {
   );
 }
 
-export function ApprovalCard({ a }: { a: Approval }) {
+export function ApprovalCard({ a, onDecided }: { a: Approval; onDecided?: (approved: boolean) => void }) {
   const qc = useQueryClient();
   const decide = useMutation({
     mutationFn: (approve: boolean) =>
@@ -48,9 +48,15 @@ export function ApprovalCard({ a }: { a: Approval }) {
           ? api.POST("/approvals/{id}/approve", { params: { path: { id: a.id } } })
           : api.POST("/approvals/{id}/deny", { params: { path: { id: a.id } } }),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["approvals"] }),
+    onSuccess: (res, approve) => {
+      qc.invalidateQueries({ queryKey: ["approvals"] });
+      setDecided(res?.status ?? (approve ? "approved" : "denied"));
+      onDecided?.(approve);
+    },
   });
-  const pending = a.status === "pending";
+  const [decided, setDecided] = useState<string | null>(null);
+  const status = decided ?? a.status;
+  const pending = status === "pending";
   return (
     <article className={`panel approval ${pending ? "is-pending" : ""}`}>
       <header className="spread">
@@ -84,7 +90,7 @@ export function ApprovalCard({ a }: { a: Approval }) {
           </>
         ) : (
           <span className="xs muted">
-            {a.status === "approved" ? "Approved" : a.status === "denied" ? "Denied" : "Expired"}
+            {status === "approved" ? "Approved" : status === "denied" ? "Denied" : "Expired"}
             {a.decidedAt ? ` ${ago(a.decidedAt)}` : ""}
           </span>
         )}

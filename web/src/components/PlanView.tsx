@@ -6,9 +6,9 @@ export function PlanView({ plan }: { plan: Plan }) {
   return (
     <div className="plan">
       <p className="small">{plan.summary}</p>
-      {plan.changes.length > 0 && (
+      {(plan.changes ?? []).length > 0 && (
         <ul className="plan-list">
-          {plan.changes.map((c, i) => (
+          {(plan.changes ?? []).map((c, i) => (
             <li key={i}>
               <div className="inline small">
                 <span className={`op op-${c.op}`}>{c.op}</span>

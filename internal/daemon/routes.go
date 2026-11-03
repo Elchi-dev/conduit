@@ -25,6 +25,9 @@ func (s *Server) Handler() http.Handler {
 	if s.Automations != nil {
 		routes = append(routes, s.automationRoutes()...)
 	}
+	if s.Assistant != nil {
+		routes = append(routes, s.assistantRoutes()...)
+	}
 	for _, rt := range routes {
 		mux.HandleFunc(rt.pattern, rt.h)
 	}
@@ -73,6 +76,7 @@ func (s *Server) routes() []route {
 		// Audit, timeline and undo
 		{"GET /api/v1/audit", s.need("audit:*:read", s.listAudit)},
 		{"GET /api/v1/audit/verify", s.need("audit:*:read", s.verifyAudit)},
+		{"GET /api/v1/audit/changes", s.need("audit:*:read", s.auditChanges)},
 		{"GET /api/v1/audit/{seq}", s.need("audit:*:read", s.getAudit)},
 		{"POST /api/v1/audit/{seq}/undo", s.need("audit:*:undo", s.undo)},
 
@@ -385,6 +389,7 @@ func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
 		engineErr(w, err)
 		return
 	}
+	s.auditConfig(r, "instance_saved", saved.ID, map[string]any{"module": saved.Module, "name": saved.Name, "enabled": saved.Enabled})
 	writeJSON(w, code, saved)
 }
 
@@ -393,6 +398,7 @@ func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		engineErr(w, err)
 		return
 	}
+	s.auditConfig(r, "instance_deleted", r.PathValue("id"), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -472,6 +478,33 @@ func (s *Server) verifyAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, v)
+}
+
+// auditChanges answers "what changed?" around a moment: changes, failures
+// and blocked attempts, with successful reads left out.
+func (s *Server) auditChanges(w http.ResponseWriter, r *http.Request) {
+	end := time.Now()
+	if v := r.URL.Query().Get("at"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "at must be an RFC 3339 time")
+			return
+		}
+		end = t
+	}
+	minutes, _ := strconv.Atoi(r.URL.Query().Get("minutes"))
+	if minutes <= 0 || minutes > 7*24*60 {
+		minutes = 60
+	}
+	start := end.Add(-time.Duration(minutes) * time.Minute)
+	list, err := s.Engine.Audit.List(r.Context(), core.Query{Since: start, Until: end.Add(5 * time.Minute), Limit: 500})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	c := ai.WhatChanged(list)
+	c.From, c.To = start.Format(time.RFC3339), end.Format(time.RFC3339)
+	writeJSON(w, http.StatusOK, c)
 }
 
 func seqParam(r *http.Request) (int64, error) {
@@ -589,6 +622,7 @@ func (s *Server) setPreset(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.auditConfig(r, "policy_preset", "policy", map[string]any{"preset": req.Preset})
 	s.getPolicy(w, r)
 }
 
@@ -608,6 +642,7 @@ func (s *Server) putRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.auditConfig(r, "policy_rule_saved", "policy", rule)
 	writeJSON(w, http.StatusOK, rule)
 }
 
@@ -619,6 +654,7 @@ func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.auditConfig(r, "policy_rule_deleted", "policy", map[string]string{"rule": r.PathValue("id")})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -756,6 +792,14 @@ func (s *Server) vaultLock(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditVault(r, "vault_lock")
 	s.vaultStatus(w, r)
+}
+
+// auditConfig records a configuration change made through the API, so the
+// timeline and "what changed?" show who changed what.
+func (s *Server) auditConfig(r *http.Request, action, instance string, details any) {
+	p, _ := principal(r)
+	b, _ := json.Marshal(details)
+	_, _ = s.Engine.Audit.Append(context.WithoutCancel(r.Context()), core.Entry{Actor: p.Actor, Module: "core", Instance: instance, Action: action, Risk: sdk.RiskWrite, Decision: core.Allow, Status: "ok", Input: b})
 }
 
 func (s *Server) auditVault(r *http.Request, action string) {

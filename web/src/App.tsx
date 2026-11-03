@@ -3,6 +3,7 @@ import { Route, Switch } from "wouter";
 import { api, ApiError, ok } from "./api/client";
 import { Shell } from "./components/Shell";
 import { Approvals } from "./pages/Approvals";
+import { AssistantSettings } from "./pages/AssistantSettings";
 import { Automations } from "./pages/Automations";
 import { Home } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/automations" component={Automations} />
         <Route path="/i/:id">{(p) => <InstancePage id={p.id} />}</Route>
         <Route path="/policy" component={PolicyPage} />
+        <Route path="/assistant" component={AssistantSettings} />
         <Route path="/keys" component={Keys} />
         <Route path="/settings" component={Settings} />
         <Route>

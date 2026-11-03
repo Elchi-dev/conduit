@@ -28,6 +28,7 @@ tags:
   - name: panic
   - name: vault
   - name: automations
+  - name: assistant
   - name: keys
   - name: events
 paths:
@@ -322,6 +323,31 @@ paths:
                   brokenAt: { type: integer }
                   problem: { type: string }
 
+  /audit/changes:
+    get:
+      operationId: whatChanged
+      tags: [audit]
+      summary: What changed around a moment
+      description: Changes, failures and blocked attempts before `at` (successful reads are counted, not listed).
+      parameters:
+        - { name: at, in: query, schema: { type: string, format: date-time } }
+        - { name: minutes, in: query, schema: { type: integer, default: 60 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, changes, failures, blocked, readsOmitted]
+                properties:
+                  from: { type: string, format: date-time }
+                  to: { type: string, format: date-time }
+                  changes: { type: array, items: { $ref: "#/components/schemas/ChangeEntry" } }
+                  failures: { type: array, items: { $ref: "#/components/schemas/ChangeEntry" } }
+                  blocked: { type: array, items: { $ref: "#/components/schemas/ChangeEntry" } }
+                  readsOmitted: { type: integer }
+
   /audit/{seq}:
     get:
       operationId: getAudit
@@ -584,6 +610,139 @@ paths:
         - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AutomationRun" } } } } }
+
+  /ai/providers:
+    get:
+      operationId: listProviders
+      tags: [assistant]
+      summary: Configured AI model providers
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Provider" } } } } }
+    post:
+      operationId: createProvider
+      tags: [assistant]
+      summary: Add a provider (owner or admin, signed in)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Provider" } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/Provider" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /ai/providers/{id}:
+    put:
+      operationId: updateProvider
+      tags: [assistant]
+      summary: Change a provider
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Provider" } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/Provider" } } } }
+    delete:
+      operationId: deleteProvider
+      tags: [assistant]
+      summary: Remove a provider
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
+
+  /ai/presets:
+    get:
+      operationId: listProviderPresets
+      tags: [assistant]
+      summary: Known providers with their endpoints and a suggested model
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Provider" } } } } }
+
+  /ai/detect:
+    get:
+      operationId: detectProviders
+      tags: [assistant]
+      summary: Model servers running on this computer (Ollama, LM Studio)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Provider" } } } } }
+
+  /assistant/conversations:
+    get:
+      operationId: listConversations
+      tags: [assistant]
+      summary: Your conversations with the assistant
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Conversation" } } } } }
+
+  /assistant/conversations/{id}:
+    get:
+      operationId: getConversation
+      tags: [assistant]
+      summary: One conversation with its messages
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Conversation" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteConversation
+      tags: [assistant]
+      summary: Delete a conversation
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Deleted }
+
+  /assistant/chat:
+    post:
+      operationId: chat
+      tags: [assistant]
+      summary: Send a message to the assistant (people only)
+      description: |
+        Streams newline-delimited JSON `AssistantStep` objects as the assistant
+        works: its text, each tool it calls, each result (including approval
+        requests), and finally `done` with the conversation id. The assistant
+        acts as an agent, so agent rules and approvals apply.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [message], properties: { conversation: { type: string }, message: { type: string } } }
+      responses:
+        "200": { description: Stream of steps, content: { application/x-ndjson: { schema: { $ref: "#/components/schemas/AssistantStep" } } } }
+
+  /mcp-servers:
+    get:
+      operationId: listMCPServers
+      tags: [assistant]
+      summary: Outside MCP servers mounted as modules
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/MCPServer" } } } } }
+    post:
+      operationId: addMCPServer
+      tags: [assistant]
+      summary: Mount an MCP server (people only; stdio servers run a command on this machine)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MCPServer" } } }
+      responses:
+        "200": { description: Mounted, content: { application/json: { schema: { $ref: "#/components/schemas/MCPServer" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /mcp-servers/{id}:
+    put:
+      operationId: updateMCPServer
+      tags: [assistant]
+      summary: Change and remount an MCP server
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MCPServer" } } }
+      responses:
+        "200": { description: Mounted, content: { application/json: { schema: { $ref: "#/components/schemas/MCPServer" } } } }
+    delete:
+      operationId: removeMCPServer
+      tags: [assistant]
+      summary: Unmount and remove an MCP server
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
 
   /keys:
     get:
@@ -912,6 +1071,30 @@ components:
         presets: { type: array, items: { $ref: "#/components/schemas/Preset" } }
         frozen: { type: boolean }
         rules: { type: array, items: { $ref: "#/components/schemas/Rule" } }
+    ChangeEntry:
+      type: object
+      required: [entry, at, who, what, status]
+      properties:
+        entry: { type: integer }
+        at: { type: string, format: date-time }
+        who: { type: string }
+        what: { type: string }
+        status: { type: string }
+        error: { type: string }
+        undo: { type: string }
+    MCPServer:
+      type: object
+      required: [name, transport]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        transport: { type: string, enum: [stdio, http] }
+        command: { type: string }
+        args: { type: array, items: { type: string } }
+        env: { type: object, additionalProperties: { type: string }, description: Values may be secret:// references }
+        url: { type: string }
+        headers: { type: object, additionalProperties: { type: string }, description: Values may be secret:// references }
+        riskOverrides: { type: object, additionalProperties: { type: string, enum: [read, write, destructive] } }
     VaultStatus:
       type: object
       required: [setUp, unlocked, secrets, remembered]
@@ -981,6 +1164,50 @@ components:
               output: {}
               error: { type: string }
               audit: { type: integer }
+    Provider:
+      type: object
+      required: [kind, baseUrl, model]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [anthropic, openai], description: '"openai" means any OpenAI-compatible API (OpenAI, Gemini, Mistral, OpenRouter, Ollama, LM Studio, vLLM, gateways)' }
+        baseUrl: { type: string }
+        model: { type: string }
+        apiKey: { type: string, description: Vault reference; empty for local servers }
+        headers: { type: object, additionalProperties: { type: string } }
+        default: { type: boolean }
+    AssistantMessage:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [user, assistant, tool] }
+        text: { type: string }
+        toolCalls: { type: array, items: { type: object, required: [id, name], properties: { id: { type: string }, name: { type: string }, args: {} } } }
+        toolCallId: { type: string }
+        isError: { type: boolean }
+    Conversation:
+      type: object
+      required: [id, title, provider, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        provider: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        messages: { type: array, items: { $ref: "#/components/schemas/AssistantMessage" } }
+    AssistantStep:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [text, tool, result, done, error] }
+        text: { type: string }
+        tool: { type: string }
+        title: { type: string }
+        args: {}
+        isError: { type: boolean }
+        approval: { $ref: "#/components/schemas/Approval" }
+        audit: { type: integer }
+        conversation: { type: string }
     KeyKind: { type: string, enum: [live, test, agent] }
     ApiKey:
       type: object

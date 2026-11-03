@@ -13,13 +13,14 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 8 of 16 (metrics, checks, automations, brief) — done 2026-11-03.
+- **Phase:** 9 of 16 (AI layer) — done 2026-11-03.
 - **Works today:** core engine; accounts, keys; daemon API and events; web
-  app; modules vault, this computer, servers, Docker, mail, calendar,
-  notifications, metrics, websites/APIs, automations, daily brief.
-- **Next:** phase 9, AI layer — providers (API key, local, custom endpoint),
-  built-in agent with dry-run diffs and "what changed?", MCP server and MCP
-  bridge, record-to-automation.
+  app; 12 built-in modules; automations and the daily brief; MCP server and
+  stdio bridge; AI providers and the built-in assistant; outside MCP servers
+  as modules; what-changed and record-to-automation.
+- **Next:** phase 10, the hub — accounts with a per-operator mail provider,
+  orgs, device pairing, end-to-end encrypted relay and sync, module
+  registry, update feed, Docker image.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

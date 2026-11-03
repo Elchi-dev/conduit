@@ -4,6 +4,7 @@ import { Link, useLocation } from "wouter";
 import { api, ok, type S } from "../api/client";
 import { useLiveEvents } from "../lib/events";
 import { featureInstances } from "../lib/format";
+import { Assistant } from "./Assistant";
 import { CommandBar } from "./CommandBar";
 import { LampStrip } from "./LampStrip";
 import "./shell.css";
@@ -20,6 +21,7 @@ const nav = [
 ];
 const navAdmin = [
   { href: "/policy", label: "Agent rules" },
+  { href: "/assistant", label: "Assistant and agents" },
   { href: "/keys", label: "API keys" },
   { href: "/settings", label: "Settings" },
 ];
@@ -27,6 +29,8 @@ const navAdmin = [
 export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   const [loc] = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [seed, setSeed] = useState<string | undefined>();
   const { connected } = useLiveEvents(true);
   const qc = useQueryClient();
 
@@ -59,7 +63,7 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   const waiting = pending.data?.length ?? 0;
 
   return (
-    <div className="shell">
+    <div className={`shell ${assistantOpen ? "with-assistant" : ""}`}>
       <header className="bar">
         <Link href="/" className="brand" aria-label="Conduit overview">
           <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
@@ -69,6 +73,9 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
         </Link>
         <LampStrip instances={instances.data ?? []} />
         <div className="bar-end">
+          <button className={`btn quiet assistant-toggle ${assistantOpen ? "on" : ""}`} onClick={() => setAssistantOpen(!assistantOpen)} aria-expanded={assistantOpen}>
+            Assistant
+          </button>
           <button className="btn quiet cmd-trigger" onClick={() => setCmdOpen(true)}>
             Search and run
             <kbd>{navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K"}</kbd>
@@ -143,7 +150,16 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
         {children}
       </main>
 
-      <CommandBar open={cmdOpen} onOpenChange={setCmdOpen} instances={instances.data ?? []} />
+      <CommandBar
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        instances={instances.data ?? []}
+        onAsk={(q) => {
+          setSeed(q);
+          setAssistantOpen(true);
+        }}
+      />
+      <Assistant open={assistantOpen} onClose={() => setAssistantOpen(false)} seed={seed} onSeedUsed={() => setSeed(undefined)} />
     </div>
   );
 }

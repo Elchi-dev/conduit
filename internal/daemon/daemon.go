@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/ai"
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
@@ -67,8 +68,11 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	v := vault.New(store, vault.OSKeychain{Account: hex.EncodeToString(sum[:8])})
 	engine.SetSecrets(v)
 	autos := automation.New(engine)
+	providers := ai.NewProviders(store, v)
+	assistant := &ai.Agent{DB: store.DB, Providers: providers}
+	bridge := &ai.Bridge{DB: store.DB, Engine: engine, Secrets: v}
 	app := &App{Store: store, Engine: engine, Auth: authSvc, Vault: v, Automations: autos,
-		Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Automations: autos, Log: log, UI: ui.Handler()}}
+		Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Automations: autos, Providers: providers, Assistant: assistant, Bridge: bridge, Log: log, UI: ui.Handler()}}
 	if v.UnlockFromKeychain(ctx) {
 		log.Info("vault unlocked from the system keychain")
 	}
@@ -120,6 +124,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	if err := ensureSingletons(ctx, app); err != nil {
 		return err
 	}
+	go app.Server.Bridge.MountAll(ctx)
 	if err := app.Automations.Start(ctx); err != nil {
 		return err
 	}

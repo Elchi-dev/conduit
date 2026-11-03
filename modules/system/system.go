@@ -351,7 +351,7 @@ func kill(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		}
 	}
 	if c.DryRun {
-		plan := &sdk.Plan{Summary: fmt.Sprintf("End %d process(es)", len(targets))}
+		plan := &sdk.Plan{Summary: fmt.Sprintf("End %d %s", len(targets), pluralize(len(targets), "process", "processes"))}
 		for _, p := range targets {
 			n, _ := p.NameWithContext(ctx)
 			op := "terminate"
@@ -397,7 +397,13 @@ func (m *Module) setGameMode(ctx context.Context, on, dryRun bool) (sdk.Result, 
 			}
 		}
 		if dryRun {
-			plan := &sdk.Plan{Summary: fmt.Sprintf("Pause %d background process(es) and announce game mode", len(targets))}
+			summary := "Announce game mode. No listed background processes are running, so nothing will be paused."
+			if len(names) == 0 {
+				summary = "Announce game mode. Add processes to pause in this computer's settings to free up more resources."
+			} else if len(targets) > 0 {
+				summary = fmt.Sprintf("Pause %d background %s and announce game mode", len(targets), pluralize(len(targets), "process", "processes"))
+			}
+			plan := &sdk.Plan{Summary: summary}
 			for _, p := range targets {
 				n, _ := p.NameWithContext(ctx)
 				plan.Changes = append(plan.Changes, sdk.Change{Target: fmt.Sprintf("%s (pid %d)", n, p.Pid), Op: "pause"})
@@ -423,7 +429,7 @@ func (m *Module) setGameMode(ctx context.Context, on, dryRun bool) (sdk.Result, 
 	}
 
 	if dryRun {
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Resume %d paused process(es)", len(paused))}}, nil
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Turn game mode off and resume %d paused %s", len(paused), pluralize(len(paused), "process", "processes"))}}, nil
 	}
 	resumed := 0
 	for _, pid := range paused {
@@ -493,3 +499,10 @@ func (m *Module) watchGames(ctx context.Context) {
 }
 
 func mustJSON(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
+
+func pluralize(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}

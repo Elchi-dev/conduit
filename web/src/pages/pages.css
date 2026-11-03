@@ -589,3 +589,15 @@ pre.log {
     grid-template-columns: 1fr auto;
   }
 }
+
+.record-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}

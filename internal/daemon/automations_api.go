@@ -80,6 +80,7 @@ func (s *Server) saveAutomation(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.auditConfig(r, "automation_saved", saved.ID, map[string]any{"name": saved.Name, "enabled": saved.Enabled, "trusted": saved.Trusted, "steps": len(saved.Steps)})
 	writeJSON(w, code, saved)
 }
 
@@ -88,6 +89,7 @@ func (s *Server) deleteAutomation(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such automation")
 		return
 	}
+	s.auditConfig(r, "automation_deleted", r.PathValue("id"), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

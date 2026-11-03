@@ -44,6 +44,26 @@ run --uninstall >/dev/null
 [ ! -e "$BIN" ] || { echo "FAIL: uninstall left the binary"; exit 1; }
 echo "ok   uninstall"
 
+# A signed SHA256SUMS: a good signature installs, a bad one is refused.
+if command -v openssl >/dev/null 2>&1 && openssl version | grep -q '^OpenSSL [3-9]'; then
+	openssl genpkey -algorithm ed25519 -out "$WORK/k.pem" 2>/dev/null
+	PUB=$(openssl pkey -in "$WORK/k.pem" -pubout | grep -v -- '-----')
+	openssl pkeyutl -sign -inkey "$WORK/k.pem" -rawin -in "$WORK/rel/SHA256SUMS" -out "$WORK/sig.bin"
+	openssl base64 -A -in "$WORK/sig.bin" -out "$WORK/rel/SHA256SUMS.sig"
+	CONDUIT_RELEASE_PUBKEY="$PUB" run >"$WORK/out" 2>&1 || { echo "FAIL: signed release refused"; cat "$WORK/out"; exit 1; }
+	grep -q "Signature OK" "$WORK/out" || { echo "FAIL: signature not checked"; cat "$WORK/out"; exit 1; }
+	echo "ok   signature checked"
+	openssl genpkey -algorithm ed25519 -out "$WORK/other.pem" 2>/dev/null
+	OTHER=$(openssl pkey -in "$WORK/other.pem" -pubout | grep -v -- '-----')
+	if CONDUIT_RELEASE_PUBKEY="$OTHER" run >"$WORK/out" 2>&1; then
+		echo "FAIL: a signature from another key was accepted"
+		exit 1
+	fi
+	echo "ok   wrong signature refused"
+	rm -f "$WORK/rel/SHA256SUMS.sig"
+	run --uninstall >/dev/null
+fi
+
 # A tampered binary must be refused and nothing installed.
 printf 'x' >>"$WORK/rel/conduitd-$OS-$ARCH"
 if run >"$WORK/out" 2>&1; then
@@ -62,8 +82,14 @@ if run >/dev/null 2>&1; then
 fi
 echo "ok   missing checksum refused"
 
-if run --version nonsense >/dev/null 2>&1; then
-	echo "FAIL: bad version accepted"
+for v in nonsense v1 'v1/../../evil/releases/download/v1'; do
+	if run --version "$v" >/dev/null 2>&1; then
+		echo "FAIL: bad version $v accepted"
+		exit 1
+	fi
+done
+if HOME="$WORK/home" CONDUIT_DOWNLOAD_BASE="http://mirror.example" sh "$ROOT/scripts/install.sh" >/dev/null 2>&1; then
+	echo "FAIL: plain-http mirror accepted"
 	exit 1
 fi
 echo "ok   bad version refused"

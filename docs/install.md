@@ -99,9 +99,24 @@ curl -fsSLO https://github.com/Elchi-dev/conduit/releases/latest/download/SHA256
 sha256sum --ignore-missing -c SHA256SUMS      # macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
-Signed releases also carry `conduitd-release.json`, the ed25519-signed
-manifest the daemon's own updater checks (see
-[protocol/updates.md](protocol/updates.md)).
+Signed releases also carry `SHA256SUMS.sig`, an ed25519 signature of
+`SHA256SUMS` by Conduit's release key. The install script checks it when
+OpenSSL 3 is present (most Linux systems; on macOS install it with
+Homebrew), so a mirror or a swapped download can't change a binary and its
+checksum together; set `CONDUIT_REQUIRE_SIGNATURE=1` to refuse unsigned
+releases. The Windows script checks the checksum only. To check by hand:
+
+```sh
+curl -fsSLO https://github.com/Elchi-dev/conduit/releases/latest/download/SHA256SUMS.sig
+printf -- '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAcNW7YRR4O9dHz9WcIFMhaopG5Ky06OPh09axTD/Uj+c=\n-----END PUBLIC KEY-----\n' > conduit-release.pem
+openssl base64 -d -A -in SHA256SUMS.sig -out SHA256SUMS.sig.bin
+openssl pkeyutl -verify -pubin -inkey conduit-release.pem -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig.bin
+```
+
+They also carry `conduitd-release.json`, the ed25519-signed manifest the
+daemon's own updater checks (see [protocol/updates.md](protocol/updates.md)).
+`--version` takes only versions like `v1.2.3`, and a mirror
+(`CONDUIT_DOWNLOAD_BASE`) must be https.
 
 ## Uninstall
 

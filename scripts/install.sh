@@ -65,10 +65,9 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-case "$VERSION" in
-latest | v[0-9]*) ;;
-*) fail "versions look like v0.1.0" ;;
-esac
+if [ "$VERSION" != latest ] && ! printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+	fail "versions look like v0.1.0"
+fi
 if [ "$SERVICE" = 1 ] && [ "$NAME" = "conduit-hub" ]; then
 	fail "--service is for the daemon; run the hub as described in docs/self-hosting"
 fi
@@ -149,6 +148,11 @@ fi
 
 if [ -n "${CONDUIT_DOWNLOAD_BASE:-}" ]; then
 	BASE="${CONDUIT_DOWNLOAD_BASE%/}"
+	case "$BASE" in
+	https://*) ;;
+	http://127.0.0.1* | http://localhost*) ;; # tests and local mirrors
+	*) fail "CONDUIT_DOWNLOAD_BASE must be an https:// address" ;;
+	esac
 elif [ "$VERSION" = latest ]; then
 	BASE="https://github.com/$REPO/releases/latest/download"
 else
@@ -170,6 +174,27 @@ if [ "$WANT" != "$GOT" ]; then
 	fail "checksum mismatch for $ASSET (expected $WANT, got $GOT); nothing was installed"
 fi
 say "Checksum OK."
+
+# The release key signs SHA256SUMS, so a mirror or a swapped download can't
+# change a binary and its checksum together. Checking needs OpenSSL 3.
+RELEASE_PUBKEY="${CONDUIT_RELEASE_PUBKEY:-MCowBQYDK2VwAyEAcNW7YRR4O9dHz9WcIFMhaopG5Ky06OPh09axTD/Uj+c=}"
+if fetch "$BASE/SHA256SUMS.sig" "$TMP/SHA256SUMS.sig" 2>/dev/null; then
+	if command -v openssl >/dev/null 2>&1 && openssl version 2>/dev/null | grep -q '^OpenSSL [3-9]'; then
+		printf -- '-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n' "$RELEASE_PUBKEY" >"$TMP/release.pem"
+		openssl base64 -d -A -in "$TMP/SHA256SUMS.sig" -out "$TMP/sig.bin" 2>/dev/null || fail "SHA256SUMS.sig is damaged"
+		if openssl pkeyutl -verify -pubin -inkey "$TMP/release.pem" -rawin -in "$TMP/SHA256SUMS" -sigfile "$TMP/sig.bin" >/dev/null 2>&1; then
+			say "Signature OK: signed with Conduit's release key."
+		else
+			fail "SHA256SUMS isn't signed with Conduit's release key; nothing was installed"
+		fi
+	else
+		say "Note: couldn't check the release signature (needs OpenSSL 3); the checksum matched."
+	fi
+elif [ "${CONDUIT_REQUIRE_SIGNATURE:-}" = 1 ]; then
+	fail "this release has no signature (SHA256SUMS.sig) and CONDUIT_REQUIRE_SIGNATURE=1"
+else
+	say "Note: this release isn't signed; only the checksum was checked."
+fi
 
 chmod 0755 "$TMP/$ASSET"
 if [ "$OS" = darwin ]; then

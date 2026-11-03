@@ -38,7 +38,7 @@ $BinDir = Join-Path $env:LOCALAPPDATA "Conduit\bin"
 $Target = Join-Path $BinDir "$Name.exe"
 $TaskName = "Conduit daemon"
 
-if ($Version -ne "latest" -and $Version -notmatch '^v\d') { throw "Versions look like v0.1.0." }
+if ($Version -ne "latest" -and $Version -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "Versions look like v0.1.0." }
 if ($Service -and $Hub) { throw "-Service is for the daemon; run the hub as described in docs/self-hosting." }
 
 function Set-UserPath([string]$dir, [bool]$add) {
@@ -75,6 +75,9 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
 $asset = "$Name-windows-$arch.exe"
 if ($env:CONDUIT_DOWNLOAD_BASE) {
     $base = $env:CONDUIT_DOWNLOAD_BASE.TrimEnd("/")
+    if ($base -notmatch '^https://' -and $base -notmatch '^http://(127\.0\.0\.1|localhost)([:/]|$)') {
+        throw "CONDUIT_DOWNLOAD_BASE must be an https:// address."
+    }
 } elseif ($Version -eq "latest") {
     $base = "https://github.com/$Repo/releases/latest/download"
 } else {

@@ -65,7 +65,7 @@ func newNode(t *testing.T, start map[string]string) *node {
 	}
 	t.Cleanup(func() { st.Close() })
 	n := &node{data: &mapCollection{m: start}}
-	clock := time.Unix(1_800_000_000, 0).UTC()
+	clock := time.Now().UTC()
 	n.t = &clock
 	n.svc = &Service{DB: st.DB, Collections: map[string]Collection{"things": n.data},
 		Peer: func(base string) Transport { return &PeerTransport{Base: base} }, now: func() time.Time { return *n.t }}
@@ -169,5 +169,49 @@ func TestSealBindsCollection(t *testing.T) {
 	other[0] = 1
 	if _, err := Open(other, "vault", s); err == nil {
 		t.Fatal("document opened with another key")
+	}
+}
+
+// A recorded request replayed later is refused, and an old copy can't bring
+// back something that was deleted, however long ago.
+func TestReplayAndResurrection(t *testing.T) {
+	ctx := context.Background()
+	a := newNode(t, map[string]string{"rule": "allow everything"})
+	b := newNode(t, map[string]string{})
+	code, _ := a.svc.Create(ctx, []string{"things"})
+	_ = b.svc.Join(ctx, code, []string{"things"})
+	_ = b.svc.SetPeers(ctx, []string{a.srv.URL})
+	b.svc.Run(ctx)
+	if b.data.get()["rule"] != "allow everything" {
+		t.Fatal("setup")
+	}
+	// Record B's document while it still has the rule.
+	key := b.svc.Key(ctx)
+	old, _ := Seal(key, b.svc.known(ctx, "things"))
+
+	// A deletes the rule; it reaches B.
+	a.tick(time.Minute)
+	b.tick(time.Minute)
+	delete(a.data.m, "rule")
+	b.svc.Run(ctx)
+	if _, ok := b.data.get()["rule"]; ok {
+		t.Fatal("deletion didn't sync")
+	}
+
+	// Long after, the recorded document is replayed at A.
+	a.tick(200 * 24 * time.Hour)
+	if _, err := a.svc.Exchange(ctx, "things", old); err == nil {
+		t.Fatal("a replayed document was accepted")
+	}
+	// Even a fresh document with the stale item can't bring it back.
+	stale := b.svc.known(ctx, "things")
+	stale.Items["rule"] = Item{Updated: stale.Items["rule"].Updated.Add(-time.Hour), Data: json.RawMessage(`"allow everything"`)}
+	sealed, _ := Seal(key, stale)
+	a.t = func() *time.Time { n := time.Now().UTC(); return &n }()
+	if _, err := a.svc.Exchange(ctx, "things", sealed); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.data.get()["rule"]; ok {
+		t.Fatal("deleted item came back")
 	}
 }

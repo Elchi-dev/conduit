@@ -161,8 +161,8 @@ function credentialJSON(c: PublicKeyCredential): JSONOpts {
 type Ceremony = { ceremony: string; options: { publicKey: JSONOpts } };
 
 /** Add a passkey to the signed-in account. */
-export async function addPasskey(name: string): Promise<void> {
-  const begin = await api<Ceremony>("POST", "/passkeys/register/begin");
+export async function addPasskey(name: string, password: string): Promise<void> {
+  const begin = await api<Ceremony>("POST", "/passkeys/register/begin", { password });
   const cred = (await navigator.credentials.create({ publicKey: creationOptions(begin.options.publicKey) })) as PublicKeyCredential | null;
   if (!cred) throw new HubError("No passkey was created.", 0);
   await api("POST", "/passkeys/register/finish", { ceremony: begin.ceremony, name, response: credentialJSON(cred) });

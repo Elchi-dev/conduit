@@ -3,6 +3,48 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 21 — Second security review
+
+A second independent reviewer (a separate agent that hadn't seen the work)
+went through everything added since v0.1.0 and proved two findings with
+tests. All confirmed findings are fixed:
+
+1. **High: single sign-on matched accounts by email alone**, owners
+   included, so anyone who could make the provider send the owner's address
+   got an owner session. Accounts now follow the provider's stable `sub`
+   (`oidc_links`); owners and admins are never linked by email and link
+   their identity themselves while signed in (Settings, Single sign-on);
+   a linked account can't gain a second identity; at least one allowed
+   domain is required; `email_verified` must be the JSON value `true`.
+2. **Medium: sync replays brought deleted items back** after the 90-day
+   tombstone expiry, through a recorded LAN request or a stale hub blob.
+   Tombstones are now kept for good, and the peer endpoint refuses
+   documents sealed more than 15 minutes ago.
+3. **Medium: a hub passkey outlived a password reset**, and adding one
+   needed only a session. Adding one now needs the password; a reset
+   removes every passkey.
+4. **Low: the unauthenticated sync endpoint could hold gigabytes** in
+   flight. Bodies are capped at 8 MiB, two exchanges run at a time, IPv6
+   sources are limited per /64 (sign-ins too), and callers learn nothing
+   until their document decrypts.
+5. **Low: installers checked integrity, not authenticity.** Releases now
+   carry `SHA256SUMS.sig` (ed25519, the release key) and `install.sh`
+   checks it with OpenSSL 3; versions must look like `v1.2.3`; mirrors must
+   be https. The F-Droid tool is pinned.
+6. **Low: admin-scoped keys** could start sync rounds and read webhook URLs
+   (which often hold the receiver's credentials). Sync rounds are
+   people-only; keys see webhook URLs without path or query.
+7. **Low: syncing policy and automations together** removed trusted
+   automations' own allow rules on the other daemons. Those rules
+   (`auto_…`) no longer sync.
+
+Also found while building the People page: creating accounts wasn't limited
+to signed-in people, so an owner's admin key could create an admin account
+and sign in as it. Account management is people-only now.
+
+Two flaky tests found by CI (an automation trigger and a webhook delivery
+record) wait for their condition instead of racing it.
+
 ## 2026-11-03 · Phases 17–20 — After v0.1.0
 
 The build had about 39 hours left after v0.1.0, so the work went on with

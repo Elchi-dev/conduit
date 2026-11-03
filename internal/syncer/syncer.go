@@ -67,10 +67,18 @@ type Doc struct {
 	V          int             `json:"v"`
 	Collection string          `json:"c"`
 	Items      map[string]Item `json:"items"`
+	// Made is when the document was sealed. The peer endpoint refuses
+	// documents older than MaxDocAge, so a recorded request can't be
+	// replayed later.
+	Made time.Time `json:"made,omitempty"`
 }
 
-// TombstoneTTL is how long deletions are remembered.
-const TombstoneTTL = 90 * 24 * time.Hour
+// ErrRefused answers a peer request that isn't from this daemon's group.
+var ErrRefused = errors.New("refused")
+
+// MaxDocAge is how old a document sent to the peer endpoint may be. Peers
+// make a fresh one for every exchange, so an older one is a replay.
+const MaxDocAge = 15 * time.Minute
 
 func hashOf(b []byte) string {
 	h := sha256.Sum256(b)
@@ -110,6 +118,7 @@ func wins(x, y Item) bool {
 // Seal compresses and encrypts a document under the group key. The
 // collection name is bound as associated data.
 func Seal(key []byte, d Doc) (string, error) {
+	d.Made = time.Now().UTC()
 	raw, err := json.Marshal(d)
 	if err != nil {
 		return "", err
@@ -423,9 +432,9 @@ func local(known Doc, current map[string]json.RawMessage, now time.Time) (Doc, i
 			continue
 		}
 		if k.Deleted {
-			if now.Sub(k.Updated) < TombstoneTTL {
-				d.Items[id] = k
-			}
+			// Deletions are remembered for good (they are small): forgetting
+			// one would let an old copy of the item come back.
+			d.Items[id] = k
 			continue
 		}
 		d.Items[id] = Item{Updated: now, Deleted: true}
@@ -577,7 +586,13 @@ func (s *Service) Exchange(ctx context.Context, collection, sealed string) (stri
 	defer s.mu.Unlock()
 	key := s.Key(ctx)
 	if key == nil {
-		return "", errors.New("sync isn't set up here")
+		return "", ErrRefused
+	}
+	// Nothing about this daemon is told to a caller whose document doesn't
+	// decrypt under the group key.
+	theirs, err := Open(key, collection, sealed)
+	if err != nil {
+		return "", ErrRefused
 	}
 	chosen := false
 	for _, n := range s.collections(ctx) {
@@ -587,9 +602,8 @@ func (s *Service) Exchange(ctx context.Context, collection, sealed string) (stri
 	if c == nil || !chosen {
 		return "", fmt.Errorf("this daemon doesn't sync %q", collection)
 	}
-	theirs, err := Open(key, collection, sealed)
-	if err != nil {
-		return "", err
+	if age := s.clock().Sub(theirs.Made); age > MaxDocAge || age < -MaxDocAge {
+		return "", errors.New("the sync document is too old (or the clocks are far apart)")
 	}
 	cur, ok, err := c.Export(ctx)
 	if err != nil {

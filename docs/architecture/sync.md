@@ -9,7 +9,7 @@ transports), `internal/daemon/sync.go` (collections, API, peer endpoint).
 | Collection | Items | Notes |
 | --- | --- | --- |
 | `vault` | every secret: kind, description, tags and value | Needs the vault unlocked on both sides; a locked vault skips the round. |
-| `policy` | the autonomy preset and every agent rule | Rules that name an agent key only match on the daemon that has that key. |
+| `policy` | the autonomy preset and every agent rule | Rules that name an agent key only match on the daemon that has that key. The rules each daemon makes for its own trusted automations (`auto_…`) don't sync. |
 | `automations` | name, trigger and steps | Off by default. A synced automation arrives switched off and untrusted, so it doesn't run on every daemon at once; a person switches it on where it should run. Steps name module instances by id, so they only work where those instances exist. |
 
 Each daemon chooses its own collections. Module settings, keys, sessions,
@@ -41,7 +41,9 @@ Every collection is a map from item id to `{updated, deleted, data}`.
 3. **Apply** what the local side lost, record the merged document as the
    new agreed state.
 
-Tombstones are kept for 90 days. The merge uses wall-clock times, so a
+Tombstones are kept for good (they are small): forgetting one would let an
+old copy of the deleted item (a replayed request, or a stale blob a hub
+serves) bring it back. The merge uses wall-clock times, so a
 daemon whose clock is far off can win or lose conflicts it shouldn't; keep
 clocks synced (NTP), as every OS does by default.
 
@@ -70,9 +72,11 @@ Each collection goes over every transport that's set up:
 Documents are JSON, gzip-compressed, then sealed with XChaCha20-Poly1305
 under the group key with a random 192-bit nonce and the collection name as
 associated data. A hub, a network in between or a daemon outside the group
-sees only ciphertext and its size. `/sync/exchange` needs no session: a
-request that doesn't decrypt under this daemon's group key is refused, and
-the answer is encrypted for the group. It is limited to 60 requests a
+sees only ciphertext and its size. Each document carries the time it was
+sealed. `/sync/exchange` needs no session: a request that doesn't decrypt
+under this daemon's group key is refused, so is a document sealed more than
+15 minutes away from this daemon's clock (a recorded request replayed later),
+and the answer is encrypted for the group. It is limited to 60 requests a
 minute per source.
 
 ## Trust

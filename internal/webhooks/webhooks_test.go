@@ -97,7 +97,16 @@ func TestDelivery(t *testing.T) {
 	if len(got) != 1 || got[0]["type"] != "action.ok" || got[0]["module"] != "docker" {
 		t.Fatalf("got %v (calls %d)", got, calls)
 	}
-	ds, _ := s.Deliveries(ctx, w.ID, 10)
+	// The record of the second attempt is written just after the receiver
+	// answers.
+	var ds []Delivery
+	for i := 0; i < 100; i++ {
+		ds, _ = s.Deliveries(ctx, w.ID, 10)
+		if len(ds) == 1 && ds[0].OK {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if len(ds) != 1 || !ds[0].OK || ds[0].Attempts != 2 {
 		t.Fatalf("deliveries %+v", ds)
 	}

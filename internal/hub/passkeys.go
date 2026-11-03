@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/elchi-dev/conduit/internal/auth"
 	"net/http"
 	"net/url"
 	"strings"
@@ -180,6 +181,17 @@ func (s *Server) beginPasskeyRegistration(w http.ResponseWriter, r *http.Request
 	}
 	if !c.Account.Verified {
 		writeErr(w, http.StatusForbidden, "confirm your email address before adding a passkey")
+		return
+	}
+	// A passkey outlives sessions, so adding one needs the password too: a
+	// stolen session alone can't plant a way back in.
+	var req struct {
+		Password string `json:"password"`
+	}
+	_ = readJSON(r, &req)
+	var hash string
+	if err := s.db.Row(r.Context(), `SELECT password_hash FROM accounts WHERE id = ?`, c.Account.ID).Scan(&hash); err != nil || !auth.VerifyPassword(hash, req.Password) {
+		writeErr(w, http.StatusForbidden, "enter your password to add a passkey")
 		return
 	}
 	st, err := s.passkeys()

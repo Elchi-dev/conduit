@@ -88,6 +88,11 @@ func (c policyCollection) Export(ctx context.Context) (map[string]json.RawMessag
 		return nil, false, err
 	}
 	for _, r := range rules {
+		// Each daemon makes the rules for its own trusted automations; they
+		// follow from the automation's trust there, so they don't sync.
+		if strings.HasPrefix(r.ID, "auto_") {
+			continue
+		}
 		out["rule:"+r.ID], _ = json.Marshal(r)
 	}
 	return out, true, nil
@@ -106,6 +111,8 @@ func (c policyCollection) Apply(ctx context.Context, id string, data json.RawMes
 		if err = json.Unmarshal(data, &p); err == nil {
 			err = c.p.SetPreset(ctx, p.Preset)
 		}
+	case strings.HasPrefix(id, "rule:auto_"):
+		return nil // never applied from elsewhere
 	case len(id) > 5 && id[:5] == "rule:":
 		if data == nil {
 			err = c.p.DeleteRule(ctx, id[5:])
@@ -257,29 +264,49 @@ var syncExchangeLimit = ratelimit.New(60, time.Minute, 10000)
 // the answer is encrypted for the group too.
 func (s *Server) syncExchange(w http.ResponseWriter, r *http.Request) {
 	if s.Sync == nil || s.Sync.Key(r.Context()) == nil {
-		writeErr(w, http.StatusNotFound, "sync isn't set up here")
+		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
 	if !syncExchangeLimit.Add(requestSource(r)) {
 		writeErr(w, http.StatusTooManyRequests, "too many sync requests")
 		return
 	}
+	// One exchange at a time is plenty for a handful of daemons, and keeps
+	// unauthenticated bodies from piling up in memory.
+	select {
+	case syncExchangeSlot <- struct{}{}:
+		defer func() { <-syncExchangeSlot }()
+	default:
+		w.Header().Set("Retry-After", "5")
+		writeErr(w, http.StatusTooManyRequests, "busy")
+		return
+	}
 	var req struct {
 		Collection string `json:"collection"`
 		Doc        string `json:"doc"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 48<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxExchangeBody)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	out, err := s.Sync.Exchange(r.Context(), req.Collection, req.Doc)
+	if errors.Is(err, syncer.ErrRefused) {
+		writeErr(w, http.StatusForbidden, "refused")
+		return
+	}
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"doc": out})
 }
+
+// A sealed document of 8 MiB holds tens of thousands of secrets; hub blobs
+// are capped at 1 MiB.
+const maxExchangeBody = 8 << 20
+
+var syncExchangeSlot = make(chan struct{}, 2)
 
 // --- API -------------------------------------------------------------------------
 
@@ -387,6 +414,9 @@ func (s *Server) syncSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) syncRun(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
 	res := s.Sync.Run(r.Context())
 	if res == nil {
 		res = []syncer.CollectionRun{}

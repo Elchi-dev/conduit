@@ -270,6 +270,10 @@ func requestSource(r *http.Request) string {
 	if err != nil {
 		return r.RemoteAddr
 	}
+	// One IPv6 holder usually has a whole /64, so limits count per /64.
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
+	}
 	return host
 }
 

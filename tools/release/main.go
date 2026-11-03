@@ -33,7 +33,12 @@ func main() {
 	channel := flag.String("channel", "stable", "release channel")
 	notes := flag.String("notes", "", "release notes")
 	out := flag.String("out", "conduitd-release.json", "manifest to write")
+	sign := flag.String("sign", "", "instead: sign this file (e.g. dist/SHA256SUMS) into <file>.sig")
 	flag.Parse()
+	if *sign != "" {
+		signFile(*sign)
+		return
+	}
 	if *ver == "" || *base == "" {
 		fail("-version and -base are required")
 	}
@@ -68,6 +73,26 @@ func main() {
 		fail(err.Error())
 	}
 	fmt.Println("wrote", *out, "public key", base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)))
+}
+
+// signFile writes <path>.sig: the base64 ed25519 signature of the file's
+// bytes. The install scripts check SHA256SUMS.sig with the public release
+// key, so a mirror or a swapped download can't change both a binary and
+// its checksum.
+func signFile(path string) {
+	seed, err := base64.StdEncoding.DecodeString(os.Getenv("CONDUIT_RELEASE_PRIVATE_KEY"))
+	if err != nil || len(seed) != ed25519.SeedSize {
+		fail("set CONDUIT_RELEASE_PRIVATE_KEY to the base64 32-byte release key seed")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		fail(err.Error())
+	}
+	sig := ed25519.Sign(ed25519.NewKeyFromSeed(seed), b)
+	if err := os.WriteFile(path+".sig", []byte(base64.StdEncoding.EncodeToString(sig)+"\n"), 0o644); err != nil {
+		fail(err.Error())
+	}
+	fmt.Println("signed", path)
 }
 
 func fileSum(path string) (string, error) {

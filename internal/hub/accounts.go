@@ -387,5 +387,7 @@ func (s *Server) confirmReset(w http.ResponseWriter, r *http.Request) {
 	_, _ = s.db.Exec(ctx, `UPDATE accounts SET password_hash = ?, verified = 1 WHERE id = ?`, auth.HashPassword(req.Password), id)
 	s.grantConfiguredAdmin(ctx, id)
 	_, _ = s.db.Exec(ctx, `UPDATE hub_sessions SET revoked = 1 WHERE account_id = ?`, id)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed; every other sign-in was ended"})
+	// Passkeys too: a reset is how people take their account back.
+	_, _ = s.db.Exec(ctx, `DELETE FROM passkeys WHERE account_id = ?`, id)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed; every other sign-in and every passkey was removed"})
 }

@@ -99,8 +99,10 @@ func TestPasskeys(t *testing.T) {
 	alice := h.signup("alice@example.com")
 	key := newSoftKey(t, "hub.test")
 
-	// Register.
-	begin := h.do("POST", "/v1/passkeys/register/begin", alice, nil, 200)
+	// Register: a session alone isn't enough, the password is needed too.
+	h.do("POST", "/v1/passkeys/register/begin", alice, nil, 403)
+	h.do("POST", "/v1/passkeys/register/begin", alice, map[string]string{"password": "wrong password"}, 403)
+	begin := h.do("POST", "/v1/passkeys/register/begin", alice, map[string]string{"password": "correct horse battery"}, 200)
 	created := h.do("POST", "/v1/passkeys/register/finish", alice, map[string]any{"ceremony": begin["ceremony"], "name": "Laptop", "response": key.create(begin, origin)}, 201)
 	if created["name"] != "Laptop" {
 		t.Fatalf("created %v", created)
@@ -145,12 +147,21 @@ func TestPasskeys(t *testing.T) {
 	h.do("DELETE", "/v1/passkeys/"+id, alice, nil, 204)
 	lb = h.do("POST", "/v1/sessions/passkey/begin", "", nil, 200)
 	h.do("POST", "/v1/sessions/passkey/finish", "", map[string]any{"ceremony": lb["ceremony"], "response": key.get(lb, origin)}, 401)
+
+	// A password reset removes passkeys, so it takes the account back.
+	key2 := newSoftKey(t, "hub.test")
+	b2 := h.do("POST", "/v1/passkeys/register/begin", alice, map[string]string{"password": "correct horse battery"}, 200)
+	h.do("POST", "/v1/passkeys/register/finish", alice, map[string]any{"ceremony": b2["ceremony"], "name": "Planted", "response": key2.create(b2, origin)}, 201)
+	h.do("POST", "/v1/accounts/password-reset", "", map[string]string{"email": "alice@example.com"}, 202)
+	h.do("POST", "/v1/accounts/password-reset/confirm", "", map[string]string{"token": h.mail.lastToken(t, "alice@example.com"), "password": "a brand new password"}, 200)
+	lb = h.do("POST", "/v1/sessions/passkey/begin", "", nil, 200)
+	h.do("POST", "/v1/sessions/passkey/finish", "", map[string]any{"ceremony": lb["ceremony"], "response": key2.get(lb, origin)}, 401)
 }
 
 func TestPasskeyNeedsConfirmedPerson(t *testing.T) {
 	h := newHarness(t, nil)
 	h.do("POST", "/v1/accounts", "", map[string]string{"email": "new@example.com", "password": "correct horse battery"}, 202)
 	tok := h.do("POST", "/v1/sessions", "", map[string]string{"email": "new@example.com", "password": "correct horse battery"}, 200)["token"].(string)
-	h.do("POST", "/v1/passkeys/register/begin", tok, nil, 403)
+	h.do("POST", "/v1/passkeys/register/begin", tok, map[string]string{"password": "correct horse battery"}, 403)
 	h.do("POST", "/v1/passkeys/register/begin", "", nil, 401)
 }

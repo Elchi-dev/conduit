@@ -81,6 +81,7 @@ import Base from "../../layouts/Base.astro";
         <p class="muted">Sign in with your fingerprint, face or device PIN instead of your password. Each passkey stays on the device or password manager that made it.</p>
         <form id="new-passkey" class="inline-form">
           <label class="field"><span>Name</span><input name="name" placeholder="Work laptop" maxlength="60" /></label>
+          <label class="field"><span>Your password</span><input name="password" type="password" autocomplete="current-password" required /></label>
           <button class="btn sm" type="submit">Add a passkey</button>
           <div class="error" data-error hidden></div>
         </form>
@@ -266,7 +267,7 @@ import Base from "../../layouts/Base.astro";
   }
   form($<HTMLFormElement>("new-passkey"), async (v) => {
     try {
-      await addPasskey(v.name || "Passkey");
+      await addPasskey(v.name || "Passkey", v.password);
     } catch (x) {
       throw new Error(passkeyError(x));
     }

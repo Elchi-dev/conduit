@@ -192,8 +192,13 @@ paths:
   /passkeys/register/begin:
     post:
       tags: [accounts]
-      summary: Start adding a passkey (signed-in person with a confirmed email)
-      description: Answers WebAuthn creation options (resident key required) and a ceremony id. Pass `options.publicKey` to navigator.credentials.create(). At most 20 passkeys per account.
+      summary: Start adding a passkey (signed-in person with a confirmed email, and the account password)
+      description: Answers WebAuthn creation options (resident key required) and a ceremony id. Pass `options.publicKey` to navigator.credentials.create(). At most 20 passkeys per account. A password reset removes every passkey.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [password], properties: { password: { type: string } } }
       responses:
         "200": { description: Creation options, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
         "403": { $ref: "#/components/responses/Error" }

@@ -73,7 +73,7 @@ jobs:
           ls -la out
       - name: F-Droid repository builds (throwaway key)
         run: |
-          pip install --quiet fdroidserver
+          pip install --quiet fdroidserver==2.4.5
           export PATH="$PATH:$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
           keytool -genkeypair -keystore "$RUNNER_TEMP/t.jks" -storepass testpass -keypass testpass -alias t \
             -keyalg RSA -keysize 2048 -validity 1000 -dname CN=t >/dev/null

@@ -2,10 +2,12 @@ package daemon
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/webhooks"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -31,7 +33,23 @@ func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	for i := range list {
+		list[i] = redactWebhook(r, list[i])
+	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// redactWebhook hides a webhook URL's path and query from keys and agents:
+// receivers often put their own credentials there (Slack and Discord
+// hooks, ?token=).
+func redactWebhook(r *http.Request, wh webhooks.Webhook) webhooks.Webhook {
+	if p, _ := principal(r); p.Actor.Kind == core.ActorUser {
+		return wh
+	}
+	if u, err := url.Parse(wh.URL); err == nil {
+		wh.URL = u.Scheme + "://" + u.Host + "/…"
+	}
+	return wh
 }
 
 func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +80,7 @@ func (s *Server) getWebhook(w http.ResponseWriter, r *http.Request) {
 		engineErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, wh)
+	writeJSON(w, http.StatusOK, redactWebhook(r, wh))
 }
 
 func (s *Server) patchWebhook(w http.ResponseWriter, r *http.Request) {

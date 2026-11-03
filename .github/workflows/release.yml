@@ -66,7 +66,9 @@ jobs:
           (cd dist && sha256sum * > SHA256SUMS)
       - name: sign the daemon update manifest
         if: env.CONDUIT_RELEASE_PRIVATE_KEY != ''
-        run: go run ./tools/release -version "$TAG" -dir dist -base "https://github.com/${{ github.repository }}/releases/download/$TAG" -out dist/conduitd-release.json
+        run: |
+          go run ./tools/release -sign dist/SHA256SUMS
+          go run ./tools/release -version "$TAG" -dir dist -base "https://github.com/${{ github.repository }}/releases/download/$TAG" -out dist/conduitd-release.json
       - name: no release key
         if: env.CONDUIT_RELEASE_PRIVATE_KEY == ''
         run: echo "::warning::CONDUIT_RELEASE_PRIVATE_KEY isn't set; daemons won't see this release as an update"
@@ -211,7 +213,7 @@ jobs:
           FDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           FDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          pip install --quiet fdroidserver
+          pip install --quiet fdroidserver==2.4.5
           export PATH="$PATH:$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
           export FDROID_KEYSTORE="$RUNNER_TEMP/conduit-release.jks"
           # The repository lives next to the APK in the latest release.

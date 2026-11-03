@@ -1260,6 +1260,7 @@ components:
         env: { type: object, additionalProperties: { type: string }, description: Values may be secret:// references }
         url: { type: string }
         headers: { type: object, additionalProperties: { type: string }, description: Values may be secret:// references }
+        trustReadOnly: { type: boolean, description: "Treat tools the server marks readOnlyHint as reads. Off: every tool is at least a write unless riskOverrides says otherwise." }
         riskOverrides: { type: object, additionalProperties: { type: string, enum: [read, write, destructive] } }
     VaultStatus:
       type: object

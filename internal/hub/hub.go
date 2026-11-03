@@ -90,7 +90,8 @@ type Server struct {
 	relay *relayHub
 	now   func() time.Time
 
-	logins *ratelimit.Window // failed sign-ins per account
+	logins        *ratelimit.Window // failed sign-ins per account
+	relayConnects *ratelimit.Window // new relay client connections per address
 }
 
 // New opens the database and prepares a hub.
@@ -105,7 +106,8 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 	return &Server{cfg: cfg, db: db, mail: m, log: log, relay: newRelayHub(), now: time.Now,
-		logins: ratelimit.New(10, 15*time.Minute, 50000)}, nil
+		logins:        ratelimit.New(10, 15*time.Minute, 50000),
+		relayConnects: ratelimit.New(120, 10*time.Minute, 50000)}, nil
 }
 
 // Close releases the database.

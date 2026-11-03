@@ -35,6 +35,7 @@ type daemonConn struct {
 	mu      sync.Mutex
 	next    uint32
 	clients map[uint32]*websocket.Conn
+	perIP   map[string]int // open client streams per address
 }
 
 func newRelayHub() *relayHub { return &relayHub{daemons: map[string]*daemonConn{}} }
@@ -60,10 +61,8 @@ func (d *daemonConn) control(ctx context.Context, typ string, stream uint32) {
 }
 
 func (s *Server) relayDaemon(w http.ResponseWriter, r *http.Request) {
+	// Only the Authorization header: tokens in URLs end up in proxy logs.
 	tok := bearer(r)
-	if tok == "" {
-		tok = r.URL.Query().Get("token")
-	}
 	c, err := s.authenticate(r.Context(), tok)
 	if err != nil || c.DeviceID == "" {
 		writeErr(w, http.StatusUnauthorized, "the relay needs a paired daemon's device token")
@@ -80,7 +79,7 @@ func (s *Server) relayDaemon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ws.SetReadLimit(maxFrame + 4)
-	d := &daemonConn{ws: ws, clients: map[uint32]*websocket.Conn{}}
+	d := &daemonConn{ws: ws, clients: map[uint32]*websocket.Conn{}, perIP: map[string]int{}}
 
 	s.relay.mu.Lock()
 	if old := s.relay.daemons[c.DeviceID]; old != nil {
@@ -147,7 +146,13 @@ func (s *Server) relayDaemon(w http.ResponseWriter, r *http.Request) {
 // clients: the daemon does, end to end, with an enrolled client key or a
 // one-time pairing secret. Connections are rate-limited per address.
 func (s *Server) relayClient(w http.ResponseWriter, r *http.Request) {
-	s.limited("relay-connect", 120, func(w http.ResponseWriter, r *http.Request) {
+	ip := s.clientIP(r)
+	if !s.relayConnects.Add(ip) {
+		w.Header().Set("Retry-After", "600")
+		writeErr(w, http.StatusTooManyRequests, "too many attempts; try again in a few minutes")
+		return
+	}
+	func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("daemon")
 		s.relay.mu.Lock()
 		d := s.relay.daemons[id]
@@ -162,7 +167,8 @@ func (s *Server) relayClient(w http.ResponseWriter, r *http.Request) {
 		}
 		ws.SetReadLimit(maxFrame)
 		d.mu.Lock()
-		if len(d.clients) >= 64 {
+		// One address can't take all of a daemon's slots.
+		if len(d.clients) >= 64 || d.perIP[ip] >= 8 {
 			d.mu.Unlock()
 			ws.Close(websocket.StatusTryAgainLater, "too many clients on this daemon")
 			return
@@ -170,6 +176,7 @@ func (s *Server) relayClient(w http.ResponseWriter, r *http.Request) {
 		d.next++
 		stream := d.next
 		d.clients[stream] = ws
+		d.perIP[ip]++
 		d.mu.Unlock()
 
 		ctx := r.Context()
@@ -177,6 +184,9 @@ func (s *Server) relayClient(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			d.mu.Lock()
 			delete(d.clients, stream)
+			if d.perIP[ip]--; d.perIP[ip] <= 0 {
+				delete(d.perIP, ip)
+			}
 			d.mu.Unlock()
 			d.control(context.Background(), "close", stream)
 			ws.CloseNow()
@@ -196,7 +206,7 @@ func (s *Server) relayClient(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	})(w, r)
+	}(w, r)
 }
 
 func keepAlive(ctx context.Context, ws *websocket.Conn) {

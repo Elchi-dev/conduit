@@ -78,7 +78,9 @@ func TOTP(secret string, now time.Time) (string, int, error) {
 		}
 		secret = u.Query().Get("secret")
 		if p := u.Query().Get("period"); p != "" {
-			fmt.Sscan(p, &period)
+			if _, err := fmt.Sscan(p, &period); err != nil || period < 1 || period > 3600 {
+				return "", 0, errors.New("the TOTP period must be between 1 and 3600 seconds")
+			}
 		}
 	}
 	clean := strings.ToUpper(strings.NewReplacer(" ", "", "-", "").Replace(secret))

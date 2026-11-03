@@ -32,6 +32,11 @@ type MCPServer struct {
 	Env       map[string]string `json:"env,omitempty"` // values may be secret:// references
 	URL       string            `json:"url,omitempty"`
 	Headers   map[string]string `json:"headers,omitempty"` // values may be secret:// references
+	// TrustReadOnly takes the server's readOnlyHint at its word, so tools it
+	// marks read-only are treated as reads. Off by default: the hint is the
+	// server's own claim, and a malicious or buggy server could label a
+	// writing tool read-only to skip approvals.
+	TrustReadOnly bool `json:"trustReadOnly,omitempty"`
 	// RiskOverrides sets a tool's risk explicitly ("read", "write", "destructive").
 	RiskOverrides map[string]string `json:"riskOverrides,omitempty"`
 }
@@ -231,7 +236,7 @@ func (b *Bridge) Mount(ctx context.Context, s MCPServer) error {
 	for _, t := range tl.Tools {
 		risk := sdk.RiskWrite
 		if t.Annotations != nil {
-			if t.Annotations.ReadOnlyHint {
+			if t.Annotations.ReadOnlyHint && s.TrustReadOnly && !t.Annotations.DestructiveHint {
 				risk = sdk.RiskRead
 			}
 			if t.Annotations.DestructiveHint {

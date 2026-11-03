@@ -34,7 +34,18 @@ func TestBridgeMountsAnMCPServer(t *testing.T) {
 	if _, err := b.Save(ctx, MCPServer{Name: "Remote", Transport: "http", URL: remote.URL, Headers: map[string]string{"Authorization": "Bearer plaintext"}}); err == nil {
 		t.Fatal("plaintext credential header accepted")
 	}
-	srv, err := b.Save(ctx, MCPServer{Name: "Remote", Transport: "http", URL: "http://127.0.0.1" + strings.TrimPrefix(remote.URL, "http://127.0.0.1"), Headers: map[string]string{"Authorization": "secret://remote"}})
+	// Untrusted hints: every tool is at least a write.
+	untrusted, err := b.Save(ctx, MCPServer{Name: "Untrusted", Transport: "http", URL: remote.URL, Headers: map[string]string{"Authorization": "secret://remote"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	um, _ := local.Module(untrusted.ModuleID())
+	for _, a := range um.Manifest().Actions {
+		if a.Risk == sdk.RiskRead {
+			t.Fatalf("%s is a read without trusting the server's hints", a.Name)
+		}
+	}
+	srv, err := b.Save(ctx, MCPServer{Name: "Remote", Transport: "http", TrustReadOnly: true, URL: "http://127.0.0.1" + strings.TrimPrefix(remote.URL, "http://127.0.0.1"), Headers: map[string]string{"Authorization": "secret://remote"}})
 	if err != nil {
 		t.Fatal(err)
 	}

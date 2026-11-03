@@ -51,9 +51,12 @@ most 12 model round-trips per turn.
 ## Bridge (`bridge.go`)
 
 Mounts an outside MCP server (a local command over stdio, or a remote HTTP
-server) as a module named `mcp-<id>`. Its tools become actions; risk comes from
-the server's annotations (read-only → read, destructive → destructive,
-otherwise write) unless overridden. Credentials in environment variables or
+server) as a module named `mcp-<id>`. Its tools become actions. A tool is a
+write unless the server marks it destructive (then destructive) or, when the
+person adding the server chose `trustReadOnly`, read-only (then read); the
+hints are the server's own claims, so by default a "read-only" tool still
+follows the approval rules for changes. `riskOverrides` sets any tool's risk
+explicitly. Credentials in environment variables or
 headers must be vault references. Only signed-in people can add a server,
 because a stdio server runs a command on this machine.
 

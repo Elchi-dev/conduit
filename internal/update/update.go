@@ -170,6 +170,10 @@ func (u *Updater) Verify(s Signed) (Payload, error) {
 	if p.Component != "daemon" || p.Platform != Platform() {
 		return p, fmt.Errorf("the release is for %s %s, not daemon %s", p.Component, p.Platform, Platform())
 	}
+	// A signed beta build must not be served to stable installs.
+	if u.Channel != "" && p.Channel != u.Channel {
+		return p, fmt.Errorf("the release is on the %q channel, not %q", p.Channel, u.Channel)
+	}
 	if !strings.HasPrefix(p.URL, "https://") || len(p.SHA256) != 64 {
 		return p, errors.New("the release has no https download or checksum")
 	}

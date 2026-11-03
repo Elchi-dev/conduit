@@ -195,7 +195,7 @@ function OutsideServers() {
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ["mcp-servers"], queryFn: () => ok(api.GET("/mcp-servers")) });
   const [adding, setAdding] = useState(false);
-  const [f, setF] = useState({ name: "", transport: "stdio" as "stdio" | "http", command: "npx", args: "", url: "https://", envKey: "", envVal: "" });
+  const [f, setF] = useState({ name: "", transport: "stdio" as "stdio" | "http", command: "npx", args: "", url: "https://", envKey: "", envVal: "", trust: false });
   const save = useMutation({
     mutationFn: () =>
       ok(
@@ -208,6 +208,7 @@ function OutsideServers() {
             url: f.transport === "http" ? f.url : undefined,
             env: f.transport === "stdio" && f.envKey ? { [f.envKey]: f.envVal } : undefined,
             headers: f.transport === "http" && f.envKey ? { [f.envKey]: f.envVal } : undefined,
+            trustReadOnly: f.trust,
           },
         }),
       ),
@@ -301,6 +302,10 @@ function OutsideServers() {
               <small>Credentials must be vault references.</small>
             </label>
           </div>
+          <label className="check">
+            <input type="checkbox" checked={f.trust} onChange={(e) => setF({ ...f, trust: e.target.checked })} />
+            <span>Trust this server's read-only labels. Otherwise every tool counts as a change and follows your approval rules.</span>
+          </label>
           {save.error && <div className="error">{save.error.message}</div>}
           <div className="inline">
             <button type="button" className="btn quiet" onClick={() => setAdding(false)}>

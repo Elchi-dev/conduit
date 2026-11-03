@@ -1403,6 +1403,8 @@ export interface components {
             headers?: {
                 [key: string]: string;
             };
+            /** @description Treat tools the server marks readOnlyHint as reads. Off: every tool is at least a write unless riskOverrides says otherwise. */
+            trustReadOnly?: boolean;
             riskOverrides?: {
                 [key: string]: "read" | "write" | "destructive";
             };

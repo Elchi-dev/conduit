@@ -3,39 +3,587 @@ info:
   title: Conduit Hub API
   version: 0.1.0
   description: |
-    The hub API covers accounts, organizations, devices, the module registry,
-    webhooks and the update feed. Every hub is independent: accounts are not
-    shared between hub operators. See docs/protocol/README.md.
+    The hub is the optional meeting point for Conduit daemons and clients:
+    accounts, organisations, device pairing, the end-to-end encrypted relay,
+    encrypted sync, the module registry and the signed update feed.
+
+    Anyone can run a hub (see docs/self-hosting). Accounts belong to one hub
+    and are never shared between hubs. The protocol is described in
+    docs/protocol/hub.md; this file is the source of truth for the HTTP
+    surface, and a test in internal/hub fails if it drifts from the code.
+
+    Authenticate with `Authorization: Bearer <token>`:
+    - `chs_…` session token from `POST /sessions` (a person; full access),
+    - `chd_…` device token from `POST /devices/pair` (relay, sync, registry reads),
+    - `chk_…` hub API key from `POST /keys` (only its scopes).
 servers:
-  - url: https://hub.example.com/v1
+  - url: http://localhost:7700/v1
+security:
+  - bearer: []
+tags:
+  - name: hub
+  - name: accounts
+  - name: orgs
+  - name: devices
+  - name: relay
+  - name: sync
+  - name: keys
+  - name: registry
+  - name: updates
 paths:
   /version:
     get:
-      operationId: getHubVersion
-      summary: Build information of the hub
-      tags: [system]
+      tags: [hub]
       security: []
+      summary: Build information
+      responses:
+        "200": { description: Version, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /info:
+    get:
+      tags: [hub]
+      security: []
+      summary: What this hub offers
       responses:
         "200":
-          description: OK
+          description: Hub info
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Version" }
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  url: { type: string }
+                  openRegistration: { type: boolean }
+                  mail: { type: boolean, description: Whether the operator configured real email delivery }
+                  version: { type: string }
+                  relayVersion: { type: integer }
+                  releaseKey: { type: string, description: Base64 ed25519 key release manifests are signed with }
+
+  /accounts:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Create an account
+      description: |
+        Sends a verification email. Answers 202 whether or not the address
+        already has an account, so addresses can't be probed. Limited to 10
+        attempts per address per 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                name: { type: string }
+                password: { type: string, minLength: 10 }
+                inviteToken: { type: string, description: Lets invited people register on hubs with closed registration }
+      responses:
+        "202": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /accounts/verify:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Confirm an email address with the emailed token
+      requestBody: { $ref: "#/components/requestBodies/Token" }
+      responses:
+        "200": { description: Verified, content: { application/json: { schema: { type: object, properties: { verified: { type: boolean } } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+  /accounts/password-reset:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Email a password reset link
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string } } } } }
+      responses:
+        "202": { $ref: "#/components/responses/Status" }
+  /accounts/password-reset/confirm:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Set a new password; ends every session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [token, password], properties: { token: { type: string }, password: { type: string, minLength: 10 } } }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+  /sessions:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                device: { type: string, description: A label for this sign-in }
+      responses:
+        "200":
+          description: Signed in; sessions last 30 days
+          content:
+            application/json:
+              schema: { type: object, required: [token, account], properties: { token: { type: string }, account: { $ref: "#/components/schemas/Account" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [accounts]
+      summary: Sign out this session
+      responses:
+        "204": { description: Signed out }
+  /me:
+    get:
+      tags: [accounts]
+      summary: Who is calling
+      responses:
+        "200":
+          description: Caller
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account: { $ref: "#/components/schemas/Account" }
+                  device: { type: string, description: Set for device tokens }
+                  scopes: { type: [array, "null"], items: { type: string }, description: Null for a full session }
+        "401": { $ref: "#/components/responses/Error" }
+  /me/resend-verification:
+    post:
+      tags: [accounts]
+      summary: Send the verification email again
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "202": { $ref: "#/components/responses/Status" }
+
+  /orgs:
+    get:
+      tags: [orgs]
+      summary: Organisations you belong to (scope orgs:read)
+      responses:
+        "200": { description: Orgs, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Org" } } } } }
+    post:
+      tags: [orgs]
+      summary: Create an organisation; you become its owner
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 80 } } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Org" } } } }
+  /orgs/{id}/members:
+    get:
+      tags: [orgs]
+      summary: Members of an organisation
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Members, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Member" } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/invites:
+    post:
+      tags: [orgs]
+      summary: Invite someone by email (owners and admins)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [email], properties: { email: { type: string }, role: { type: string, enum: [member, admin, owner] } } }
+      responses:
+        "202": { $ref: "#/components/responses/Status" }
+        "403": { $ref: "#/components/responses/Error" }
+  /orgs/{id}/members/{account}:
+    delete:
+      tags: [orgs]
+      summary: Remove a member, or leave
+      description: Owners remove anyone, admins remove members, everyone can leave. The last owner can't leave.
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { name: account, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Removed }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /invites/accept:
+    post:
+      tags: [orgs]
+      summary: Accept an emailed invitation
+      requestBody: { $ref: "#/components/requestBodies/Token" }
+      responses:
+        "200": { description: Joined, content: { application/json: { schema: { type: object, properties: { org: { type: string }, role: { type: string } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /pairing-codes:
+    post:
+      tags: [devices]
+      summary: Make a one-time code to pair a device (valid 10 minutes)
+      responses:
+        "201":
+          description: Code
+          content:
+            application/json:
+              schema: { type: object, properties: { code: { type: string }, expiresAt: { type: string, format: date-time } } }
+  /devices/pair:
+    post:
+      tags: [devices]
+      security: []
+      summary: Pair a daemon or client with a pairing code
+      description: Returns a device token, shown once. Daemons must send their X25519 relay public key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, kind]
+              properties:
+                code: { type: string }
+                name: { type: string }
+                kind: { type: string, enum: [daemon, client] }
+                publicKey: { type: string, description: Base64url X25519 public key }
+      responses:
+        "201":
+          description: Paired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device: { $ref: "#/components/schemas/Device" }
+                  token: { type: string }
+                  account: { type: object, properties: { id: { type: string }, email: { type: string } } }
+                  hub: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+  /devices:
+    get:
+      tags: [devices]
+      summary: Your paired devices, with relay presence
+      responses:
+        "200": { description: Devices, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Device" } } } } }
+  /devices/{id}:
+    delete:
+      tags: [devices]
+      summary: Unpair a device; drops its relay connection
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /relay/daemon:
+    get:
+      tags: [relay]
+      summary: WebSocket a daemon keeps open to be reachable
+      description: |
+        Upgrade to WebSocket with a daemon device token (header, or `?token=`
+        for clients that can't set headers). Binary messages carry a 4-byte
+        big-endian stream id followed by one end-to-end encrypted frame; text
+        messages are `{"type":"open"|"close","stream":n}` control events.
+      responses:
+        "101": { description: Switching protocols }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /relay/connect/{daemon}:
+    get:
+      tags: [relay]
+      security: []
+      summary: WebSocket a client opens to reach a daemon
+      description: |
+        Each binary message is one frame. The first is the client's plaintext
+        handshake hello; every later frame is encrypted (pkg/relay). The hub
+        doesn't authenticate clients; the daemon does, end to end.
+      parameters: [{ name: daemon, in: path, required: true, schema: { type: string } }]
+      responses:
+        "101": { description: Switching protocols }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /sync:
+    get:
+      tags: [sync]
+      summary: List your sync blobs (without data)
+      responses:
+        "200": { description: Blobs, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Blob" } } } } }
+  /sync/{key}:
+    parameters: [{ name: key, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,99}$" } }]
+    get:
+      tags: [sync]
+      summary: Read a blob
+      responses:
+        "200": { description: Blob, content: { application/json: { schema: { $ref: "#/components/schemas/Blob" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [sync]
+      summary: Write a blob with an optimistic version
+      description: Send version 0 to create, or the version you last read. A mismatch answers 409 with the current blob.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [data], properties: { version: { type: integer }, data: { type: string, description: Client-encrypted, at most 1 MiB } } }
+      responses:
+        "200": { description: Written, content: { application/json: { schema: { $ref: "#/components/schemas/Blob" } } } }
+        "409": { description: Version conflict, content: { application/json: { schema: { type: object, properties: { error: { type: string }, current: { $ref: "#/components/schemas/Blob" } } } } } }
+        "413": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [sync]
+      summary: Delete a blob
+      responses:
+        "204": { description: Deleted }
+
+  /keys:
+    get:
+      tags: [keys]
+      summary: Your hub API keys
+      responses:
+        "200": { description: Keys, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/HubKey" } } } } }
+    post:
+      tags: [keys]
+      summary: Create a hub API key; the secret is shown once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scopes]
+              properties:
+                name: { type: string }
+                scopes: { type: array, items: { type: string, enum: [orgs:read, devices:read, sync, registry:read, registry:publish, releases:publish] } }
+      responses:
+        "201":
+          description: Created
+          content: { application/json: { schema: { type: object, properties: { key: { $ref: "#/components/schemas/HubKey" }, secret: { type: string } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /keys/{id}:
+    delete:
+      tags: [keys]
+      summary: Revoke a hub API key
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Revoked }
+
+  /registry/packages:
+    get:
+      tags: [registry]
+      security: []
+      summary: Search modules
+      parameters: [{ name: q, in: query, schema: { type: string } }]
+      responses:
+        "200": { description: Packages, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Package" } } } } }
+  /registry/packages/{name}:
+    get:
+      tags: [registry]
+      security: []
+      summary: A module with all versions and its author key
+      description: Package names contain a slash (`handle/module`); escape it as `%2F`. Pass `download=1` when installing to count a download.
+      parameters:
+        - { $ref: "#/components/parameters/PackageName" }
+        - { name: download, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Package
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  package: { $ref: "#/components/schemas/Package" }
+                  authorKey: { type: string }
+                  versions: { type: array, items: { $ref: "#/components/schemas/PackageVersion" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/authors:
+    post:
+      tags: [registry]
+      summary: Register as an author, or rotate your signing key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [handle, publicKey], properties: { handle: { type: string }, publicKey: { type: string, description: Base64 ed25519 public key } } }
+      responses:
+        "201": { $ref: "#/components/responses/Status" }
+        "200": { $ref: "#/components/responses/Status" }
+        "409": { $ref: "#/components/responses/Error" }
+  /registry/authors/{handle}:
+    get:
+      tags: [registry]
+      security: []
+      summary: An author's public key
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Author, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/versions:
+    post:
+      tags: [registry]
+      summary: Publish a signed version (scope registry:publish)
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      requestBody: { $ref: "#/components/requestBodies/Signed" }
+      responses:
+        "201": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/versions/{version}/yank:
+    post:
+      tags: [registry]
+      summary: Yank a version so it's no longer offered
+      parameters:
+        - { $ref: "#/components/parameters/PackageName" }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Yanked }
+
+  /updates/{component}/{channel}/{platform}:
+    get:
+      tags: [updates]
+      security: []
+      summary: The newest signed release
+      description: Pass `current` to get 204 when there's nothing newer. Clients must verify the signature with their built-in release key.
+      parameters:
+        - { name: component, in: path, required: true, schema: { type: string, enum: [daemon, desktop, android, hub] } }
+        - { name: channel, in: path, required: true, schema: { type: string } }
+        - { name: platform, in: path, required: true, schema: { type: string } }
+        - { name: current, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Release
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string }
+                  payload: { type: string, description: Base64 of the signed ReleasePayload JSON }
+                  signature: { type: string }
+                  publishedAt: { type: string, format: date-time }
+        "204": { description: Up to date }
+        "404": { $ref: "#/components/responses/Error" }
+  /releases:
+    post:
+      tags: [updates]
+      summary: Publish a release signed with the hub's release key (admins)
+      requestBody: { $ref: "#/components/requestBodies/Signed" }
+      responses:
+        "201": { description: Published, content: { application/json: { schema: { $ref: "#/components/schemas/ReleasePayload" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
-    apiKey:
-      type: http
-      scheme: bearer
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string } }
+    PackageName: { name: name, in: path, required: true, schema: { type: string }, description: "handle/module, slash escaped as %2F" }
+  requestBodies:
+    Token:
+      required: true
+      content: { application/json: { schema: { type: object, required: [token], properties: { token: { type: string } } } } }
+    Signed:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [payload, signature]
+            properties:
+              payload: { type: string, description: Base64 of the exact JSON bytes that were signed }
+              signature: { type: string, description: Base64 ed25519 signature over those bytes }
+  responses:
+    Error:
+      description: Error
+      content: { application/json: { schema: { type: object, required: [error], properties: { error: { type: string } } } } }
+    Status:
+      description: OK
+      content: { application/json: { schema: { type: object, additionalProperties: true } } }
   schemas:
-    Version:
+    Account:
       type: object
-      required: [version, commit, date, go, os, arch]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        verified: { type: boolean }
+        admin: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    Org:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, member] }
+        createdAt: { type: string, format: date-time }
+    Member:
+      type: object
+      properties:
+        accountId: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string }
+        joinedAt: { type: string, format: date-time }
+    Device:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [daemon, client] }
+        publicKey: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        online: { type: boolean }
+    Blob:
+      type: object
+      properties:
+        key: { type: string }
+        version: { type: integer }
+        data: { type: string }
+        updatedAt: { type: string, format: date-time }
+    HubKey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        prefix: { type: string }
+        scopes: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+    Package:
+      type: object
+      properties:
+        name: { type: string }
+        owner: { type: string }
+        description: { type: string }
+        homepage: { type: string }
+        latest: { type: string }
+        downloads: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    PackageVersion:
+      type: object
       properties:
         version: { type: string }
-        commit: { type: string }
-        date: { type: string }
-        go: { type: string }
-        os: { type: string }
-        arch: { type: string }
-security:
-  - apiKey: []
+        payload: { type: string, description: Base64 of the signed VersionPayload JSON }
+        signature: { type: string }
+        yanked: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ReleasePayload:
+      type: object
+      properties:
+        component: { type: string }
+        channel: { type: string }
+        platform: { type: string }
+        version: { type: string }
+        url: { type: string }
+        sha256: { type: string }
+        notes: { type: string }

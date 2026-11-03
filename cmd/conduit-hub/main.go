@@ -19,6 +19,7 @@ func main() {
 	cfg := hub.DefaultConfig()
 	flag.StringVar(&cfg.Listen, "listen", cfg.Listen, "address to listen on")
 	flag.StringVar(&cfg.DatabaseURL, "db", cfg.DatabaseURL, "database URL (postgres:// or sqlite path)")
+	flag.StringVar(&cfg.PublicURL, "url", cfg.PublicURL, "public URL people reach this hub at")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))

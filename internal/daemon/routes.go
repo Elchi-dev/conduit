@@ -366,7 +366,13 @@ func (s *Server) getInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, instanceView{Instance: in, Health: &h})
 }
 
+// saveInstance creates or changes a connection. People only: settings
+// decide which secrets a module may resolve and where it sends them, so a
+// key that could edit them could exfiltrate any vault secret.
 func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
 	var req struct {
 		Module  string          `json:"module"`
 		Name    string          `json:"name"`
@@ -406,6 +412,9 @@ func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
 	if err := s.Engine.DeleteInstance(r.Context(), r.PathValue("id")); err != nil {
 		engineErr(w, err)
 		return
@@ -674,7 +683,7 @@ func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) {
 func (s *Server) humanOnly(w http.ResponseWriter, r *http.Request) bool {
 	p, _ := principal(r)
 	if p.Actor.Kind != core.ActorUser {
-		writeErr(w, http.StatusForbidden, "only a signed-in person can change policy")
+		writeErr(w, http.StatusForbidden, "only a signed-in person can do this, not an agent or API key")
 		return false
 	}
 	return true

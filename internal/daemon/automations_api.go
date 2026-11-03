@@ -60,6 +60,14 @@ func (s *Server) getAutomation(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) saveAutomation(w http.ResponseWriter, r *http.Request) {
 	p, _ := principal(r)
+	// Agents and keys may draft automations (saved disabled), but not
+	// while the emergency stop is on.
+	if p.Actor.Kind != core.ActorUser {
+		if frozen, _ := s.Engine.Policy.Frozen(r.Context()); frozen {
+			writeErr(w, http.StatusForbidden, "the emergency stop is on")
+			return
+		}
+	}
 	var a automation.Automation
 	if err := readJSON(r, &a); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -85,6 +93,9 @@ func (s *Server) saveAutomation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteAutomation(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
 	if err := s.Automations.Delete(r.Context(), r.PathValue("id")); err != nil {
 		writeErr(w, http.StatusNotFound, "no such automation")
 		return

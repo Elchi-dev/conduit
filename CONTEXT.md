@@ -12,8 +12,9 @@ owner and a company equally; never tailor it to one setup.
 
 ## Current state
 
-- **Released:** v0.1.0 (~03:55 CET) and v0.2.0 (~20:00 CET) on
-  2026-11-03. https://github.com/Elchi-dev/conduit/releases
+- **Released:** v0.1.0 (~03:55 CET) and v0.2.0 (~20:45 CET) on
+  2026-11-03. v0.2.0 has no macOS or Windows desktop installers yet (no
+  runners; see BUILD_LOG.md phase 22); re-run its failed jobs to add them. https://github.com/Elchi-dev/conduit/releases
 - **v0.2.0 (phases 17–21, see BUILD_LOG.md):** 7 more modules (27 in all),
   signed outgoing webhooks, password-manager CSV import, one-line
   installers that check a signed SHA256SUMS, changelog and API reference

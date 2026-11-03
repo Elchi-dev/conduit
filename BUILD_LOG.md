@@ -3,6 +3,26 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 22 — Release v0.2.0
+
+**Landed**
+
+- v0.2.0 is published: https://github.com/Elchi-dev/conduit/releases/tag/v0.2.0
+  (17 assets): daemon and hub binaries for six platforms with `SHA256SUMS`,
+  the Linux desktop packages (deb, rpm, AppImage) and the Android APK.
+  Release notes in `docs/releases/v0.2.0.md`.
+
+**Changed from the plan**
+
+- No macOS or Windows desktop installers in v0.2.0. Since the afternoon,
+  macOS jobs sit queued for 15 minutes without a runner and are cancelled
+  (probably the private repository's Actions minutes; macOS counts ten
+  times). The Windows desktop build stopped after 58 minutes with its log
+  gone. v0.1.0's installers still work, and the daemon and hub binaries for
+  both systems are in v0.2.0. The release workflow now caches Rust builds
+  and gives desktop jobs two hours; re-running the failed jobs of the
+  v0.2.0 run (Actions, release, Re-run failed jobs) adds the installers.
+
 ## 2026-11-03 · Phase 21 — Second security review
 
 A second independent reviewer (a separate agent that hadn't seen the work)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -94,6 +95,20 @@ func TestAllowed(t *testing.T) {
 	for host, want := range map[string]bool{"api.github.com": true, "a.example.com": true, "example.com": false, "evil.com": false, "api.github.com.evil.com": false} {
 		if got := p.Allowed(&url.URL{Host: host}); got != want {
 			t.Errorf("%s: %v", host, got)
+		}
+	}
+}
+
+func TestReserved(t *testing.T) {
+	for _, s := range []string{"127.0.0.1", "10.1.2.3", "192.168.1.1", "169.254.169.254", "100.100.100.100", "198.18.0.1",
+		"64:ff9b::a00:1", "::1", "fe80::1", "fd00::1", "224.0.0.1", "0.0.0.0", "::ffff:127.0.0.1"} {
+		if !reserved(net.ParseIP(s)) {
+			t.Errorf("%s should be refused", s)
+		}
+	}
+	for _, s := range []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"} {
+		if reserved(net.ParseIP(s)) {
+			t.Errorf("%s should be allowed", s)
 		}
 	}
 }

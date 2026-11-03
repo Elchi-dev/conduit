@@ -34,9 +34,12 @@ Put `<name>.wasm` in `<data>/modules/`, with an optional `<name>.json`:
 ```
 
 No `network` entry means no network at all. Requests must use `https://`;
-granted names that resolve to loopback, private or link-local addresses are
-refused, so a module can't be aimed at your local network. Responses are
-capped at 4 MiB and 20 seconds.
+granted names that resolve to loopback, private, link-local, multicast,
+carrier-grade NAT (100.64.0.0/10, which includes Tailscale), NAT64, 6to4,
+Teredo, benchmarking or unique-local addresses are refused, so a module can't
+be aimed at your local network. Redirects are followed (at most 5) only to
+`https://` URLs on granted names. Responses are capped at 4 MiB and 20
+seconds.
 
 ## Host functions
 

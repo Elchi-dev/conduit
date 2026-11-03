@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -156,12 +157,41 @@ func noPrivate(ctx context.Context, network, addr string) (net.Conn, error) {
 		return nil, err
 	}
 	for _, ip := range ips {
-		if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() || ip.IP.IsUnspecified() {
-			return nil, fmt.Errorf("%s resolves to a local address", host)
+		if reserved(ip.IP) {
+			return nil, fmt.Errorf("%s resolves to a local or reserved address", host)
 		}
 	}
 	var d net.Dialer
 	return d.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+}
+
+// Ranges a sandboxed module must never reach besides the stdlib's loopback,
+// private and link-local checks: carrier-grade NAT (also Tailscale), NAT64
+// (which can embed any IPv4 address, private ones included), benchmarking,
+// 6to4, Teredo and the "this network" block.
+var reservedNets = func() []*net.IPNet {
+	var out []*net.IPNet
+	for _, c := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "198.18.0.0/15", "64:ff9b::/96", "64:ff9b:1::/48", "2002::/16", "2001::/32", "fc00::/7"} {
+		_, n, _ := net.ParseCIDR(c)
+		out = append(out, n)
+	}
+	return out
+}()
+
+func reserved(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	for _, n := range reservedNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // Options tune Start (tests allow local servers).
@@ -195,6 +225,19 @@ func Start(ctx context.Context, wasm []byte, perms Permissions, log *slog.Logger
 		}
 		client = &http.Client{Timeout: 20 * time.Second, Transport: tr}
 	}
+	// Redirects are followed only to https URLs on hosts the module was
+	// granted, so a granted site can't bounce a request elsewhere.
+	c := *client
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("too many redirects")
+		}
+		if req.URL.Scheme != "https" || !perms.Allowed(req.URL) {
+			return fmt.Errorf("redirect to %s isn't allowed for this module", req.URL.Host)
+		}
+		return nil
+	}
+	client = &c
 	nh := &netHost{perms: perms, client: client}
 	_, err := rt.NewHostModuleBuilder("conduit").
 		NewFunctionBuilder().WithFunc(func(ctx context.Context, m api.Module, ptr, size uint32) uint32 {

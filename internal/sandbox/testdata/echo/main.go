@@ -15,8 +15,12 @@ import (
 
 type echo struct{ h sdk.Host }
 
+// moduleID can be set at build time (-ldflags "-X main.moduleID=…"), for
+// tests that install it under an author's name.
+var moduleID = "echo"
+
 func (e *echo) Manifest() sdk.Manifest {
-	return sdk.Manifest{ID: "echo", Name: "Echo", Version: "1.0.0", Actions: []sdk.ActionSpec{
+	return sdk.Manifest{ID: moduleID, Name: "Echo", Version: "1.0.0", Actions: []sdk.ActionSpec{
 		{Name: "echo", Risk: sdk.RiskRead}, {Name: "secret", Risk: sdk.RiskRead}, {Name: "fetch", Risk: sdk.RiskRead}, {Name: "file", Risk: sdk.RiskRead},
 	}}
 }

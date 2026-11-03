@@ -54,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	routes = append(routes, s.backupRoutes()...)
 	routes = append(routes, s.tileRoutes()...)
 	routes = append(routes, s.discoverRoutes()...)
+	routes = append(routes, s.registryRoutes()...)
 	if s.Remote != nil {
 		// Direct, end-to-end encrypted connections from paired devices on
 		// the local network (the handshake authenticates them).

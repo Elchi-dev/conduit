@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { api, ok, type Manifest } from "../api/client";
 import { defaults, SchemaForm, type JSONSchema } from "../components/SchemaForm";
 import "./pages.css";
@@ -37,7 +37,10 @@ export function Modules() {
     <div className="page">
       <div className="page-head">
         <h1>Modules</h1>
-        <p>Each module connects one kind of thing — a mailbox, a server, a dashboard. Connect as many of each as you need.</p>
+        <p>
+          Each module connects one kind of thing — a mailbox, a server, a dashboard. Connect as many of each as you need, or{" "}
+          <Link href="/modules/registry">add modules from your hub</Link>.
+        </p>
       </div>
       <div className="spread">
         <input className="input" style={{ maxWidth: 320 }} placeholder="Filter modules" value={filter} onChange={(e) => setFilter(e.target.value)} />

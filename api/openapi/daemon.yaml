@@ -1375,6 +1375,82 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Tile" } } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /registry:
+    get:
+      operationId: searchRegistry
+      tags: [modules]
+      summary: Search the linked hub's module registry
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200": { description: The hub's answer, content: { application/json: { schema: { type: array, items: { type: object, additionalProperties: true } } } } }
+        "409": { description: Not linked to a hub and no registry set }
+  /registry/package:
+    get:
+      operationId: registryPackage
+      tags: [modules]
+      summary: A package's newest (or given) version, checked against its author's signature
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string }, description: "author/module" }
+        - { name: version, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, version, description, authorKey, fingerprint, network, installable]
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+                  description: { type: string }
+                  homepage: { type: string }
+                  authorKey: { type: string }
+                  fingerprint: { type: string, description: Short form of the author key to compare }
+                  network: { type: array, items: { type: string }, description: Hosts the module may reach }
+                  memoryMB: { type: integer }
+                  installable: { type: boolean, description: True when there's a sandboxed (WebAssembly) build }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /registry/install:
+    post:
+      operationId: installModule
+      tags: [modules]
+      summary: Install or update a sandboxed module from the registry (signed-in people only)
+      description: Verifies the author's signature and the download's checksum, pins the author key on first install, checks the module uses ids starting with its author's handle, and starts it. `fingerprint` must be the one the person was shown.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, fingerprint]
+              properties:
+                name: { type: string }
+                version: { type: string }
+                fingerprint: { type: string }
+      responses:
+        "200": { description: Installed, content: { application/json: { schema: { $ref: "#/components/schemas/InstalledModule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: The author key changed, or the module id is taken }
+        "502": { description: The download failed or didn't match }
+  /registry/installed:
+    get:
+      operationId: installedModules
+      tags: [modules]
+      summary: Modules installed from a registry
+      parameters:
+        - { name: check, in: query, schema: { type: string, enum: ["1"] }, description: Also look up the newest version }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/InstalledModule" } } } } }
+    delete:
+      operationId: removeModule
+      tags: [modules]
+      summary: Stop and remove an installed module and its instances (signed-in people only)
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Removed }
 components:
   securitySchemes:
     bearer:
@@ -1389,6 +1465,18 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    InstalledModule:
+      type: object
+      required: [name, version, authorKey, fingerprint, moduleId, network, installedAt]
+      properties:
+        name: { type: string }
+        version: { type: string }
+        authorKey: { type: string }
+        fingerprint: { type: string }
+        moduleId: { type: string }
+        network: { type: array, items: { type: string } }
+        installedAt: { type: string, format: date-time }
+        latest: { type: string }
     BackupSchedule:
       type: object
       required: [enabled, folder, passphrase, keep, hour]

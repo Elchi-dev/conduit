@@ -1662,10 +1662,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search the linked hub's module registry */
+        get: operations["searchRegistry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registry/package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A package's newest (or given) version, checked against its author's signature */
+        get: operations["registryPackage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registry/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install or update a sandboxed module from the registry (signed-in people only)
+         * @description Verifies the author's signature and the download's checksum, pins the author key on first install, checks the module uses ids starting with its author's handle, and starts it. `fingerprint` must be the one the person was shown.
+         */
+        post: operations["installModule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registry/installed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Modules installed from a registry */
+        get: operations["installedModules"];
+        put?: never;
+        post?: never;
+        /** Stop and remove an installed module and its instances (signed-in people only) */
+        delete: operations["removeModule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        InstalledModule: {
+            name: string;
+            version: string;
+            authorKey: string;
+            fingerprint: string;
+            moduleId: string;
+            network: string[];
+            /** Format: date-time */
+            installedAt: string;
+            latest?: string;
+        };
         BackupSchedule: {
             enabled: boolean;
             /** @description Full path; default <data>/backups */
@@ -5237,6 +5320,161 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+        };
+    };
+    searchRegistry: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The hub's answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Not linked to a hub and no registry set */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    registryPackage: {
+        parameters: {
+            query: {
+                /** @description author/module */
+                name: string;
+                version?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        name: string;
+                        version: string;
+                        description: string;
+                        homepage?: string;
+                        authorKey: string;
+                        /** @description Short form of the author key to compare */
+                        fingerprint: string;
+                        /** @description Hosts the module may reach */
+                        network: string[];
+                        memoryMB?: number;
+                        /** @description True when there's a sandboxed (WebAssembly) build */
+                        installable: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    installModule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    version?: string;
+                    fingerprint: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Installed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledModule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description The author key changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The download failed or didn't match */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    installedModules: {
+        parameters: {
+            query?: {
+                /** @description Also look up the newest version */
+                check?: "1";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstalledModule"][];
+                };
+            };
+        };
+    };
+    removeModule: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

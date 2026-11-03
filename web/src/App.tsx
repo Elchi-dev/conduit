@@ -9,6 +9,7 @@ import { Automations } from "./pages/Automations";
 import { Home } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { People } from "./pages/People";
+import { RegistryPage } from "./pages/Registry";
 import { Keys } from "./pages/Keys";
 import { Connect, Login, Setup } from "./pages/Auth";
 import { forgetRelay, pairFromCode, relayProfile, routeLabel } from "./lib/connection";
@@ -83,6 +84,7 @@ export default function App() {
         <Route path="/" component={Home} />
         <Route path="/approvals" component={Approvals} />
         <Route path="/timeline" component={Timeline} />
+        <Route path="/modules/registry" component={RegistryPage} />
         <Route path="/modules" component={Modules} />
         <Route path="/automations" component={Automations} />
         <Route path="/i/:id">{(p) => <InstancePage id={p.id} />}</Route>

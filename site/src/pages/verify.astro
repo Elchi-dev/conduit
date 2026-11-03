@@ -1,0 +1,41 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base title="Confirm your email">
+  <div class="wrap gate">
+    <h1>Confirming your email…</h1>
+    <p class="muted" id="msg">One moment.</p>
+    <a class="btn" href="/account/" id="next" hidden>Go to your account</a>
+  </div>
+</Base>
+<script>
+  import { api, param } from "../scripts/hub";
+  const msg = document.getElementById("msg")!;
+  const h1 = document.querySelector("h1")!;
+  api("POST", "/accounts/verify", { token: param("token") })
+    .then(() => {
+      h1.textContent = "Email confirmed";
+      msg.textContent = "Your address is confirmed. Sign in to link your computer.";
+    })
+    .catch((e) => {
+      h1.textContent = "That link didn't work";
+      msg.textContent = e.message + " Sign in and send a new one from your account.";
+    })
+    .finally(() => (document.getElementById("next")!.hidden = false));
+</script>
+<style is:global>
+  .gate {
+    max-width: 520px;
+    padding-top: 96px;
+  }
+  .gate h1 {
+    font-size: 36px;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px;
+  }
+  .gate form {
+    display: grid;
+    gap: 14px;
+    margin-top: 24px;
+  }
+</style>

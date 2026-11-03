@@ -1,0 +1,207 @@
+---
+import Base from "../../layouts/Base.astro";
+import { docs, inSection, sections } from "../../lib/docs";
+
+export function getStaticPaths() {
+  return [{ params: { slug: undefined } }, ...docs.map((d) => ({ params: { slug: d.slug || undefined } }))];
+}
+
+const slug = Astro.params.slug ?? "";
+const doc = docs.find((d) => d.slug === slug && slug !== "");
+const html = doc ? await doc.html() : "";
+const REPO = "https://github.com/Elchi-dev/conduit/blob/main/docs/";
+---
+<Base page="docs" title={doc ? doc.title : "Documentation"}>
+  <div class="wrap docs">
+    <nav class="toc" aria-label="Documentation">
+      {sections.map(([id, label]) => (
+        <div class="toc-group">
+          <a class="toc-head" href={`/docs/${id}/`} aria-current={slug === id ? "page" : undefined}>{label}</a>
+          <ul>
+            {inSection(id).filter((d) => d.slug !== id).map((d) => (
+              <li><a href={`/docs/${d.slug}/`} aria-current={d.slug === slug ? "page" : undefined}>{d.title}</a></li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
+    <article class="prose">
+      {doc ? (
+        <>
+          <Fragment set:html={html} />
+          <p class="edit"><a href={REPO + doc.file}>This page in the repository</a></p>
+        </>
+      ) : (
+        <>
+          <h1>Documentation</h1>
+          <p>Everything about how Conduit works, from the module contract to running your own hub. These pages are the repository's <code>docs</code> folder.</p>
+          <dl class="sec-list">
+            <div><dt><a href="/docs/architecture/">Architecture</a></dt><dd>The daemon, the permission engine, the vault, automations, the AI layer and the apps.</dd></div>
+            <div><dt><a href="/docs/protocol/">Protocol</a></dt><dd>External and sandboxed modules, the hub and its relay, updates.</dd></div>
+            <div><dt><a href="/docs/api/">Developer API</a></dt><dd>The daemon API, API keys, MCP for agents, webhooks.</dd></div>
+            <div><dt><a href="/docs/modules/">Modules</a></dt><dd>Setup, actions and risk levels for every built-in module.</dd></div>
+            <div><dt><a href="/docs/self-hosting/">Self-hosting</a></dt><dd>Run your own hub with Docker or one binary.</dd></div>
+          </dl>
+        </>
+      )}
+    </article>
+  </div>
+</Base>
+
+<style>
+  .docs {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 56px;
+    padding-top: 40px;
+  }
+  .toc {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    font-size: 15px;
+  }
+  .toc-group + .toc-group {
+    margin-top: 18px;
+  }
+  .toc-head {
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 6px 0 0;
+    display: grid;
+    gap: 4px;
+  }
+  .toc ul a {
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .toc a:hover,
+  .toc a[aria-current="page"] {
+    color: var(--ink);
+  }
+  .toc ul a[aria-current="page"] {
+    box-shadow: inset 2px 0 0 var(--signal);
+    padding-left: 8px;
+  }
+  .sec-list div {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .sec-list dt a {
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .sec-list dd {
+    margin: 4px 0 0;
+    color: var(--ink-2);
+  }
+  .edit {
+    margin-top: 48px;
+    font-size: 14px;
+  }
+  .edit a {
+    color: var(--muted);
+  }
+  @media (max-width: 860px) {
+    .docs {
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .toc {
+      position: static;
+      max-height: none;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+    .toc ul {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 14px;
+    }
+  }
+</style>
+
+<style is:global>
+  .prose {
+    max-width: 74ch;
+    min-width: 0;
+  }
+  .prose h1 {
+    font-size: 40px;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 0 0 20px;
+  }
+  .prose h2 {
+    font-size: 26px;
+    letter-spacing: -0.02em;
+    margin: 40px 0 12px;
+  }
+  .prose h3 {
+    font-size: 20px;
+    margin: 28px 0 8px;
+  }
+  .prose p,
+  .prose li {
+    color: var(--ink-2);
+  }
+  .prose a {
+    color: var(--ink);
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 3px;
+  }
+  .prose a:hover {
+    text-decoration-color: var(--signal);
+  }
+  .prose code {
+    background: var(--panel-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  .prose pre {
+    background: var(--panel) !important;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .prose pre code {
+    background: none;
+    padding: 0;
+  }
+  .prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    margin: 18px 0;
+    display: block;
+    overflow-x: auto;
+  }
+  .prose th,
+  .prose td {
+    text-align: left;
+    padding: 8px 12px 8px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .prose th {
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .prose td {
+    color: var(--ink-2);
+  }
+  .prose blockquote {
+    margin: 0;
+    padding-left: 14px;
+    border-left: 2px solid var(--line-strong);
+  }
+</style>

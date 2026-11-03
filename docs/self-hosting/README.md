@@ -55,7 +55,7 @@ override the first three).
 | `CONDUIT_HUB_RESEND_KEY` | | Resend API key (driver `resend`) |
 | `CONDUIT_HUB_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | port 587 | SMTP (driver `smtp`; 465 uses TLS, others STARTTLS) |
 | `CONDUIT_HUB_RELEASE_KEY` | | Base64 ed25519 public key for the update feed |
-| `CONDUIT_HUB_SITE_DIR` | | Serve the public website build from this folder at `/` |
+| `CONDUIT_HUB_SITE_DIR` | `/site` in the Docker image | Serve the website (landing, docs, account pages) from this folder at `/` |
 
 ### Mail
 
@@ -75,8 +75,8 @@ log). For real use:
 ## Link a daemon
 
 1. Sign up on the hub (the admin address first) and confirm your email.
-2. Make a pairing code: `POST /v1/pairing-codes` with your session (the hub's
-   web pages for this arrive with the public website).
+2. On the hub's website, open Account and choose Make a pairing code (or
+   `POST /v1/pairing-codes` with your session).
 3. In Conduit, open Settings, Remote access, enter the hub address and the
    code, and choose Link to hub.
 4. Choose Pair a device and scan the code with your phone.

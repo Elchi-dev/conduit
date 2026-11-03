@@ -1,0 +1,55 @@
+---
+import "../styles/site.css";
+interface Props {
+  title?: string;
+  description?: string;
+  page?: string;
+}
+const { title, description = "One place for your mail, servers, secrets, dashboards, games and home, where AI agents work under rules you set.", page } = Astro.props;
+const full = title ? `${title} · Conduit` : "Conduit";
+const nav = [
+  ["features", "/#features", "Features", "wide"],
+  ["docs", "/docs/", "Docs", ""],
+  ["hub", "/hub/", "Hubs", ""],
+  ["download", "/download/", "Download", ""],
+  ["account", "/account/", "Account", ""],
+];
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{full}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#1b1e22" />
+  </head>
+  <body>
+    <header class="site-head">
+      <div class="wrap">
+        <a class="brand" href="/" aria-label="Conduit home">
+          <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 10h20M6 16h13M6 22h20" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>
+          Conduit
+        </a>
+        <nav class="site-nav" aria-label="Site">
+          {nav.map(([id, href, label, cls]) => (
+            <a href={href} class={cls} aria-current={page === id ? "page" : undefined}>{label}</a>
+          ))}
+        </nav>
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-foot">
+      <div class="wrap">
+        <span>Conduit is an open protocol. This site is served by a Conduit hub.</span>
+        <a href="/docs/">Documentation</a>
+        <a href="/docs/self-hosting/">Run your own hub</a>
+        <a href="/docs/api/">Developer API</a>
+        <a href="https://github.com/Elchi-dev/conduit">Source</a>
+      </div>
+    </footer>
+  </body>
+</html>

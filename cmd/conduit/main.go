@@ -205,6 +205,9 @@ func (e *env) connect() (*client, error) {
 	if key == "" {
 		return nil, errors.New("no API key: run `conduit login`, set CONDUIT_API_KEY, or pass --key")
 	}
+	if w := plainHTTPWarning(url); w != "" {
+		fmt.Fprintln(e.stderr, w)
+	}
 	return newClient(url, key), nil
 }
 
@@ -326,5 +329,12 @@ func main() {
 	fi, _ := os.Stdout.Stat()
 	e := &env{ctx: ctx, stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, getenv: os.Getenv,
 		isTTY: fi != nil && fi.Mode()&os.ModeCharDevice != 0}
+	// What reaches a terminal is cleaned of escape sequences (see termWriter).
+	if e.isTTY {
+		e.stdout = termWriter{os.Stdout}
+	}
+	if fe, _ := os.Stderr.Stat(); fe != nil && fe.Mode()&os.ModeCharDevice != 0 {
+		e.stderr = termWriter{os.Stderr}
+	}
 	os.Exit(run(e, os.Args[1:]))
 }

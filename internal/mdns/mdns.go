@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -139,7 +140,22 @@ func Announce(ctx context.Context, svc Service, log *slog.Logger) error {
 	return nil
 }
 
+// Limits that keep the responder from being used as an amplifier and the
+// browser from collecting without bound.
+const (
+	maxQuestions = 16  // a query with more questions is dropped whole
+	maxRecords   = 256 // Browse keeps at most this many records
+)
+
 func serve(c *net.UDPConn, svc Service) {
+	serveWith(c, svc, newLocalNets().contains)
+}
+
+// serveWith answers queries on c. onLink reports whether a source address is
+// on one of this machine's networks; queries from anywhere else are ignored
+// (RFC 6762 §11), so a spoofed source off the link can't aim replies at a
+// victim.
+func serveWith(c *net.UDPConn, svc Service, onLink func(net.IP) bool) {
 	buf := make([]byte, 9000)
 	for {
 		n, src, err := c.ReadFromUDP(buf)
@@ -150,27 +166,116 @@ func serve(c *net.UDPConn, svc Service) {
 		if err != nil || m.Response {
 			continue
 		}
-		var out []RR
-		unicast := src.Port != 5353 // a one-shot query from an ordinary socket (RFC 6762 §6.7)
-		for _, q := range m.Questions {
-			out = append(out, svc.answers(q)...)
-			unicast = unicast || q.Unicast
-		}
-		if len(out) == 0 {
+		reply, unicast, ok := respond(m, src, svc)
+		if !ok || !onLink(src.IP) {
 			continue
 		}
-		reply := Message{Response: true, Answers: out}
 		dst := group4
 		if src.IP.To4() == nil {
 			dst = group6
 		}
 		if unicast {
-			reply.ID = m.ID
-			reply.Questions = m.Questions
 			dst = src
 		}
 		_, _ = c.WriteToUDP(reply.Pack(), dst)
 	}
+}
+
+// respond builds the reply to query m from src, and whether to send it
+// straight back to src. ok is false when there is nothing to send.
+//
+// Each distinct question is answered once and each record appears once,
+// however the query repeats itself, and queries with more than maxQuestions
+// questions are dropped, so a reply is never much bigger than the service's
+// own records.
+func respond(m Message, src *net.UDPAddr, svc Service) (reply Message, unicast, ok bool) {
+	if len(m.Questions) == 0 || len(m.Questions) > maxQuestions {
+		return Message{}, false, false
+	}
+	legacy := src.Port != 5353 // a one-shot query from an ordinary socket (RFC 6762 §6.7)
+	unicast = legacy
+	var out []RR
+	seenQ := map[Question]bool{}
+	seenRR := map[string]bool{}
+	var asked []Question
+	for _, q := range m.Questions {
+		unicast = unicast || q.Unicast
+		q.Unicast = false
+		if seenQ[q] {
+			continue
+		}
+		seenQ[q] = true
+		var answered bool
+		for _, r := range svc.answers(q) {
+			k := rrKey(r)
+			if seenRR[k] {
+				continue
+			}
+			seenRR[k] = true
+			out = append(out, r)
+			answered = true
+		}
+		if answered {
+			asked = append(asked, q)
+		}
+	}
+	if len(out) == 0 {
+		return Message{}, false, false
+	}
+	reply = Message{Response: true, Answers: out}
+	if unicast {
+		reply.ID = m.ID
+	}
+	// Responses carry no questions (RFC 6762 §6), with one exception: a legacy
+	// resolver asking a single question expects it repeated (§6.7). Echoing at
+	// most one question keeps the reply bounded.
+	if legacy && len(m.Questions) == 1 && len(asked) == 1 {
+		reply.Questions = asked
+	}
+	return reply, unicast, true
+}
+
+func rrKey(r RR) string {
+	return r.Name + "\x00" + strconv.Itoa(int(r.Type)) + "\x00" + r.Target + "\x00" + strconv.Itoa(int(r.Port)) + "\x00" + r.IP.String() + "\x00" + strings.Join(r.TXT, "\x00")
+}
+
+// localNets answers whether an address is on one of this machine's networks.
+// The interface list is cached briefly so a flood of queries doesn't turn
+// into a flood of system calls.
+type localNets struct {
+	mu      sync.Mutex
+	nets    []*net.IPNet
+	fetched time.Time
+}
+
+func newLocalNets() *localNets { return &localNets{} }
+
+func (l *localNets) contains(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLinkLocalUnicast() || ip.IsLoopback() {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if time.Since(l.fetched) > 30*time.Second {
+		l.nets = l.nets[:0]
+		if addrs, err := net.InterfaceAddrs(); err == nil {
+			for _, a := range addrs {
+				if n, ok := a.(*net.IPNet); ok {
+					l.nets = append(l.nets, n)
+				}
+			}
+		}
+		l.fetched = time.Now()
+	}
+	for _, n := range l.nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // Found is a daemon seen on the network.
@@ -198,10 +303,17 @@ func Browse(ctx context.Context, wait time.Duration) ([]Found, error) {
 		deadline = d
 	}
 	_ = c.SetReadDeadline(deadline)
+	return collect(gather(c)), nil
+}
+
+// gather reads responses from c until its read deadline, keeping at most
+// maxRecords records, and notes which address each instance answered from.
+// A busy or hostile network can't make Browse collect without bound.
+func gather(c *net.UDPConn) ([]RR, map[string]net.IP) {
 	var all []RR
 	srcs := map[string]net.IP{} // instance -> address the answer came from
 	buf := make([]byte, 9000)
-	for {
+	for len(all) < maxRecords {
 		n, src, err := c.ReadFromUDP(buf)
 		if err != nil {
 			break
@@ -211,13 +323,16 @@ func Browse(ctx context.Context, wait time.Duration) ([]Found, error) {
 			continue
 		}
 		for _, r := range m.Answers {
+			if len(all) >= maxRecords {
+				break
+			}
 			if r.Type == TypeSRV {
 				srcs[r.Name] = src.IP
 			}
+			all = append(all, r)
 		}
-		all = append(all, m.Answers...)
 	}
-	return collect(all, srcs), nil
+	return all, srcs
 }
 
 // collect turns records into services.

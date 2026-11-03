@@ -88,6 +88,8 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if cn.http == nil {
 		cn.http = &http.Client{Timeout: 20 * time.Second}
 	}
+	// The session id travels in X-FTL-SID, which Go would forward to another host.
+	cn.http = rest.SameHostOnly(cn.http)
 	m.set.Put(id, cn)
 	return nil
 }

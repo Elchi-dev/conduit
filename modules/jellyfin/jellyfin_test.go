@@ -89,3 +89,30 @@ func TestJellyfin(t *testing.T) {
 		t.Fatal("plaintext key accepted")
 	}
 }
+
+// A redirect to another host must not carry the X-Emby-Token there.
+func TestJellyfinRefusesCrossHostRedirect(t *testing.T) {
+	var leaked string
+	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("X-Emby-Token")
+		io.WriteString(w, `{"ServerName":"evil","Version":"1"}`)
+	}))
+	defer evil.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, evil.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	m := New()
+	h := fakehost.New(map[string]string{"secret://jf": "key"})
+	cfg, _ := json.Marshal(Config{URL: srv.URL, APIKey: "secret://jf"})
+	if err := m.Configure(ctx, h, "j", cfg); err != nil {
+		t.Fatal(err)
+	}
+	if hl := m.Health(ctx, "j"); hl.Status == "ok" {
+		t.Fatalf("health followed the redirect: %+v", hl)
+	}
+	if leaked != "" {
+		t.Fatalf("token reached the other host: %q", leaked)
+	}
+}

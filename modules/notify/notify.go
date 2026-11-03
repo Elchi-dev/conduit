@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -71,7 +72,7 @@ type Module struct {
 
 // New returns the notifications module.
 func New() *Module {
-	return &Module{cfgs: map[string]Config{}, host: map[string]sdk.Host{}, http: &http.Client{Timeout: 15 * time.Second}}
+	return &Module{cfgs: map[string]Config{}, host: map[string]sdk.Host{}, http: rest.SameHostOnly(&http.Client{Timeout: 15 * time.Second})}
 }
 
 // Manifest implements sdk.Module.

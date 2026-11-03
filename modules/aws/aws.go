@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -46,6 +47,10 @@ type Module struct {
 
 // New returns the AWS module.
 func New() *Module { return &Module{HTTP: &http.Client{Timeout: 30 * time.Second}, now: time.Now} }
+
+// client is m.HTTP limited to same-host redirects: the signed request carries
+// X-Amz-Security-Token, which Go would forward to another host.
+func (m *Module) client() *http.Client { return rest.SameHostOnly(m.HTTP) }
 
 var (
 	regionRe   = regexp.MustCompile(`^[a-z]{2}(-gov)?-[a-z]+-\d$`)
@@ -199,7 +204,7 @@ func (m *Module) do(ctx context.Context, c *conn, svc, method, path string, q ur
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	}
 	Sign(req, body, cr, c.cfg.Region, svc, m.now())
-	res, err := m.HTTP.Do(req)
+	res, err := m.client().Do(req)
 	if err != nil {
 		return err
 	}

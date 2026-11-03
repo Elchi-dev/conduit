@@ -267,3 +267,45 @@ func TestVarint(t *testing.T) {
 		}
 	}
 }
+
+func TestSayCannotChainCommands(t *testing.T) {
+	ctx := context.Background()
+	rc := &fakeRCON{}
+	rconPort := rc.start(t, "hunter2")
+	m := New()
+	h := fakehost.New(map[string]string{"secret://rc": "hunter2"})
+	cfg, _ := json.Marshal(Config{Servers: []Server{
+		{Name: "cs", Kind: "source", Host: "127.0.0.1", Port: 27015, RCONPort: rconPort, RCONPassword: "secret://rc"},
+		{Name: "mc", Kind: "minecraft", Host: "127.0.0.1", Port: 25565, RCONPort: rconPort, RCONPassword: "secret://rc"},
+	}})
+	if err := m.Configure(ctx, h, "g", cfg); err != nil {
+		t.Fatal(err)
+	}
+	say := func(server, msg string) error {
+		in, _ := json.Marshal(map[string]string{"server": server, "message": msg})
+		_, err := m.Invoke(ctx, sdk.Call{Instance: "g", Action: "say", Input: in})
+		return err
+	}
+	for _, bad := range []string{"hi; quit", "hi;quit", `hi" ; "quit`, `"`, "a\x1b[2Jb", "tab\there", "x\u0085y"} {
+		if err := say("cs", bad); err == nil {
+			t.Fatalf("source say accepted %q", bad)
+		}
+	}
+	for _, bad := range []string{"line\nop me", "a\x00b", "\u00a7kobfuscated", "a\x1bb"} {
+		if err := say("mc", bad); err == nil {
+			t.Fatalf("minecraft say accepted %q", bad)
+		}
+	}
+	if err := say("cs", "Map change in 5 minutes, gg!"); err != nil {
+		t.Fatal(err)
+	}
+	if err := say("mc", "Restart; back soon"); err != nil { // one command per packet on Minecraft
+		t.Fatal(err)
+	}
+	rc.mu.Lock()
+	got := strings.Join(rc.commands, "|")
+	rc.mu.Unlock()
+	if got != "say Map change in 5 minutes, gg!|say Restart; back soon" {
+		t.Fatalf("commands %q", got)
+	}
+}

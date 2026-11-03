@@ -28,8 +28,14 @@ func table(e *env, header []string, rows [][]string) {
 	if len(header) > 0 {
 		fmt.Fprintln(tw, strings.Join(header, "\t"))
 	}
+	// A tab inside a cell would break the columns; the terminal writer
+	// handles the rest of what a cell may hold.
 	for _, r := range rows {
-		fmt.Fprintln(tw, strings.Join(r, "\t"))
+		cells := make([]string, len(r))
+		for i, c := range r {
+			cells[i] = strings.NewReplacer("\t", " ", "\n", " ").Replace(c)
+		}
+		fmt.Fprintln(tw, strings.Join(cells, "\t"))
 	}
 	tw.Flush()
 }
@@ -127,6 +133,9 @@ func cmdLogin(e *env, a *args) error {
 	}
 	if !strings.HasPrefix(key, "cdt_") {
 		return usageError{"API keys start with cdt_"}
+	}
+	if w := plainHTTPWarning(url); w != "" {
+		fmt.Fprintln(e.stderr, w)
 	}
 	var who me
 	if _, err := newClient(url, key).do(e.ctx, http.MethodGet, "/me", nil, nil, &who); err != nil {

@@ -19,7 +19,7 @@ Without an RCON password the module only watches.
 | --- | --- | --- |
 | `status` | read | For one server or all: online, players, maximum, version, message of the day or server name, map, latency |
 | `players` | read | Minecraft lists the sample the server shares; Source games list names, scores and time connected |
-| `say` | write | A one-line chat message to everyone (RCON) |
+| `say` | write | A one-line chat message to everyone (RCON). On Source servers `;` and `"` are refused, since the console would treat them as the start of another command; control characters are refused everywhere |
 | `whitelist_add` / `whitelist_remove` | write | Minecraft. Each undoes the other |
 | `command` | destructive | Any console command, one line, through RCON. It can't be undone, so the default rules ask before an agent runs one |
 

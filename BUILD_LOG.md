@@ -3,6 +3,45 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · Phases 31–33 — German, six modules, third review
+
+- **Phase 31, German:** every string in the web app goes through `t()` /
+  `tn()` (`web/src/i18n`); the German dictionary covers all 704 strings
+  with a glossary at its top (Freigabe, Notstopp, Verlauf, Tresor…, informal
+  "du"). The language follows the browser until chosen in Settings,
+  Appearance; dates and numbers use `Intl`. `pnpm test:i18n` (in CI) fails
+  on a missing entry or mismatched placeholders; e2e covers switching and a
+  German browser. What the daemon sends (module and action names, errors)
+  stays English (`docs/architecture/web.md`).
+- **Phase 32, modules (53):** S3-compatible storage (MinIO, R2, Garage;
+  path-style by default, presigned links), Plex, Gitea and Forgejo (issues,
+  comments and merges with undo), Mastodon, Vaultwarden (counts only, never
+  names) and container registries (Docker Hub, GHCR, Quay, Harbor; the
+  Bearer token flow; tag-list paging stays on the same repository).
+- **Phase 33, third security review:** an independent review of everything
+  since v0.2.0. Fixed:
+  - restricted vault folders: a JSON-escaped `secret:\/\/…` reference got
+    past the settings check (now done on the decoded settings, the way the
+    engine resolves them); `import_env` without a prefix could overwrite a
+    restricted secret (each name is now checked, and keys can't pick a
+    folder); leak scans could confirm guesses and any admin could sync the
+    whole vault to their own daemon (both now need access to every
+    restricted folder; only the owner syncs the vault while folders are
+    restricted); automations reach a folder only if their last editor may;
+  - home tiles are set by people only, not keys;
+  - the hub keeps deleted accounts' author handles as tombstones and
+    reserves `mcp` and similar handles; daemons refuse `mcp-` ids, module
+    downgrades and redirects away from https, and serialise installs;
+  - modules: Source RCON `say` refused `;` (it ran console commands), the
+    database query check matches across whitespace and denies session-
+    killing and query-from-string functions, header credentials don't
+    follow redirects to another host, Redis replies have a byte budget;
+  - mDNS answers no longer amplify (questions capped and deduplicated, not
+    echoed, unicast only on-link); the CLI strips terminal escapes from
+    module output; release workflow actions pinned.
+  - Documented rather than changed: backups contain the two-factor and
+    relay keys (the backup passphrase protects them).
+
 ## 2026-11-04 · Phases 28–30 — Tests, registry, team vault, more modules
 
 - **Phase 28, browser tests:** 31 Playwright tests drive a freshly built

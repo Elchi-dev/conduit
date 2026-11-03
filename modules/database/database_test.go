@@ -24,6 +24,9 @@ func TestCheckStatement(t *testing.T) {
 		"SELECT \"weird;name\" FROM t",
 		"EXPLAIN SELECT 1",
 		"SHOW TABLES",
+		"SELECT * FROM sleep_log",
+		"SELECT slot, blob_id FROM lots",
+		"SELECT hello_world FROM t",
 	}
 	for _, q := range ok {
 		if err := CheckStatement(q); err != nil {
@@ -43,6 +46,38 @@ func TestCheckStatement(t *testing.T) {
 		"SELECT $$unterminated",
 		"COPY t TO PROGRAM 'id'",
 		"SELECT pg_sleep(100)",
+		// Whitespace and comments between the words.
+		"SELECT * INTO\tOUTFILE '/tmp/x' FROM t",
+		"SELECT * INTO \n  DUMPFILE '/tmp/x' FROM t",
+		"SELECT * INTO/**/OUTFILE '/tmp/x' FROM t",
+		"SELECT SLEEP (10)",
+		"SELECT sleep/**/(10)",
+		"SELECT BENCHMARK  (1000000, md5('x'))",
+		// Functions a read-only transaction doesn't stop.
+		"SELECT pg_terminate_backend(42)",
+		"SELECT pg_cancel_backend(42)",
+		"SELECT pg_reload_conf()",
+		"SELECT set_config('log_statement', 'none', false)",
+		"SELECT query_to_xml('select 1', true, true, '')",
+		"SELECT query_to_xml_and_xmlschema('select 1', true, true, '')",
+		"SELECT query_to_xmlschema('select 1', true, true, '')",
+		"SELECT cursor_to_xml('c', 1, true, true, '')",
+		"SELECT lo_import('/etc/passwd')",
+		"SELECT lo_export(1, '/tmp/x')",
+		"SELECT lo_get(1)",
+		"SELECT lo_put(1, 0, 'x')",
+		"SELECT lo_from_bytea(0, 'x')",
+		"SELECT pg_ls_dir('/')",
+		"SELECT pg_stat_file('/etc/passwd')",
+		"SELECT pg_read_binary_file('/etc/passwd')",
+		"SELECT * FROM dblink('host=evil', 'select 1') AS t(a int)",
+		"SELECT load_file('/etc/passwd')",
+		// Hidden from the stripped text by quoting.
+		`SELECT "pg_sleep"(100)`,
+		`SELECT "PG_TERMINATE_BACKEND"(42)`,
+		"SELECT `sleep`(10)",
+		`SELECT U&"\0070g_sleep"(100)`,
+		"SELECT 'pg_read_file'", // false positive by design
 	}
 	for _, q := range bad {
 		if err := CheckStatement(q); err == nil {

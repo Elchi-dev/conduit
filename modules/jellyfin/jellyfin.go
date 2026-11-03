@@ -87,6 +87,8 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if m.HTTP != nil {
 		api.HTTP = m.HTTP
 	}
+	// The key travels in X-Emby-Token, which Go would forward to another host.
+	api.HTTP = rest.SameHostOnly(api.HTTP)
 	m.set.Put(id, &conn{api: api})
 	return nil
 }

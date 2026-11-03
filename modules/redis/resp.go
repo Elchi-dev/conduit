@@ -65,7 +65,15 @@ func (c *client) do(args ...string) (any, error) {
 	return v, nil
 }
 
-const maxBulk = 4 << 20
+const (
+	maxBulk = 4 << 20
+	// maxReply caps the memory one reply may take, across all its nested
+	// arrays: the bytes of the strings kept plus elemCost for every array slot.
+	maxReply = 16 << 20
+	elemCost = 16
+)
+
+var errReplyTooLarge = errors.New("redis: reply too large")
 
 func readLine(r *bufio.Reader) (string, error) {
 	line, err := r.ReadString('\n')
@@ -78,7 +86,23 @@ func readLine(r *bufio.Reader) (string, error) {
 	return line[:len(line)-2], nil
 }
 
+// readReply reads one reply, holding it to maxReply bytes in total.
 func readReply(r *bufio.Reader, depth int) (any, error) {
+	budget := maxReply
+	return readReplyBudget(r, depth, &budget)
+}
+
+// spend takes n bytes from the budget, failing once it runs out.
+func spend(budget *int, n int) error {
+	if n < 0 || n > *budget {
+		*budget = 0
+		return errReplyTooLarge
+	}
+	*budget -= n
+	return nil
+}
+
+func readReplyBudget(r *bufio.Reader, depth int, budget *int) (any, error) {
 	if depth > 8 {
 		return nil, errors.New("redis: reply nested too deep")
 	}
@@ -92,9 +116,9 @@ func readReply(r *bufio.Reader, depth int) (any, error) {
 	body := line[1:]
 	switch line[0] {
 	case '+':
-		return body, nil
+		return body, spend(budget, len(body))
 	case '-':
-		return Error(body), nil
+		return Error(body), spend(budget, len(body))
 	case ':':
 		return strconv.ParseInt(body, 10, 64)
 	case '$':
@@ -107,6 +131,9 @@ func readReply(r *bufio.Reader, depth int) (any, error) {
 		}
 		if n > maxBulk {
 			// Skip what we won't keep, keep the start.
+			if err := spend(budget, 4096); err != nil {
+				return nil, err
+			}
 			head := make([]byte, 4096)
 			if _, err := io.ReadFull(r, head); err != nil {
 				return nil, err
@@ -115,6 +142,9 @@ func readReply(r *bufio.Reader, depth int) (any, error) {
 				return nil, err
 			}
 			return string(head), nil
+		}
+		if err := spend(budget, n); err != nil {
+			return nil, err
 		}
 		b := make([]byte, n+2)
 		if _, err := io.ReadFull(r, b); err != nil {
@@ -130,11 +160,14 @@ func readReply(r *bufio.Reader, depth int) (any, error) {
 			return nil, nil
 		}
 		if n > 100000 {
-			return nil, errors.New("redis: reply too large")
+			return nil, errReplyTooLarge
+		}
+		if err := spend(budget, n*elemCost); err != nil {
+			return nil, err
 		}
 		out := make([]any, n)
 		for i := range out {
-			if out[i], err = readReply(r, depth+1); err != nil {
+			if out[i], err = readReplyBudget(r, depth+1, budget); err != nil {
 				return nil, err
 			}
 		}

@@ -222,6 +222,37 @@ func (c *conn) rcon(ctx context.Context, s Server, command string) (string, erro
 
 func oneLine(s string) bool { return !strings.ContainsAny(s, "\r\n\x00") }
 
+// checkSay vets the text of a `say` message before it is spliced into an RCON
+// command. `say` is a narrower action than `command`, so the text must not be
+// able to break out of the say and run something else.
+//
+// Source (SRCDS) splits the console line on `;` outside double quotes, so
+// `say hi; quit` would run quit; a `"` would let the text open or close a quoted
+// span and defeat the rule. Minecraft runs one command per RCON packet, but
+// control characters and the `§` formatting prefix are still refused there so
+// the message is plain chat text.
+func checkSay(kind, msg string) error {
+	if msg == "" || len(msg) > 200 || !oneLine(msg) {
+		return errors.New("a message is one line of 1 to 200 characters")
+	}
+	for _, r := range msg {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+			return errors.New("a message may not contain control characters")
+		}
+	}
+	switch kind {
+	case "source":
+		if strings.ContainsAny(msg, ";\"") {
+			return errors.New(`a message to a Source server may not contain ; or " (they would let it run other console commands); use the command action for that`)
+		}
+	case "minecraft":
+		if strings.ContainsRune(msg, '§') {
+			return errors.New("a message may not contain the § formatting character")
+		}
+	}
+	return nil
+}
+
 // Invoke implements sdk.Module.
 func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) {
 	c, err := m.set.Get(call.Instance)
@@ -283,8 +314,8 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		msg := strings.TrimSpace(p.Message)
-		if msg == "" || len(msg) > 200 || !oneLine(msg) {
-			return sdk.Result{}, errors.New("a message is one line of 1 to 200 characters")
+		if err := checkSay(s.Kind, msg); err != nil {
+			return sdk.Result{}, err
 		}
 		out, err := c.rcon(ctx, s, "say "+msg)
 		if err != nil {

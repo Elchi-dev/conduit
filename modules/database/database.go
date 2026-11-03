@@ -432,14 +432,58 @@ func CheckStatement(q string) error {
 	default:
 		return fmt.Errorf("only reading queries (SELECT, WITH, SHOW, EXPLAIN) run here, not %s", w)
 	}
-	upper := strings.ToUpper(s)
-	for _, bad := range []string{"INTO OUTFILE", "INTO DUMPFILE", "LOAD_FILE", "PG_READ_FILE", "PG_READ_BINARY_FILE", "LO_IMPORT", "LO_EXPORT", "COPY ", "DBLINK", "PG_SLEEP", "SLEEP(", "BENCHMARK("} {
-		if strings.Contains(upper, bad) {
-			return fmt.Errorf("%s isn't allowed here", strings.TrimSpace(strings.TrimSuffix(bad, "(")))
+	norm := spaces.ReplaceAllString(s, " ")
+	for _, d := range deniedSyntax {
+		if d.re.MatchString(norm) {
+			return fmt.Errorf("%s isn't allowed here", d.name)
 		}
+	}
+	// String literals and quoted identifiers are blanked above, and PostgreSQL
+	// accepts a quoted function name ("pg_sleep"(1)) or one spelled with
+	// Unicode escapes (U&"..."), so the function names are also looked for in
+	// the raw text. A false positive (the name inside a string) only costs a
+	// rephrased query.
+	if m := deniedFuncs.FindStringSubmatch(q); m != nil {
+		return fmt.Errorf("%s isn't allowed here", strings.ToLower(m[2]))
+	}
+	if unicodeEscape.MatchString(q) {
+		return errors.New("U& escaped names and strings aren't allowed here")
 	}
 	return nil
 }
+
+var (
+	spaces = regexp.MustCompile(`\s+`)
+
+	// deniedSyntax is matched against the statement with comments and quoted
+	// text removed and whitespace collapsed.
+	deniedSyntax = []struct {
+		name string
+		re   *regexp.Regexp
+	}{
+		{"INTO OUTFILE", regexp.MustCompile(`(?i)\bINTO\s*(OUT|DUMP)FILE\b`)},
+		{"COPY", regexp.MustCompile(`(?i)\bCOPY\b`)},
+		{"SLEEP", regexp.MustCompile(`(?i)\bSLEEP\s*\(`)},
+		{"BENCHMARK", regexp.MustCompile(`(?i)\bBENCHMARK\s*\(`)},
+		{"GET_LOCK", regexp.MustCompile(`(?i)\bGET_LOCK\s*\(`)},
+	}
+
+	// deniedFuncs are server functions that read or write files, reach other
+	// servers, change settings, signal other sessions, or stall: none of them
+	// are stopped by a read-only transaction. Matched anywhere in the raw text.
+	deniedFuncs = regexp.MustCompile(`(?i)(^|[^a-z0-9_$])(` + strings.Join([]string{
+		`pg_terminate_backend`, `pg_cancel_backend`, `pg_reload_conf`, `pg_rotate_logfile`,
+		`pg_promote`, `pg_switch_wal`, `pg_create_restore_point`, `pg_logdir_ls`,
+		`set_config`,
+		`query_to_xml\w*`, `query_to_xmlschema`, `cursor_to_xml\w*`,
+		`lo_\w+`,
+		`pg_ls_\w+`, `pg_stat_file`, `pg_read_file`, `pg_read_binary_file`, `pg_file_\w+`,
+		`dblink\w*`,
+		`pg_sleep\w*`, `sleep`, `benchmark`, `load_file`, `sys_exec`, `sys_eval`,
+	}, "|") + `)($|[^a-z0-9_$])`)
+
+	unicodeEscape = regexp.MustCompile(`(?i)(^|[^a-z0-9_])U&["']`)
+)
 
 // stripSQL removes comments and the contents of quoted strings and
 // identifiers, so keywords and semicolons inside them don't count.

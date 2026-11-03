@@ -197,3 +197,54 @@ func TestReadReplyLimits(t *testing.T) {
 		t.Fatal("deep nesting accepted")
 	}
 }
+
+// repeatReader yields head once, then unit forever, counting what was read.
+type repeatReader struct {
+	head, unit string
+	pos        int
+	read       int
+}
+
+func (r *repeatReader) Read(p []byte) (int, error) {
+	n := 0
+	for n < len(p) {
+		s := r.unit
+		if r.pos < len(r.head) {
+			s = r.head[r.pos:]
+		} else {
+			s = r.unit[(r.pos-len(r.head))%len(r.unit):]
+		}
+		c := copy(p[n:], s)
+		n += c
+		r.pos += c
+	}
+	r.read += n
+	return n, nil
+}
+
+func TestReadReplyBudget(t *testing.T) {
+	// Many large bulk strings, each under the per-string cap.
+	bulk := "$" + strconv.Itoa(1<<20) + "\r\n" + strings.Repeat("x", 1<<20) + "\r\n"
+	src := &repeatReader{head: "*1000\r\n", unit: bulk}
+	if _, err := readReply(bufio.NewReader(src), 0); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("bulk flood: %v", err)
+	}
+	if src.read > maxReply+(2<<20) {
+		t.Fatalf("read %d bytes before giving up", src.read)
+	}
+
+	// A wide array of arrays: no single string is large, but the whole would
+	// be hundreds of megabytes once decoded.
+	src = &repeatReader{head: "*100000\r\n", unit: "*200\r\n" + strings.Repeat(":1\r\n", 200)}
+	if _, err := readReply(bufio.NewReader(src), 0); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("nested arrays: %v", err)
+	}
+
+	// A normal reply still fits, and each reply gets a fresh budget.
+	for i := 0; i < 3; i++ {
+		v, err := readReply(bufio.NewReader(strings.NewReader("*2\r\n$3\r\nfoo\r\n:7\r\n")), 0)
+		if err != nil || len(v.([]any)) != 2 {
+			t.Fatalf("small reply: %v %v", v, err)
+		}
+	}
+}

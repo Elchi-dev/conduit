@@ -96,6 +96,8 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if m.HTTP != nil {
 		api.HTTP = m.HTTP
 	}
+	// The token travels in PRIVATE-TOKEN, which Go would forward to another host.
+	api.HTTP = rest.SameHostOnly(api.HTTP)
 	m.set.Put(id, &account{cfg: c, api: api})
 	return nil
 }

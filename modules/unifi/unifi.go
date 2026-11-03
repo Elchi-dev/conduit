@@ -161,9 +161,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true} //nolint:gosec // the person chose it
 	}
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Timeout: 20 * time.Second, Transport: tr, Jar: jar}
+	// X-API-KEY and X-CSRF-Token would follow a redirect to another host.
+	client := &http.Client{Timeout: 20 * time.Second, Transport: tr, Jar: jar, CheckRedirect: rest.SameHostRedirects}
 	if m.HTTP != nil {
-		client = &http.Client{Timeout: 20 * time.Second, Transport: m.HTTP.Transport, Jar: jar}
+		client = &http.Client{Timeout: 20 * time.Second, Transport: m.HTTP.Transport, Jar: jar, CheckRedirect: rest.SameHostRedirects}
 	}
 	m.set.Put(id, &conn{cfg: c, host: h, base: u.Scheme + "://" + u.Host, http: client})
 	return nil

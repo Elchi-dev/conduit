@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to release (must exist)
+        description: Tag to release (created on the dispatched commit when the release is published, if it doesn't exist yet)
         required: true
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
         run: |
           notes="docs/releases/$TAG.md"
           if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --notes "See BUILD_LOG.md for what changed."; fi
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Conduit $TAG" "$@"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "Conduit $TAG" "$@"
 
   binaries:
     needs: create

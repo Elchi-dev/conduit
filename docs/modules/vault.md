@@ -25,11 +25,12 @@ every module that needs one reports itself as degraded.
 | `scan_path` | read | Same for a file or folder on the machine running Conduit; skips `.git`, `node_modules`, build output, binaries and files over 2 MiB |
 | `set` | write | Create or replace a secret; an empty value generates a password |
 | `import_env` | write | Stores each `KEY=value` line of a `.env` file as `<prefix>/<key>` |
+| `import_csv` | write | Imports a CSV export from Bitwarden, 1Password, KeePass or KeePassXC, LastPass, Proton Pass, Chrome, Edge, Firefox or Safari: `<prefix>/<title>/password`, `…/totp` for two-factor secrets (use them with `totp`), `…/note` for secure notes. Usernames and addresses go in the description. Existing names are skipped unless `overwrite` is set |
 | `reveal` | destructive | Returns a secret's value |
 | `totp` | destructive | The current 6-digit code for a TOTP secret (base32 or `otpauth://` URI) |
 | `delete` | destructive | Removes a secret |
 
-`reveal`, `totp`, `set`, `generate`, `import_env` and `scan_text` are
+`reveal`, `totp`, `set`, `generate`, `import_env`, `import_csv` and `scan_text` are
 **sensitive**: Conduit never writes their values to the audit log, approvals
 or events. The log still records which secret was touched, by whom and when.
 
@@ -68,3 +69,10 @@ pastes and repositories. When one leaks, `rotate` replaces it at the source
 where the service allows it, so the leaked copy is dead. Automations can run
 `scan_path` on a schedule and notify you of findings; rotation stays a
 destructive action, so agents ask first.
+
+### Moving from another password manager
+
+Export a CSV from your password manager, open the Vault module, choose
+**Import from a password manager** and paste the file's contents. Then delete
+the export: it holds every password in plain text. The import runs on this
+machine; nothing is uploaded.

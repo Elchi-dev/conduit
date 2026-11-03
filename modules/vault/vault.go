@@ -46,6 +46,8 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: schema(`{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}`)},
 			{Name: "generate", Title: "Generate a password", Description: "A random password, not stored.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: schema(`{"type":"object","properties":{"length":{"type":"integer","minimum":16,"maximum":128,"default":24},"symbols":{"type":"boolean","default":true}}}`)},
+			{Name: "import_csv", Title: "Import from a password manager", Description: "A CSV export from Bitwarden, 1Password, KeePass, LastPass, Proton Pass or a browser. Logins become passwords (usernames and addresses go in the description), two-factor secrets become one-time code secrets, secure notes become notes. Delete the export file afterwards.", Risk: sdk.RiskWrite, Sensitive: true,
+				Input: schema(`{"type":"object","required":["text"],"properties":{"text":{"type":"string","x-multiline":true,"description":"Paste the CSV file's contents"},"prefix":{"type":"string","description":"Folder for the imported secrets, e.g. bitwarden","default":"imported"},"overwrite":{"type":"boolean","default":false,"description":"Replace secrets that already exist under the same name"}}}`)},
 			{Name: "import_env", Title: "Import a .env file", Description: "Store every KEY=value line as a secret under a prefix.", Risk: sdk.RiskWrite, Sensitive: true,
 				Input: schema(`{"type":"object","required":["text"],"properties":{"text":{"type":"string","x-multiline":true,"description":"Paste the file's contents"},"prefix":{"type":"string","description":"e.g. myapp"}}}`)},
 			{Name: "rotate", Title: "Rotate a secret", Description: "Get a fresh value from the service that issued it and store it; the old value stops working.", Risk: sdk.RiskDestructive,
@@ -222,6 +224,42 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 			names = append(names, n)
 		}
 		return out(map[string]any{"imported": len(names), "names": names})
+
+	case "import_csv":
+		var in struct {
+			Text      string `json:"text"`
+			Prefix    string `json:"prefix"`
+			Overwrite bool   `json:"overwrite"`
+		}
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			return sdk.Result{}, err
+		}
+		items, err := cv.ParseCSVExport(strings.NewReader(in.Text), in.Prefix)
+		if err != nil {
+			return sdk.Result{}, err
+		}
+		existing := map[string]bool{}
+		if !in.Overwrite {
+			list, err := m.V.List(ctx)
+			if err != nil {
+				return sdk.Result{}, err
+			}
+			for _, x := range list {
+				existing[x.Name] = true
+			}
+		}
+		names, skipped := []string{}, []string{}
+		for _, it := range items {
+			if existing[it.Name] {
+				skipped = append(skipped, it.Name)
+				continue
+			}
+			if err := m.V.Put(ctx, cv.Meta{Name: it.Name, Kind: it.Kind, Description: it.Description(), Tags: []string{"imported"}}, it.Value); err != nil {
+				return sdk.Result{}, fmt.Errorf("%s: %w", it.Name, err)
+			}
+			names = append(names, it.Name)
+		}
+		return out(map[string]any{"imported": len(names), "names": names, "skipped": skipped})
 
 	case "scan_text":
 		var in struct {

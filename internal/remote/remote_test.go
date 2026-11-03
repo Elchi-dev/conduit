@@ -313,3 +313,41 @@ func TestEventStreamOverRelay(t *testing.T) {
 		t.Fatalf("request after stream: %v %+v", err, res)
 	}
 }
+
+func TestHostileRelayRequests(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/boom" {
+			panic("boom")
+		}
+		w.WriteHeader(http.StatusTeapot)
+	})
+	s := &Service{Handler: h}
+	c := newConn()
+	cases := []relay.Request{
+		{ID: 1, Method: "G ET", Path: "/api/v1/x"},
+		{ID: 2, Method: "GET", Path: "/api/v1/x\x00"},
+		{ID: 3, Method: "GET", Path: "http://evil/api/v1/x"},
+		{ID: 4, Method: "GET", Path: "%zz"},
+		{ID: 5, Method: "GET", Path: "/api/../healthz"},
+		{ID: 6, Method: "CONNECT", Path: "/api/v1/x"},
+		{ID: 7, Method: "GET", Path: "/api/v1/x", Headers: map[string]string{"Authorization": "a\r\nX: y"}},
+	}
+	for _, r := range cases {
+		var got relay.Response
+		s.dispatch(context.Background(), c, "c1", r, func(res relay.Response) { got = res })
+		if r.ID == 7 {
+			if got.Status != http.StatusTeapot {
+				t.Errorf("case 7: status %d", got.Status)
+			}
+			continue
+		}
+		if got.Status != http.StatusBadRequest && got.Status != http.StatusNotFound {
+			t.Errorf("case %d: status %d, want 400 or 404", r.ID, got.Status)
+		}
+	}
+	var got relay.Response
+	s.dispatch(context.Background(), c, "c1", relay.Request{ID: 9, Method: "GET", Path: "/api/v1/boom"}, func(res relay.Response) { got = res })
+	if got.Status != http.StatusInternalServerError {
+		t.Errorf("panic: status %d, want 500", got.Status)
+	}
+}

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
-	"net/http/httptest"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -36,6 +36,13 @@ func (c *conn) closeAll() {
 
 // dispatch answers one request, streaming when the path calls for it.
 func (s *Service) dispatch(ctx context.Context, c *conn, client string, r relay.Request, send func(relay.Response)) {
+	defer func() {
+		// A handler panic on remote input must not take the daemon down.
+		if p := recover(); p != nil {
+			slog.Error("remote: relayed request panicked", "id", r.ID, "client", client, "panic", p)
+			send(relay.Response{ID: r.ID, Status: http.StatusInternalServerError, Body: []byte(`{"error":"internal error"}`)})
+		}
+	}()
 	if r.Method == relay.MethodCancel {
 		c.mu.Lock()
 		if cancel := c.cancels[r.ID]; cancel != nil {
@@ -65,14 +72,11 @@ func (s *Service) dispatch(ctx context.Context, c *conn, client string, r relay.
 		cancel()
 	}()
 
-	req := httptest.NewRequestWithContext(sctx, http.MethodGet, r.Path, nil)
-	req.RemoteAddr = "relay"
-	for _, h := range passHeaders {
-		if v, ok := r.Headers[h]; ok {
-			req.Header.Set(h, v)
-		}
+	req, err := relayedRequest(sctx, client, relay.Request{ID: r.ID, Method: http.MethodGet, Path: r.Path, Headers: r.Headers})
+	if err != nil {
+		send(relay.Response{ID: r.ID, Status: http.StatusBadRequest, Body: []byte(`{"error":"bad request"}`)})
+		return
 	}
-	req.Header.Set("X-Conduit-Relay-Client", client)
 	w := &streamWriter{id: r.ID, send: send, header: http.Header{}, status: http.StatusOK}
 	if s.Handler == nil {
 		send(relay.Response{ID: r.ID, Status: http.StatusServiceUnavailable})

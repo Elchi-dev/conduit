@@ -554,28 +554,60 @@ var passHeaders = []string{"Authorization", "Content-Type", "Accept", "Idempoten
 
 const maxBody = 8 << 20
 
-// execute runs one relayed API request against the daemon's handler.
-func (s *Service) execute(ctx context.Context, client string, r relay.Request) relay.Response {
-	res := relay.Response{ID: r.ID}
-	if !strings.HasPrefix(r.Path, "/api/") || strings.Contains(r.Path, "..") {
-		res.Status = http.StatusNotFound
-		res.Body = []byte(`{"error":"only the API is reachable through the relay"}`)
-		return res
-	}
+// Methods the API uses; anything else is refused before it reaches a handler.
+var relayMethods = map[string]bool{
+	http.MethodGet: true, http.MethodPost: true, http.MethodPut: true,
+	http.MethodPatch: true, http.MethodDelete: true,
+}
+
+var errNotAPI = errors.New("only the API is reachable through the relay")
+
+// relayedRequest turns a decrypted relay request into an HTTP request for the
+// daemon's handler. The input comes from a remote client, so it is checked
+// first: a malformed method or path must be an error, never a panic.
+func relayedRequest(ctx context.Context, client string, r relay.Request) (*http.Request, error) {
 	method := strings.ToUpper(r.Method)
 	if method == "" {
 		method = http.MethodGet
 	}
-	rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	req := httptest.NewRequestWithContext(rctx, method, r.Path, bytes.NewReader(r.Body))
+	if !relayMethods[method] {
+		return nil, fmt.Errorf("method %q isn't allowed through the relay", r.Method)
+	}
+	u, err := url.ParseRequestURI(r.Path)
+	if err != nil || u.Host != "" || u.Scheme != "" || !strings.HasPrefix(u.Path, "/api/") ||
+		strings.Contains(r.Path, "..") || strings.ContainsAny(r.Path, "\x00\r\n") {
+		return nil, errNotAPI
+	}
+	req, err := http.NewRequestWithContext(ctx, method, r.Path, bytes.NewReader(r.Body))
+	if err != nil {
+		return nil, errors.New("malformed request")
+	}
+	req.RequestURI = u.RequestURI()
+	req.Host = "relay"
 	req.RemoteAddr = "relay"
 	for _, h := range passHeaders {
-		if v, ok := r.Headers[h]; ok {
+		if v, ok := r.Headers[h]; ok && !strings.ContainsAny(v, "\r\n") {
 			req.Header.Set(h, v)
 		}
 	}
 	req.Header.Set("X-Conduit-Relay-Client", client)
+	return req, nil
+}
+
+// execute runs one relayed API request against the daemon's handler.
+func (s *Service) execute(ctx context.Context, client string, r relay.Request) relay.Response {
+	res := relay.Response{ID: r.ID}
+	rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	req, err := relayedRequest(rctx, client, r)
+	if err != nil {
+		res.Status = http.StatusBadRequest
+		if errors.Is(err, errNotAPI) {
+			res.Status = http.StatusNotFound
+		}
+		res.Body, _ = json.Marshal(map[string]string{"error": err.Error()})
+		return res
+	}
 	rec := httptest.NewRecorder()
 	if s.Handler == nil {
 		res.Status = http.StatusServiceUnavailable

@@ -28,9 +28,9 @@ connect and says so.
 | `status` | read | Uptime, load, CPUs, memory, disks |
 | `services` | read | All systemd services, or only failed ones |
 | `service_status` | read | `systemctl status` output |
-| `logs` | read | Journal lines for a service or the whole system, with `since` |
+| `logs` | read (sensitive) | Journal lines for a service or the whole system, with `since`; output is kept out of the audit log |
 | `files` | read | Directory listing |
-| `read_file` | read | First 512 KiB of a file |
+| `read_file` | write (sensitive) | First 512 KiB of a file. Treated as a change because files can hold keys and passwords, so agents need approval by default; content is kept out of the audit log |
 | `service_start` | write | Undo stops it |
 | `service_stop` | destructive | Undo starts it |
 | `service_restart` | destructive | Dry run shows the current state |

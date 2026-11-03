@@ -50,11 +50,13 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "services", Title: "Services", Description: "systemd services and their state.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"failedOnly":{"type":"boolean","title":"Only failed services"}}}`)},
 			{Name: "service_status", Title: "Service details", Risk: sdk.RiskRead, Input: sdk.Schema(unit)},
-			{Name: "logs", Title: "Logs", Description: "Recent journal lines for a service, or the whole system.", Risk: sdk.RiskRead,
+			{Name: "logs", Title: "Logs", Description: "Recent journal lines for a service, or the whole system.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"service":{"type":"string","description":"Leave empty for the whole system"},"lines":{"type":"integer","default":200,"maximum":5000},"since":{"type":"string","description":"e.g. '1 hour ago' or '2026-11-03 01:00'"}}}`)},
 			{Name: "files", Title: "Files", Description: "List a directory.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"path":{"type":"string","default":"/"}}}`)},
-			{Name: "read_file", Title: "Read a file", Description: "The first 512 KiB of a file.", Risk: sdk.RiskRead,
+			// Reading any file can reach keys and passwords, so it is treated
+			// like a change: agents need approval under the default rules.
+			{Name: "read_file", Title: "Read a file", Description: "The first 512 KiB of a file. Files can hold keys and passwords, so this follows the approval rules for changes.", Risk: sdk.RiskWrite, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}`)},
 			{Name: "service_restart", Title: "Restart a service", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(unit)},
 			{Name: "service_start", Title: "Start a service", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(unit)},

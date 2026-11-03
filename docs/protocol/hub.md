@@ -128,6 +128,13 @@ Each direction has its own key and counter starting at 0.
   control characters, scheme or host. A handler that fails answers 500
   instead of stopping the daemon.
 
+Where the client code comes from matters as much as the cryptography: a
+client is only as trustworthy as the code that holds its keys. Run relay mode
+from the desktop or Android app, or from the web app served by one of your
+own daemons, never from pages served by a hub. A hub that served the client
+code could serve code that leaks the keys. The hub website therefore has no
+relay client; it only manages accounts and pairing codes.
+
 `pkg/relay/testdata/vectors.json` pins the format; Go and TypeScript tests
 both check against it.
 

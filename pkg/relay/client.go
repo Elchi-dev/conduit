@@ -49,9 +49,15 @@ func HubWS(hub string) string {
 // Dial connects to daemonID through hub. daemonPub is the key pinned from the
 // pairing QR code; pairingSecret is only needed the first time.
 func Dial(ctx context.Context, hub, daemonID, daemonPub string, me KeyPair, pairingSecret, name string) (*Client, error) {
-	ws, _, err := websocket.Dial(ctx, HubWS(hub)+"/v1/relay/connect/"+daemonID, nil)
+	return DialURL(ctx, HubWS(hub)+"/v1/relay/connect/"+daemonID, daemonPub, me, pairingSecret, name)
+}
+
+// DialURL connects to a relay endpoint directly: a hub's connect URL, or a
+// daemon's own ws://host:port/relay on the local network.
+func DialURL(ctx context.Context, wsURL, daemonPub string, me KeyPair, pairingSecret, name string) (*Client, error) {
+	ws, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("reach the daemon through the hub: %w", err)
+		return nil, fmt.Errorf("reach the daemon: %w", err)
 	}
 	ws.SetReadLimit(8 << 20)
 	hello, sess, err := ClientHandshake(me, daemonPub, pairingSecret, name)

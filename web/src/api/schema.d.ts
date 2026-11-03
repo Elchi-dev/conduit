@@ -1127,6 +1127,8 @@ export interface components {
             publicKey: string;
             fingerprint: string;
             streams: number;
+            /** @description Direct ws:// addresses on the local network */
+            lan: string[];
             clients: {
                 id: string;
                 name: string;
@@ -1144,6 +1146,8 @@ export interface components {
             key: string;
             secret: string;
             name: string;
+            /** @description Direct address on the local network */
+            lan?: string;
             /** Format: date-time */
             expiresAt: string;
             /** @description conduit://pair?d=<base64url JSON>, for the QR code */

@@ -158,6 +158,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	if err := app.Automations.Start(ctx); err != nil {
 		return err
 	}
+	app.Remote.LANAddrs = remote.LANURLs(cfg.Listen)
 	app.Remote.Start(ctx)
 	go housekeeping(ctx, app)
 	go app.Games.Watch(ctx) // idle until the games module is set up

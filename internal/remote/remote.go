@@ -66,6 +66,9 @@ type Status struct {
 	Fingerprint string   `json:"fingerprint"`
 	Clients     []Client `json:"clients"`
 	Streams     int      `json:"streams"`
+	// LAN lists direct addresses on the local network (empty when the
+	// daemon only listens on loopback).
+	LAN []string `json:"lan"`
 }
 
 // Pairing is what the daemon's QR code carries.
@@ -76,6 +79,9 @@ type Pairing struct {
 	Key       string    `json:"key"`
 	Secret    string    `json:"secret"`
 	Name      string    `json:"name"`
+	// LAN is a direct ws:// address on the local network, tried before the
+	// hub (feature 11). Empty when the daemon only listens on loopback.
+	LAN       string    `json:"lan,omitempty"`
 	ExpiresAt time.Time `json:"expiresAt"`
 	// URI is the same data as a conduit://pair link, for QR codes.
 	URI string `json:"uri"`
@@ -87,6 +93,9 @@ type Service struct {
 	Log     *slog.Logger
 	Name    string       // shown to clients
 	Handler http.Handler // the daemon API; set before Start
+	// LANAddrs are ws:// URLs of the daemon's /relay endpoint on the local
+	// network; set when the daemon listens beyond loopback.
+	LANAddrs []string
 	HTTP    *http.Client
 
 	key relay.KeyPair
@@ -168,7 +177,7 @@ func (s *Service) restart() {
 // Status reports the link, the connection and the paired clients.
 func (s *Service) Status(ctx context.Context) Status {
 	s.mu.Lock()
-	st := Status{Linked: s.link != nil, Connected: s.connected, LastError: s.lastErr, PublicKey: s.key.Public(), Fingerprint: relay.Fingerprint(s.key.Public()), Streams: s.streams}
+	st := Status{Linked: s.link != nil, Connected: s.connected, LastError: s.lastErr, PublicKey: s.key.Public(), Fingerprint: relay.Fingerprint(s.key.Public()), Streams: s.streams, LAN: append([]string{}, s.LANAddrs...)}
 	if s.link != nil {
 		l := *s.link
 		st.Link = &l
@@ -250,8 +259,8 @@ func (s *Service) Unlink(ctx context.Context) error {
 func (s *Service) NewPairing() (Pairing, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.link == nil {
-		return Pairing{}, errors.New("link this daemon to a hub first")
+	if s.link == nil && len(s.LANAddrs) == 0 {
+		return Pairing{}, errors.New("link this daemon to a hub, or let it listen on your network, first")
 	}
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
@@ -264,9 +273,19 @@ func (s *Service) NewPairing() (Pairing, error) {
 			delete(s.pairings, k)
 		}
 	}
-	p := Pairing{V: 1, Hub: s.link.Hub, Daemon: s.link.DeviceID, Key: s.key.Public(), Secret: secret, Name: s.Name, ExpiresAt: now.Add(10 * time.Minute).UTC()}
+	p := Pairing{V: 1, Key: s.key.Public(), Secret: secret, Name: s.Name, ExpiresAt: now.Add(10 * time.Minute).UTC()}
+	if s.link != nil {
+		p.Hub, p.Daemon = s.link.Hub, s.link.DeviceID
+	}
+	if len(s.LANAddrs) > 0 {
+		p.LAN = s.LANAddrs[0]
+	}
 	s.pairings[sum(secret)] = p.ExpiresAt
-	j, _ := json.Marshal(map[string]any{"v": p.V, "hub": p.Hub, "daemon": p.Daemon, "key": p.Key, "secret": p.Secret, "name": p.Name})
+	payload := map[string]any{"v": p.V, "hub": p.Hub, "daemon": p.Daemon, "key": p.Key, "secret": p.Secret, "name": p.Name}
+	if p.LAN != "" {
+		payload["lan"] = p.LAN
+	}
+	j, _ := json.Marshal(payload)
 	p.URI = "conduit://pair?d=" + base64.RawURLEncoding.EncodeToString(j)
 	return p, nil
 }

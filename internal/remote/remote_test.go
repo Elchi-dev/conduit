@@ -199,3 +199,56 @@ func waitFor(t *testing.T, f func() bool) {
 	}
 	t.Fatal("condition not reached")
 }
+
+func TestLANWithoutHub(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	store, err := core.OpenStore(ctx, filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	svc, _ := New(ctx, store.DB, quiet(), "laptop")
+	svc.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"path":"` + r.URL.Path + `"}`))
+	})
+	if _, err := svc.NewPairing(); err == nil {
+		t.Fatal("no hub and no LAN: pairing must fail")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(svc.ServeLAN))
+	defer srv.Close()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	svc.LANAddrs = []string{wsURL}
+	p, err := svc.NewPairing()
+	if err != nil || p.LAN != wsURL || p.Hub != "" {
+		t.Fatalf("pairing %+v %v", p, err)
+	}
+	phone, _ := relay.NewKeyPair()
+	c, err := relay.DialURL(ctx, p.LAN, p.Key, phone, p.Secret, "Phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Do(ctx, relay.Request{Method: "GET", Path: "/api/v1/me"})
+	if err != nil || res.Status != 200 || !strings.Contains(string(res.Body), "/api/v1/me") {
+		t.Fatalf("request %v %+v", err, res)
+	}
+	c.Close()
+	c, err = relay.DialURL(ctx, p.LAN, p.Key, phone, "", "Phone")
+	if err != nil {
+		t.Fatal("known device must reconnect without a secret:", err)
+	}
+	c.Close()
+	stranger, _ := relay.NewKeyPair()
+	if _, err := relay.DialURL(ctx, p.LAN, p.Key, stranger, "", "x"); err == nil {
+		t.Fatal("unknown device admitted")
+	}
+}
+
+func TestLANURLs(t *testing.T) {
+	if LANURLs("127.0.0.1:7600") != nil || LANURLs("localhost:7600") != nil {
+		t.Fatal("loopback must not advertise")
+	}
+	if got := LANURLs("192.168.1.20:7600"); len(got) != 1 || got[0] != "ws://192.168.1.20:7600/relay" {
+		t.Fatalf("%v", got)
+	}
+}

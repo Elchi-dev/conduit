@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ok } from "../api/client";
-import { forgetRelay, pairFromCode, relayProfile } from "../lib/connection";
+import { forgetRelay, pairFromCode, relayProfile, routeLabel } from "../lib/connection";
 import { fingerprint } from "../lib/relay";
 import { isMobileApp, scanQR } from "../lib/native";
 import "../components/shell.css";
@@ -102,7 +102,7 @@ export function Login() {
           <h1>Sign in</h1>
           {relay && (
             <p className="muted">
-              To {relay.name}, through {new URL(relay.hub).host}. The connection is end-to-end encrypted to the key{" "}
+              To {relay.name}, {routeLabel(relay)}. The connection is end-to-end encrypted to the key{" "}
               <span className="data">{fp}</span>, which should match the fingerprint shown on that computer.
             </p>
           )}

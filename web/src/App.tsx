@@ -9,7 +9,7 @@ import { Home } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { Keys } from "./pages/Keys";
 import { Connect, Login, Setup } from "./pages/Auth";
-import { forgetRelay, pairFromCode, relayProfile } from "./lib/connection";
+import { forgetRelay, pairFromCode, relayProfile, routeLabel } from "./lib/connection";
 import { onDeepLink } from "./lib/native";
 import { useEffect } from "react";
 import { Modules } from "./pages/Modules";
@@ -44,7 +44,7 @@ export default function App() {
           <div className="gate-box stack">
             <h1>{relay.name} isn't reachable</h1>
             <p className="muted">
-              {setup.error.message} Check that the computer is on and that Conduit is linked to {new URL(relay.hub).host}, then
+              {setup.error.message} Check that the computer is on and reachable {routeLabel(relay)}, then
               try again.
             </p>
             <div className="inline">

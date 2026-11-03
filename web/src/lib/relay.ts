@@ -145,14 +145,14 @@ export type Welcome = { ok: boolean; error?: string; client?: string; daemon?: s
 type WireResponse = { id: number; status: number; headers?: Record<string, string>; body?: string };
 
 /** What a pairing QR code carries (conduit://pair?d=…). */
-export type PairingInfo = { v: number; hub: string; daemon: string; key: string; secret: string; name: string };
+export type PairingInfo = { v: number; hub: string; daemon: string; key: string; secret: string; name: string; lan?: string };
 
 export function parsePairing(text: string): PairingInfo {
   const t = text.trim();
   const m = t.match(/[?&]d=([A-Za-z0-9_-]+)/);
   const raw = m ? dec.decode(unb64url(m[1])) : t;
   const p = JSON.parse(raw) as PairingInfo;
-  if (p.v !== 1 || !p.hub || !p.daemon || !p.key) throw new Error("That isn't a Conduit pairing code.");
+  if (p.v !== 1 || !p.key || !((p.hub && p.daemon) || p.lan)) throw new Error("That isn't a Conduit pairing code.");
   return p;
 }
 
@@ -170,14 +170,32 @@ export class RelayClient {
   private recvChain: Promise<void> = Promise.resolve();
   onClose?: (reason: string) => void;
 
-  static async connect(hub: string, daemon: string, daemonKey: string, me: KeyPair, intro: Intro): Promise<RelayClient> {
+  /** The hub's connect URL for a daemon. */
+  static hubURL(hub: string, daemon: string): string {
+    return `${hub.replace(/^http/, "ws").replace(/\/$/, "")}/v1/relay/connect/${encodeURIComponent(daemon)}`;
+  }
+
+  /**
+   * Connect to a relay endpoint: a hub's connect URL, or a daemon's own
+   * ws://host:port/relay on the local network (no hub involved).
+   */
+  static async connect(wsURL: string, daemonKey: string, me: KeyPair, intro: Intro, timeoutMs = 15000): Promise<RelayClient> {
     const c = new RelayClient();
-    const wsBase = hub.replace(/^http/, "ws").replace(/\/$/, "");
-    const ws = new WebSocket(`${wsBase}/v1/relay/connect/${encodeURIComponent(daemon)}`);
+    const ws = new WebSocket(wsURL);
     ws.binaryType = "arraybuffer";
     await new Promise<void>((res, rej) => {
-      ws.onopen = () => res();
-      ws.onerror = () => rej(new Error("Couldn't reach the daemon through the hub. Is it online?"));
+      const t = setTimeout(() => {
+        ws.close();
+        rej(new Error("Couldn't reach the daemon in time."));
+      }, timeoutMs);
+      ws.onopen = () => {
+        clearTimeout(t);
+        res();
+      };
+      ws.onerror = () => {
+        clearTimeout(t);
+        rej(new Error("Couldn't reach the daemon. Is it online?"));
+      };
     });
     const { hello, session } = await clientHandshake(me, daemonKey, intro);
     const first = new Promise<Uint8Array>((res, rej) => {

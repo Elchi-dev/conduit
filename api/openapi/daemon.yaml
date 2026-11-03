@@ -971,7 +971,7 @@ components:
             detail: { type: string }
     RemoteStatus:
       type: object
-      required: [linked, connected, publicKey, fingerprint, clients, streams]
+      required: [linked, connected, publicKey, fingerprint, clients, streams, lan]
       properties:
         linked: { type: boolean }
         link:
@@ -986,6 +986,7 @@ components:
         publicKey: { type: string }
         fingerprint: { type: string }
         streams: { type: integer }
+        lan: { type: array, items: { type: string }, description: Direct ws:// addresses on the local network }
         clients:
           type: array
           items:
@@ -1007,6 +1008,7 @@ components:
         key: { type: string }
         secret: { type: string }
         name: { type: string }
+        lan: { type: string, description: Direct address on the local network, tried before the hub }
         expiresAt: { type: string, format: date-time }
         uri: { type: string, description: "conduit://pair?d=<base64url JSON>, for the QR code" }
     Error:

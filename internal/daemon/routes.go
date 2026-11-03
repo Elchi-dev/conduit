@@ -35,6 +35,11 @@ func (s *Server) Handler() http.Handler {
 		routes = append(routes, s.updateRoutes()...)
 	}
 	routes = append(routes, s.ambientRoutes()...)
+	if s.Remote != nil {
+		// Direct, end-to-end encrypted connections from paired devices on
+		// the local network (the handshake authenticates them).
+		mux.HandleFunc("GET /relay", s.Remote.ServeLAN)
+	}
 	for _, rt := range routes {
 		mux.HandleFunc(rt.pattern, rt.h)
 	}

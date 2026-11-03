@@ -59,6 +59,9 @@ Only `/api/` paths and a short header allow-list pass; cookies are dropped,
 so relayed clients use bearer session tokens. The SSE event stream answers
 501 over the relay for now.
 
+`lan.go` serves the same protocol directly at `GET /relay` for phones on the
+local network (no hub); the daemon fills `LANAddrs` from its listen address.
+
 The daemon API for it is `/api/v1/remote` (status), `/remote/link` (link,
 unlink), `/remote/pairings` (QR payload) and `/remote/clients/{id}` (remove).
 All need `admin:*:*` and a signed-in person; every change is audited.

@@ -96,6 +96,27 @@ export function RemoteAccess({ admin }: { admin: boolean }) {
             </div>
           </form>
           {link.error && <div className="error">{link.error.message}</div>}
+          {st.lan.length > 0 ? (
+            <div className="stack lan-pair" style={{ gap: 8 }}>
+              <div className="spread">
+                <span className="small">
+                  Or pair a phone on this network without any hub. It connects straight to{" "}
+                  <span className="data">{st.lan[0].replace(/^ws:\/\//, "").replace(/\/relay$/, "")}</span>.
+                </span>
+                {!isRelay() && (
+                  <button className="btn" onClick={() => pair.mutate()} disabled={pair.isPending}>
+                    Pair on this network
+                  </button>
+                )}
+              </div>
+              {pair.error && <div className="error">{pair.error.message}</div>}
+              {pairing && <PairingCode pairing={pairing} fingerprint={st.fingerprint} onClose={() => setPairing(null)} />}
+            </div>
+          ) : (
+            <p className="xs muted">
+              To pair phones on your network without a hub, start Conduit with <span className="data">-listen 0.0.0.0:7600</span>.
+            </p>
+          )}
         </div>
       ) : (
         <div className="panel stack remote-panel">
@@ -107,6 +128,7 @@ export function RemoteAccess({ admin }: { admin: boolean }) {
                   {st.connected ? "Reachable through" : "Not connected to"} {hostOf(st.link?.hub)}
                 </strong>
                 <span className="xs muted">
+                  {st.lan.length > 0 && "Phones on this network connect directly. "}
                   Linked to {st.link?.account} {st.link?.linkedAt ? ago(st.link.linkedAt) : ""}
                   {st.streams > 0 && `, ${st.streams === 1 ? "1 device" : `${st.streams} devices`} connected now`}
                 </span>

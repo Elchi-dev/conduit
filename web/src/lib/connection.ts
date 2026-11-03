@@ -9,7 +9,8 @@ import { keyPairFrom, newKeyPair, parsePairing, RelayClient, type KeyPair } from
 
 export type RelayProfile = {
   mode: "relay";
-  hub: string;
+  hub: string; // empty for LAN-only pairings
+  lan?: string; // direct ws:// address on the local network
   daemon: string;
   key: string; // daemon public key, pinned at pairing
   name: string; // daemon name
@@ -62,7 +63,7 @@ function connect(secret?: string): Promise<RelayClient> {
   const p = profile;
   if (!p) return Promise.reject(new Error("Not paired with a daemon."));
   const name = deviceName();
-  connecting = RelayClient.connect(p.hub, p.daemon, p.key, me(p), { name, pairingSecret: secret })
+  connecting = dialBest(p, { name, pairingSecret: secret })
     .then((c) => {
       client = c;
       c.onClose = () => {
@@ -74,6 +75,21 @@ function connect(secret?: string): Promise<RelayClient> {
       connecting = null;
     });
   return connecting;
+}
+
+/**
+ * On the same network, go straight to the daemon (no hub); otherwise, or if
+ * that fails, through the hub. Both are end-to-end encrypted to the pinned key.
+ */
+async function dialBest(p: RelayProfile, intro: { name: string; pairingSecret?: string }): Promise<RelayClient> {
+  if (p.lan) {
+    try {
+      return await RelayClient.connect(p.lan, p.key, me(p), intro, p.hub ? 2500 : 15000);
+    } catch (err) {
+      if (!p.hub) throw err;
+    }
+  }
+  return RelayClient.connect(RelayClient.hubURL(p.hub, p.daemon), p.key, me(p), intro);
 }
 
 function deviceName(): string {
@@ -90,7 +106,7 @@ export async function pairFromCode(text: string): Promise<RelayProfile> {
   const b = String.fromCharCode(...kp.privateKey);
   const clientKey = btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const prev = profile;
-  profile = { mode: "relay", hub: info.hub, daemon: info.daemon, key: info.key, name: info.name, clientKey };
+  profile = { mode: "relay", hub: info.hub ?? "", lan: info.lan, daemon: info.daemon ?? "", key: info.key, name: info.name, clientKey };
   client?.close();
   client = null;
   try {
@@ -149,4 +165,14 @@ export async function apiFetch(input: Request): Promise<Response> {
 /** Same as apiFetch, from fetch-style arguments. */
 export function apiFetchUrl(url: string, init?: RequestInit): Promise<Response> {
   return apiFetch(new Request(new URL(url, location.href), init));
+}
+
+/** "through hub.example.com" or "on your network", for messages. */
+export function routeLabel(p: RelayProfile): string {
+  if (!p.hub) return "on your network";
+  try {
+    return `through ${new URL(p.hub).host}${p.lan ? " (or directly on your network)" : ""}`;
+  } catch {
+    return "through the hub";
+  }
 }

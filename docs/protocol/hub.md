@@ -128,6 +128,20 @@ when devices are online, stream ids, frame sizes and timing, and sync blob
 sizes. It never sees request or response content, pairing secrets, daemon
 sessions, vault contents or sync blob contents.
 
+## Without a hub (local network)
+
+Signature feature 11. When the daemon listens beyond loopback (for example
+`-listen 0.0.0.0:7600`), it serves the same relay protocol itself at
+`GET /relay`: one WebSocket is one stream, the first binary frame is the
+hello, every later frame is encrypted exactly as above. The pairing payload
+then carries `"lan":"ws://<address>:<port>/relay"` (private IPv4 addresses
+and 100.64.0.0/10, so Tailscale-style overlays work too), and pairing works
+with no hub at all. Clients try the LAN address first (2.5 s) and fall back to
+the hub. At most 16 direct connections at a time.
+
+LAN discovery (mDNS) and peer-to-peer sync between daemons are designed but
+not built: pairing carries the address, so discovery isn't needed to connect.
+
 ## Sync
 
 `/v1/sync/{key}` stores opaque blobs the client encrypted itself (at most

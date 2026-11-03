@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
+import { PhonePush } from "./PhonePush";
 import { useEffect, useState } from "react";
 import { api, ok, type S } from "../api/client";
 import { isRelay } from "../lib/connection";
@@ -153,6 +154,7 @@ export function RemoteAccess({ admin }: { admin: boolean }) {
               This computer's key fingerprint <span className="data">{st.fingerprint}</span>
             </span>
           </div>
+          <PhonePush />
           {st.clients.length > 0 && (
             <div className="rows">
               {st.clients.map((c) => (

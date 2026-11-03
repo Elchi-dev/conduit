@@ -39,6 +39,37 @@ addresses as a relying party, so daemon passkeys would need the app to move
 to a host name such as `localhost` first; the phone's relay client has no
 stable origin of its own either.
 
+### Single sign-on
+
+Teams can sign in with any OpenID Connect provider (Google Workspace,
+Microsoft Entra ID, Okta, Keycloak, Authentik, GitLab…), configured in
+Settings, Single sign-on, or with `PUT /api/v1/auth/oidc` (`internal/daemon/oidc.go`):
+
+- Authorization code flow with PKCE (S256), `state` and `nonce`. The state
+  is kept in memory for 10 minutes, works once, and is also bound to the
+  browser that started the sign-in by an HttpOnly cookie, so a sign-in
+  someone else started can't be finished in your browser.
+- The ID token's signature, issuer, audience, expiry and nonce are checked;
+  the address must be present and `email_verified` true.
+- Allowed email domains limit who may sign in. With none set, only addresses
+  that already have an account here can sign in. Accounts are made on first
+  sign-in only when auto-create is on and domains are set, and only as
+  members or viewers.
+- Disabled accounts are refused. A success starts an ordinary session and
+  is audited as `oidc_login`; a failure redirects to `/?signin_error=<code>`
+  and the reason goes to the daemon's log, not the browser.
+- The client secret must be a `secret://` vault reference, so the vault must
+  be unlocked for single sign-on to work. Password sign-in keeps working
+  alongside it.
+- `/start` and `/callback` take 30 requests a minute per source. The
+  callback must arrive under a host name the daemon accepts (see Host names
+  below): behind a reverse proxy, put its name in `CONDUIT_ALLOWED_HOSTS` and
+  set the daemon's address in the settings.
+
+Setup per provider: [docs/api/sso.md](../api/sso.md). Single sign-on is for
+browsers on the daemon's own address; the phone app and relay mode sign in
+with a password.
+
 ### Host names
 
 The daemon answers only under names it is known by: IP addresses,

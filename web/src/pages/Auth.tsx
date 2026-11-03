@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ok } from "../api/client";
 import { forgetRelay, pairFromCode, relayProfile, routeLabel } from "../lib/connection";
@@ -89,6 +89,9 @@ export function Login() {
   useEffect(() => {
     if (relay) fingerprint(relay.key).then(setFp);
   }, [relay]);
+  // Single sign-on is a browser redirect, so it works only on the daemon's own address.
+  const sso = useQuery({ queryKey: ["auth", "oidc"], queryFn: () => ok(api.GET("/auth/oidc")), enabled: !relay, retry: false });
+  const ssoError = new URLSearchParams(window.location.search).get("signin_error");
   if (elsewhere) return <Connect onBack={() => setElsewhere(false)} />;
   const m = useMutation({
     mutationFn: () => ok(api.POST("/auth/login", { body: { ...f, device: "Browser" } })),
@@ -132,6 +135,12 @@ export function Login() {
             Sign in
           </button>
         </form>
+        {!relay && sso.data?.enabled && (
+          <a className="btn" href="/api/v1/auth/oidc/start">
+            Sign in with {sso.data.label}
+          </a>
+        )}
+        {!relay && ssoError && <div className="error">{ssoMessage(ssoError)}</div>}
         {relay ? (
           <button
             className="btn quiet"
@@ -224,4 +233,27 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
       </div>
     </div>
   );
+}
+
+/** Plain-language text for a single sign-on failure code. */
+function ssoMessage(code: string): string {
+  switch (code) {
+    case "unverified":
+      return "Your provider didn't confirm your email address, so single sign-on can't use it.";
+    case "domain":
+      return "Your email address isn't in a domain this Conduit accepts. Ask its owner to add it.";
+    case "no_account":
+      return "There's no account here for your email address yet. Ask the owner to add you.";
+    case "disabled":
+      return "Your account here is switched off. Ask the owner.";
+    case "state":
+    case "expired":
+      return "That sign-in expired or was started in another browser. Try again.";
+    case "provider_refused":
+      return "The sign-in was cancelled at your provider.";
+    case "busy":
+      return "Too many sign-in attempts. Wait a minute and try again.";
+    default:
+      return "Single sign-on didn't work. Try again, or sign in with your password; the owner can see the reason in the daemon's log.";
+  }
 }

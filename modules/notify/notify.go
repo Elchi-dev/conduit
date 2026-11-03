@@ -41,6 +41,10 @@ type Config struct {
 	AppURL string `json:"appUrl"`
 	// MinPriority drops messages below this level.
 	MinPriority string `json:"minPriority"`
+	// Private sends only a generic line ("Conduit needs you") and the link,
+	// never the details, for channels whose servers you don't run (a public
+	// ntfy server sees every message it relays).
+	Private bool `json:"private"`
 }
 
 // Module implements sdk.Module.
@@ -71,6 +75,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			"url":{"type":"string","x-secret":true,"title":"Webhook URL","description":"Discord or Slack webhook (vault reference), or your own endpoint"},
 			"secret":{"type":"string","x-secret":true,"title":"Signing key","description":"Signs webhook bodies (X-Conduit-Signature: sha256=…)"},
 			"approvals":{"type":"boolean","title":"Send approval requests here"},
+			"private":{"type":"boolean","title":"Hide details","description":"Send only \"something needs your attention\" and a link; for servers you don't run, such as the public ntfy.sh"},
 			"appUrl":{"type":"string","title":"Conduit address","description":"Link target in notifications, e.g. http://my-pc:7600"},
 			"minPriority":{"type":"string","enum":["low","normal","high","urgent"],"default":"low"}}}`),
 		Actions: []sdk.ActionSpec{
@@ -202,6 +207,9 @@ func (m *Module) secret(ctx context.Context, h sdk.Host, ref string) (string, er
 }
 
 func (m *Module) deliver(ctx context.Context, c Config, h sdk.Host, id string, n Note) error {
+	if c.Private && c.Channel != "desktop" {
+		n.Title, n.Message = "Conduit", "Something needs your attention. Open Conduit to see what."
+	}
 	switch c.Channel {
 	case "desktop":
 		h.Publish(ctx, sdk.Event{Type: "notify.desktop", Instance: id, Data: mustJSON(n)})

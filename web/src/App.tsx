@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Route, Switch } from "wouter";
+import { navigate } from "wouter/use-browser-location";
 import { api, ApiError, ok } from "./api/client";
 import { Shell } from "./components/Shell";
 import { Approvals } from "./pages/Approvals";
@@ -24,6 +25,9 @@ export default function App() {
     () =>
       onDeepLink((url) => {
         if (url.startsWith("conduit://pair")) pairFromCode(url).then(() => qc.invalidateQueries(), () => {});
+        // conduit://open/approvals and the like, from notifications.
+        const m = url.match(/^conduit:\/\/open(\/[a-z0-9/_-]*)?$/i);
+        if (m) navigate(m[1] || "/");
       }),
     [qc],
   );

@@ -27,3 +27,4 @@ what differs (bearer tokens instead of cookies; the event stream arrives as stre
   approvals.
 - `sdk/external`: starter kits for writing modules in Python, TypeScript and
   Go.
+- [Single sign-on](sso.md): sign in to a daemon with Google Workspace, Microsoft Entra ID, Okta, Keycloak, Authentik or another OpenID Connect provider.

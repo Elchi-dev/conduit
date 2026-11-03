@@ -89,7 +89,7 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	assistant := &ai.Agent{DB: store.DB, Providers: providers}
 	bridge := &ai.Bridge{DB: store.DB, Engine: engine, Secrets: v}
 	app := &App{DataDir: dataDir, Store: store, Engine: engine, Auth: authSvc, Vault: v, Automations: autos,
-		Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Automations: autos, Providers: providers, Assistant: assistant, Bridge: bridge, Log: log, UI: ui.Handler(), Webhooks: webhooks.New(store.DB, engine.Bus, log)}}
+		Server: &Server{DB: store.DB, Engine: engine, Auth: authSvc, Vault: v, Automations: autos, Providers: providers, Assistant: assistant, Bridge: bridge, Log: log, UI: ui.Handler(), Webhooks: webhooks.New(store.DB, engine.Bus, log)}}
 	host, _ := os.Hostname()
 	if host == "" {
 		host = "Conduit"

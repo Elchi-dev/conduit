@@ -19,6 +19,21 @@ your devices reach Conduit (for example the hub relay address, or
 `http://my-pc:7600` on your network). Every approval request and every
 emergency stop is sent with a link straight to the approvals screen.
 
+**Hide details** sends only "Something needs your attention" and the link.
+Use it for servers you don't run: a public ntfy server sees every message it
+relays.
+
+### One-tap setup for the Android app
+
+Settings, Remote access, **Phone notifications** (or
+`POST /api/v1/notify/phone`) creates an ntfy channel with a random topic,
+turns on approval forwarding and Hide details, sends a test message, and
+shows a QR code and an `ntfy://` link that subscribe the phone's ntfy app
+(F-Droid or Google Play). Notifications open Conduit through
+`conduit://open/<page>` links, so tapping one lands on the approvals screen.
+This needs no Google services and works while Conduit is closed. Use your own
+ntfy server for full privacy.
+
 ## Signed webhooks
 
 With a signing key, each request carries

@@ -215,6 +215,16 @@ func (s *Service) GetUser(ctx context.Context, id string) (User, error) {
 	return u, err
 }
 
+// UserByEmail returns the account with this email address.
+func (s *Service) UserByEmail(ctx context.Context, email string) (User, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE email = ?`, strings.ToLower(strings.TrimSpace(email))).Scan(&id)
+	if err != nil {
+		return User{}, err
+	}
+	return s.GetUser(ctx, id)
+}
+
 // ListUsers returns all accounts.
 func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, email, role, created_at, disabled FROM users ORDER BY created_at`)

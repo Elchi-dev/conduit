@@ -1057,6 +1057,84 @@ paths:
       summary: Sync now
       responses:
         "200": { description: One result per collection and transport, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SyncRun" } } } } }
+  /notify/phone:
+    post:
+      operationId: setupPhonePush
+      tags: [system]
+      summary: Send approvals and alerts to a phone through ntfy, without Google services (signed-in people only)
+      description: Creates a Notifications channel with a random ntfy topic that forwards approval requests, sends a first test message, and answers the ntfy:// link that subscribes the phone's ntfy app. With private (the default) only "something needs your attention" and a link are sent, so a public ntfy server never sees details.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                server: { type: string, description: "ntfy server, default https://ntfy.sh" }
+                private: { type: boolean, default: true }
+                appUrl: { type: string, description: "Link the notification opens, default conduit://open" }
+      responses:
+        "201":
+          description: Set up
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [instance, topic, subscribe, web]
+                properties:
+                  instance: { $ref: "#/components/schemas/Instance" }
+                  topic: { type: string }
+                  subscribe: { type: string, description: "ntfy://host/topic" }
+                  web: { type: string }
+  /auth/oidc:
+    get:
+      operationId: ssoStatus
+      tags: [auth]
+      summary: Whether single sign-on is on, and the label for its button (public)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, required: [enabled, label], properties: { enabled: { type: boolean }, label: { type: string } } }
+    put:
+      operationId: updateSsoSettings
+      tags: [auth]
+      summary: Configure single sign-on with an OpenID Connect provider (signed-in people only)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OIDCSettings" } } }
+      responses:
+        "200": { description: Saved, content: { application/json: { schema: { $ref: "#/components/schemas/OIDCSettings" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /auth/oidc/settings:
+    get:
+      operationId: getSsoSettings
+      tags: [auth]
+      summary: Single sign-on settings and the redirect URI to register with the provider (signed-in people only)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OIDCSettings" } } } }
+  /auth/oidc/start:
+    get:
+      operationId: ssoStart
+      tags: [auth]
+      summary: Start signing in with the provider (a browser navigation; redirects to the provider)
+      security: []
+      responses:
+        "302": { description: To the provider's sign-in page, or to /?signin_error=<code> }
+  /auth/oidc/callback:
+    get:
+      operationId: ssoCallback
+      tags: [auth]
+      summary: Where the provider sends the browser back; starts a session and redirects to /
+      description: "Failures redirect to /?signin_error=<code>: state, expired, provider, provider_refused, config, exchange, token, no_id_token, unverified, domain, no_account, disabled, account, session, sso_off or busy."
+      security: []
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        "302": { description: To / with a session cookie, or to /?signin_error=<code> }
 components:
   securitySchemes:
     bearer:
@@ -1071,6 +1149,19 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    OIDCSettings:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        issuer: { type: string, description: "The provider's issuer URL, e.g. https://accounts.google.com" }
+        clientId: { type: string }
+        clientSecret: { type: string, description: "A secret:// vault reference; a plain secret is refused" }
+        label: { type: string, description: "Shown on the button: Sign in with <label>" }
+        allowedDomains: { type: array, items: { type: string }, description: Email domains that may sign in; empty allows any verified address that already has an account }
+        autoCreate: { type: boolean, description: Make an account on first sign-in for addresses in an allowed domain }
+        newUserRole: { type: string, enum: [member, viewer] }
+        redirectBase: { type: string, description: "This daemon's address as the provider knows it; empty uses the request's origin" }
+        redirectUri: { type: string, readOnly: true, description: Register this with the provider }
     SyncSetup:
       type: object
       properties:

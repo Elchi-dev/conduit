@@ -1274,10 +1274,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notify/phone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send approvals and alerts to a phone through ntfy, without Google services (signed-in people only)
+         * @description Creates a Notifications channel with a random ntfy topic that forwards approval requests, sends a first test message, and answers the ntfy:// link that subscribes the phone's ntfy app. With private (the default) only "something needs your attention" and a link are sent, so a public ntfy server never sees details.
+         */
+        post: operations["setupPhonePush"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether single sign-on is on, and the label for its button (public) */
+        get: operations["ssoStatus"];
+        /** Configure single sign-on with an OpenID Connect provider (signed-in people only) */
+        put: operations["updateSsoSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Single sign-on settings and the redirect URI to register with the provider (signed-in people only) */
+        get: operations["getSsoSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Start signing in with the provider (a browser navigation; redirects to the provider) */
+        get: operations["ssoStart"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where the provider sends the browser back; starts a session and redirects to /
+         * @description Failures redirect to /?signin_error=<code>: state, expired, provider, provider_refused, config, exchange, token, no_id_token, unverified, domain, no_account, disabled, account, session, sso_off or busy.
+         */
+        get: operations["ssoCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        OIDCSettings: {
+            enabled?: boolean;
+            /** @description The provider's issuer URL, e.g. https://accounts.google.com */
+            issuer?: string;
+            clientId?: string;
+            /** @description A secret:// vault reference; a plain secret is refused */
+            clientSecret?: string;
+            /** @description Shown on the button: Sign in with <label> */
+            label?: string;
+            /** @description Email domains that may sign in; empty allows any verified address that already has an account */
+            allowedDomains?: string[];
+            /** @description Make an account on first sign-in for addresses in an allowed domain */
+            autoCreate?: boolean;
+            /** @enum {string} */
+            newUserRole?: "member" | "viewer";
+            /** @description This daemon's address as the provider knows it; empty uses the request's origin */
+            redirectBase?: string;
+            /** @description Register this with the provider */
+            readonly redirectUri?: string;
+        };
         SyncSetup: {
             /** @description The join code (joinSyncGroup only) */
             code?: string;
@@ -4138,6 +4250,150 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SyncRun"][];
                 };
+            };
+        };
+    };
+    setupPhonePush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description ntfy server, default https://ntfy.sh */
+                    server?: string;
+                    /** @default true */
+                    private?: boolean;
+                    /** @description Link the notification opens, default conduit://open */
+                    appUrl?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Set up */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        instance: components["schemas"]["Instance"];
+                        topic: string;
+                        /** @description ntfy://host/topic */
+                        subscribe: string;
+                        web: string;
+                    };
+                };
+            };
+        };
+    };
+    ssoStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        label: string;
+                    };
+                };
+            };
+        };
+    };
+    updateSsoSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OIDCSettings"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OIDCSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getSsoSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OIDCSettings"];
+                };
+            };
+        };
+    };
+    ssoStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the provider's sign-in page */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ssoCallback: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To / with a session cookie */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"github.com/elchi-dev/conduit/internal/syncer"
@@ -24,6 +25,9 @@ import (
 
 // Server is the daemon's HTTP API.
 type Server struct {
+	// DB is the daemon's database, for small settings kept by the API layer
+	// (single sign-on).
+	DB     *sql.DB
 	Engine *core.Engine
 	Auth   *auth.Service
 	Vault  *vault.Vault

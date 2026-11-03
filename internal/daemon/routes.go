@@ -47,7 +47,9 @@ func (s *Server) Handler() http.Handler {
 		// documents are encrypted for the group, so no session is needed).
 		mux.HandleFunc("POST /sync/exchange", s.syncExchange)
 	}
+	routes = append(routes, s.oidcRoutes()...)
 	routes = append(routes, s.ambientRoutes()...)
+	routes = append(routes, s.phoneRoutes()...)
 	if s.Remote != nil {
 		// Direct, end-to-end encrypted connections from paired devices on
 		// the local network (the handshake authenticates them).

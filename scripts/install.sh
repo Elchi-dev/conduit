@@ -24,6 +24,7 @@ Install Conduit.
 Usage: install.sh [options]
 
   --hub              install the hub (conduit-hub) instead of the daemon
+  --cli              install the command-line client (conduit) instead
   --version vX.Y.Z   install this release instead of the latest
   --system           install to /usr/local/bin (uses sudo if needed)
                      instead of ~/.local/bin
@@ -47,6 +48,7 @@ fail() {
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--hub) NAME="conduit-hub" ;;
+	--cli) NAME="conduit" ;;
 	--version)
 		[ $# -ge 2 ] || fail "--version needs a value, e.g. --version v0.1.0"
 		VERSION="$2"
@@ -68,7 +70,7 @@ done
 if [ "$VERSION" != latest ] && ! printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
 	fail "versions look like v0.1.0"
 fi
-if [ "$SERVICE" = 1 ] && [ "$NAME" = "conduit-hub" ]; then
+if [ "$SERVICE" = 1 ] && [ "$NAME" != "conduitd" ]; then
 	fail "--service is for the daemon; run the hub as described in docs/self-hosting"
 fi
 
@@ -209,6 +211,10 @@ case ":$PATH:" in
 *) say "Add $BIN_DIR to your PATH to run $NAME by name." ;;
 esac
 
+if [ "$NAME" = conduit ]; then
+	say "Next: conduit login (create an API key in Conduit under API keys first). See docs/cli.md."
+	exit 0
+fi
 if [ "$NAME" = conduit-hub ]; then
 	say "Configure and run the hub as described in docs/self-hosting (https://github.com/$REPO/tree/main/docs/self-hosting)."
 	exit 0

@@ -62,7 +62,8 @@ irm https://<your hub>/install.ps1 | iex               # Windows PowerShell
 ```
 
 The scripts check every download against the release's checksums. Options,
-services and uninstalling: [docs/install.md](docs/install.md).
+services and uninstalling: [docs/install.md](docs/install.md). The
+command-line client installs with `--cli`: [docs/cli.md](docs/cli.md).
 
 ## Build from source
 

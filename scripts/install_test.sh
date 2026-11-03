@@ -13,10 +13,11 @@ case "$(uname -m)" in x86_64 | amd64) ARCH=amd64 ;; *) ARCH=arm64 ;; esac
 
 mkdir -p "$WORK/rel" "$WORK/home"
 CGO_ENABLED=0 go build -o "$WORK/rel/conduitd-$OS-$ARCH" ./cmd/conduitd
+CGO_ENABLED=0 go build -o "$WORK/rel/conduit-$OS-$ARCH" ./cmd/conduit
 if command -v sha256sum >/dev/null 2>&1; then
-	(cd "$WORK/rel" && sha256sum "conduitd-$OS-$ARCH" >SHA256SUMS)
+	(cd "$WORK/rel" && sha256sum "conduitd-$OS-$ARCH" "conduit-$OS-$ARCH" >SHA256SUMS)
 else
-	(cd "$WORK/rel" && shasum -a 256 "conduitd-$OS-$ARCH" >SHA256SUMS)
+	(cd "$WORK/rel" && shasum -a 256 "conduitd-$OS-$ARCH" "conduit-$OS-$ARCH" >SHA256SUMS)
 fi
 (cd "$WORK/rel" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1) &
 SRV=$!
@@ -43,6 +44,12 @@ echo "ok   install again"
 run --uninstall >/dev/null
 [ ! -e "$BIN" ] || { echo "FAIL: uninstall left the binary"; exit 1; }
 echo "ok   uninstall"
+
+run --cli >/dev/null
+"$WORK/home/.local/bin/conduit" version | grep -q '^conduit ' || { echo "FAIL: --cli didn't install conduit"; exit 1; }
+run --cli --uninstall >/dev/null
+[ ! -e "$WORK/home/.local/bin/conduit" ] || { echo "FAIL: --cli --uninstall left the binary"; exit 1; }
+echo "ok   install the CLI"
 
 # A signed SHA256SUMS: a good signature installs, a bad one is refused.
 if command -v openssl >/dev/null 2>&1 && openssl version | grep -q '^OpenSSL [3-9]'; then

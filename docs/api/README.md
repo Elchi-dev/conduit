@@ -21,6 +21,9 @@ what differs (bearer tokens instead of cookies; the event stream arrives as stre
 
 ## Clients and kits
 
+- `conduit`, the command-line client: run actions, follow events, read the
+  audit log and approvals from a terminal or a script. See [../cli.md](../cli.md).
+
 - `sdk/clients/typescript`: typed daemon and hub clients generated from the
   specs.
 - `sdk/clients/python`: a one-file client for scripts; `invoke()` waits for

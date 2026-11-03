@@ -7,11 +7,11 @@ LDFLAGS := -s -w \
 	-X github.com/elchi-dev/conduit/internal/version.Date=$(DATE)
 TRIPLE  ?= $(shell rustc -vV 2>/dev/null | sed -n 's/host: //p')
 
-.PHONY: all build daemon daemon-dev hub web test lint fmt dev desktop clean
+.PHONY: all build daemon daemon-dev hub cli web test lint fmt dev desktop clean
 
 all: build
 
-build: daemon hub
+build: daemon hub cli
 
 ## daemon: build bin/conduitd with the web UI embedded
 daemon: web
@@ -21,6 +21,10 @@ daemon: web
 ## hub: build bin/conduit-hub
 hub:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/conduit-hub ./cmd/conduit-hub
+
+## cli: build bin/conduit, the command-line client
+cli:
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/conduit ./cmd/conduit
 
 ## web: build the app UI
 web:

@@ -13,23 +13,18 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 13 of 16 (modules and remaining features) — done 2026-11-03
-  ~02:30 CET.
-- **Works today:** everything through phase 12, plus 8 more modules (GitHub,
-  GitLab, Cloudflare, Home Assistant, Discord, files and backups, games,
-  notes; 20 in total), ambient status (lights, webhooks, Discord, Stream
-  Deck scaffold, `/api/v1/ambient`), hub-free LAN pairing at `/relay`,
-  WebAssembly sandbox for untrusted modules (`internal/sandbox`,
-  `pkg/sdk/wasm`), Cloudflare token rotation in the vault. All 13 signature
-  features are at or past their v0.1.0 target.
-- **Next:** phase 14, the public website (Astro in `site/`, served by a hub
-  with `CONDUIT_HUB_SITE_DIR`, including hub account pages for sign-up,
-  verification, reset and pairing codes). Then 15 (hardening, independent
-  security review, starter kits, client SDKs) and 16 (release).
-- **Known gaps:** hub web pages (phase 14); the relay doesn't carry the event
-  stream (relayed clients poll every 10 s); no release published yet; the
-  APK has only been built in CI; the repository is private, so the Android
-  update check (GitHub API) can't see releases until it's public.
+- **Phase:** 14 of 16 (website) — done 2026-11-03 ~02:50 CET.
+- **Works today:** everything through phase 13, plus the public website in
+  `site/` (landing, downloads, hubs, docs rendered from `docs/`, hub account
+  pages), served by any hub and built into the hub image.
+- **Next:** phase 15: hardening, an independent security review by a
+  separate agent (vault, keys, auth, relay, updater, sandbox, hub), fixes,
+  Python and TypeScript external-module starter kits, client SDKs. Then 16
+  (release: tag v0.1.0, release workflow, handover).
+- **Known gaps:** the relay doesn't carry the event stream (relayed clients
+  poll every 10 s); no release published yet; the APK has only been built in
+  CI; the repository is private, so the Android update check (GitHub API)
+  can't see releases until it's public; no registry browser on the site yet.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

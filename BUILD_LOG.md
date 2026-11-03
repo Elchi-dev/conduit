@@ -3,6 +3,27 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 14 — Website
+
+**Landed**
+
+- `site/`: an Astro static site any hub serves (`CONDUIT_HUB_SITE_DIR`; the
+  Docker image builds it in). Landing page with the app's lamp row and an
+  approval card as the one animated moment, downloads, a page on hubs, and
+  the whole `docs/` folder rendered with links rewritten to site URLs.
+- Hub account pages on the same origin as the hub API: sign-in and sign-up,
+  email verification, password reset, invitations, pairing codes with a
+  countdown, devices with presence, API keys with scopes (secret shown once),
+  organisations with members and invitations.
+- Verified in a browser against a running hub: verify link, sign-in, pairing
+  code, key creation, organisation creation. Phone layout checked at 412 px.
+- CI builds the site.
+
+**Changed from the plan**
+
+- The registry browser and API reference pages are left for later; the
+  docs pages cover the API and the registry protocol.
+
 ## 2026-11-03 · Phase 13 — Modules and remaining features
 
 **Landed**

@@ -117,16 +117,23 @@ func TestEventTriggerWithMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.engine.Bus.Publish(sdk.Event{Type: "web.down", Module: "web", Data: json.RawMessage(`{"name":"Blog"}`)})
-	s.engine.Bus.Publish(sdk.Event{Type: "web.down", Module: "web", Data: json.RawMessage(`{"name":"Shop"}`)})
-	deadline := time.Now().Add(2 * time.Second)
+	// The trigger watcher subscribes in the background, so keep publishing
+	// until it has seen an event (a slow CI machine may miss the first).
+	deadline := time.Now().Add(10 * time.Second)
 	for len(rec.all()) == 0 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
+		s.engine.Bus.Publish(sdk.Event{Type: "web.down", Module: "web", Data: json.RawMessage(`{"name":"Blog"}`)})
+		s.engine.Bus.Publish(sdk.Event{Type: "web.down", Module: "web", Data: json.RawMessage(`{"name":"Shop"}`)})
+		time.Sleep(100 * time.Millisecond)
 	}
 	time.Sleep(100 * time.Millisecond)
 	calls := rec.all()
-	if len(calls) != 1 || !strings.Contains(calls[0], `"site":"Shop"`) {
-		t.Fatalf("calls = %v", calls)
+	if len(calls) == 0 {
+		t.Fatal("the automation never ran")
+	}
+	for _, c := range calls {
+		if !strings.Contains(c, `"site":"Shop"`) {
+			t.Fatalf("an event that doesn't match ran it: %v", calls)
+		}
 	}
 }
 

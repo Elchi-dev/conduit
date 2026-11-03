@@ -3,6 +3,62 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phases 17–20 — After v0.1.0
+
+The build had about 39 hours left after v0.1.0, so the work went on with
+everything the plan promised that wasn't built yet.
+
+**Phase 17: modules.** Seven modules that the plan had only scaffolded now
+work, each with tests against a fake API and a docs page: Kubernetes (REST,
+no client library; scale with undo, rolling restart, logs, events),
+Proxmox VE (API tokens, certificate fingerprint pinning; start, shutdown,
+snapshots with undo), AWS (hand-written SigV4 checked against AWS's test
+vectors; EC2, S3, CloudWatch alarms, a least-privilege IAM policy in the
+docs), Slack, Jira (Cloud and Data Center; transitions undo when the
+workflow allows), Spotify (refresh-token flow) and OBS Studio
+(obs-websocket v5 with authentication). 27 built-in modules in all.
+
+**Phase 18: platform.**
+- Outbound webhooks: events POSTed to your URLs, signed
+  `t=<unix>,v1=<HMAC-SHA256>`, retried after 2, 20 and 120 seconds,
+  switched off after 25 failures in a row, with a delivery log, test button
+  and settings page (`docs/api/webhooks.md`).
+- Vault import of CSV exports from Bitwarden, 1Password, KeePass, LastPass,
+  Proton Pass and browsers.
+- One-line installers for Linux, macOS and Windows that verify checksums
+  (`docs/install.md`), tested against a fake release in CI.
+- Website: changelog and an API reference generated from the OpenAPI specs.
+- A browser check of the relay after the phase 15 rekey: a phone-sized
+  client paired through a hub, reconnected and received live events.
+
+**Phase 19: sign-in.**
+- Hub passkeys (WebAuthn): add, list and remove on the account page; sign in
+  without an email address. Tested with a software authenticator and in
+  Chrome with a virtual one.
+- Daemon single sign-on with OIDC (Google, Microsoft Entra, Okta, Keycloak,
+  Authentik…): code flow with PKCE, state and nonce tied to the browser,
+  verified email required, domain allow-list, optional account creation as
+  member or viewer (`docs/api/sso.md`).
+- Daemon passkeys are left out: WebAuthn doesn't allow the IP-address origin
+  the desktop app uses.
+
+**Phase 20: sync and phones.**
+- Sync between daemons (`docs/architecture/sync.md`): the vault, agent rules
+  and automations, merged item by item, through the hub or directly with
+  peers on the network, encrypted with a group key only the daemons hold.
+  Tested with two real daemons through a real hub. Sync was half built
+  before: the hub stored blobs nobody wrote.
+- Phone notifications without Google services: one tap sets up an ntfy
+  channel with a random topic and a private mode, and notifications open the
+  app on the right screen through `conduit://open/…` links.
+- An F-Droid repository published with each signed release, next to the
+  APK; the Android CI job builds one with a throwaway key to keep the script
+  working.
+
+**Changed from the plan**
+- The container restarted mid-afternoon and the session lost about four
+  hours; no work was lost, since everything was on disk.
+
 ## 2026-11-03 · Phase 16 — Release v0.1.0
 
 **Landed**

@@ -26,6 +26,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/update"
 	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
+	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -57,6 +58,8 @@ type App struct {
 	Automations *automation.Service
 	Remote      *remote.Service
 	Updates     *update.Updater
+	Games       *games.Module
+	DataDir     string
 	Server      *Server
 }
 
@@ -78,7 +81,7 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	providers := ai.NewProviders(store, v)
 	assistant := &ai.Agent{DB: store.DB, Providers: providers}
 	bridge := &ai.Bridge{DB: store.DB, Engine: engine, Secrets: v}
-	app := &App{Store: store, Engine: engine, Auth: authSvc, Vault: v, Automations: autos,
+	app := &App{DataDir: dataDir, Store: store, Engine: engine, Auth: authSvc, Vault: v, Automations: autos,
 		Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Automations: autos, Providers: providers, Assistant: assistant, Bridge: bridge, Log: log, UI: ui.Handler()}}
 	host, _ := os.Hostname()
 	if host == "" {
@@ -157,6 +160,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	}
 	app.Remote.Start(ctx)
 	go housekeeping(ctx, app)
+	go app.Games.Watch(ctx) // idle until the games module is set up
 	go forwardAlerts(ctx, app)
 
 	srv := &http.Server{

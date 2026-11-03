@@ -15,6 +15,14 @@ recommended policies.
 | Metrics | [metrics.md](metrics.md) | developer, homelab, team |
 | Websites and APIs | [web.md](web.md) | developer, homelab, team |
 | Daily brief | [brief.md](brief.md) | all |
+| GitHub | [github.md](github.md) | developer, team |
+| GitLab | [gitlab.md](gitlab.md) | developer, team |
+| Cloudflare | [cloudflare.md](cloudflare.md) | developer, homelab, team |
+| Home Assistant | [homeassistant.md](homeassistant.md) | homelab, gamer |
+| Discord | [discord.md](discord.md) | gamer, team |
+| Files and backups | [files.md](files.md) | homelab, team, developer |
+| Games | [games.md](games.md) | gamer |
+| Notes | [notes.md](notes.md) | all |
 | Automations | [../architecture/automations.md](../architecture/automations.md) | all |
 
 To write your own module, start with `docs/architecture/modules.md`.

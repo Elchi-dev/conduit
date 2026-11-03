@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -250,5 +251,65 @@ func TestLANURLs(t *testing.T) {
 	}
 	if got := LANURLs("192.168.1.20:7600"); len(got) != 1 || got[0] != "ws://192.168.1.20:7600/relay" {
 		t.Fatalf("%v", got)
+	}
+}
+
+func TestEventStreamOverRelay(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	store, _ := core.OpenStore(ctx, filepath.Join(t.TempDir(), "d.db"))
+	defer store.Close()
+	svc, _ := New(ctx, store.DB, quiet(), "laptop")
+	stopped := make(chan struct{})
+	svc.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/events" {
+			w.Write([]byte(`{}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i := 0; ; i++ {
+			fmt.Fprintf(w, "event: tick\ndata: %d\n\n", i)
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+				close(stopped)
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+	})
+	srv := httptest.NewServer(http.HandlerFunc(svc.ServeLAN))
+	defer srv.Close()
+	svc.LANAddrs = []string{"ws" + strings.TrimPrefix(srv.URL, "http")}
+	p, _ := svc.NewPairing()
+	phone, _ := relay.NewKeyPair()
+	c, err := relay.DialURL(ctx, p.LAN, p.Key, phone, p.Secret, "Phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	frames, stop, err := c.Stream(ctx, relay.Request{Method: "GET", Path: "/api/v1/events"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for f := range frames {
+		got = append(got, string(f.Body))
+		if len(got) == 3 {
+			break
+		}
+	}
+	if !strings.Contains(got[0], "data: 0") || !strings.Contains(got[2], "data: 2") {
+		t.Fatalf("frames %q", got)
+	}
+	stop()
+	select {
+	case <-stopped:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelling must stop the handler")
+	}
+	// Normal requests still work on the same connection.
+	if res, err := c.Do(ctx, relay.Request{Method: "GET", Path: "/api/v1/x"}); err != nil || res.Status != 200 {
+		t.Fatalf("request after stream: %v %+v", err, res)
 	}
 }

@@ -270,13 +270,18 @@ type Request struct {
 	Body    []byte            `json:"body,omitempty"`
 }
 
-// Response answers a Request.
+// Response answers a Request. A streamed answer (the event stream) is a
+// series of Responses with the same ID and Stream set, ended by one without.
 type Response struct {
 	ID      uint64            `json:"id"`
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    []byte            `json:"body,omitempty"`
+	Stream  bool              `json:"stream,omitempty"`
 }
+
+// MethodCancel, sent as a Request's method, stops the stream with that ID.
+const MethodCancel = "CANCEL"
 
 // SealJSON encrypts a JSON value.
 func (s *Session) SealJSON(v any) ([]byte, error) {

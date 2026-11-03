@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { isRelay } from "./connection";
+import { isRelay, relayEvents } from "./connection";
 import { notify } from "./native";
 
 export type LiveEvent = { type: string; module: string; instance?: string; data?: unknown; at: string };
@@ -15,21 +15,7 @@ export function useLiveEvents(enabled: boolean) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!enabled || !isRelay()) return;
-    // The relay doesn't carry the event stream yet: refresh the live views
-    // on a timer instead.
-    setConnected(true);
-    const t = setInterval(() => {
-      for (const k of ["audit", "approvals", "instances", "policy"]) qc.invalidateQueries({ queryKey: [k] });
-    }, 10_000);
-    return () => clearInterval(t);
-  }, [enabled, qc]);
-
-  useEffect(() => {
-    if (!enabled || isRelay()) return;
-    const es = new EventSource("/api/v1/events");
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
+    if (!enabled) return;
     const onAny = (e: MessageEvent) => {
       let ev: LiveEvent;
       try {
@@ -58,6 +44,12 @@ export function useLiveEvents(enabled: boolean) {
       if (ev.type.startsWith("instance.")) qc.invalidateQueries({ queryKey: ["instances"] });
       if (ev.type.startsWith("panic.")) qc.invalidateQueries({ queryKey: ["policy"] });
     };
+    // Through the relay, the same stream arrives as end-to-end encrypted
+    // frames instead of an EventSource.
+    if (isRelay()) return relayEvents((_type, data) => onAny({ data } as MessageEvent), setConnected);
+    const es = new EventSource("/api/v1/events");
+    es.onopen = () => setConnected(true);
+    es.onerror = () => setConnected(false);
     // Named events: register the families the UI cares about plus a catch-all.
     for (const t of [
       "action.ok",

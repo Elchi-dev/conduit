@@ -1,0 +1,214 @@
+name: release
+
+# Push a tag like v0.1.0 to build and publish a release:
+# daemon and hub binaries with a signed update manifest, desktop installers
+# with Tauri updater signatures and latest.json, and the Android APK.
+# Signing steps are skipped (and say so) when their secrets aren't set.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release (must exist)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "Conduit $TAG" --notes "See BUILD_LOG.md for what changed."
+
+  binaries:
+    needs: create
+    runs-on: ubuntu-latest
+    env:
+      CONDUIT_RELEASE_PRIVATE_KEY: ${{ secrets.CONDUIT_RELEASE_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: web app (embedded in the daemon)
+        run: |
+          cd web && pnpm install --frozen-lockfile && pnpm build && cd ..
+          rm -rf internal/ui/dist && cp -r web/dist internal/ui/dist
+      - name: build
+        run: |
+          V="${TAG#v}"
+          LD="-s -w -X github.com/elchi-dev/conduit/internal/version.Version=$V -X github.com/elchi-dev/conduit/internal/version.Commit=$GITHUB_SHA -X github.com/elchi-dev/conduit/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p dist
+          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os=${p%/*}; arch=${p#*/}; ext=""; [ "$os" = windows ] && ext=".exe"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -tags ui -ldflags "$LD" -o "dist/conduitd-$os-$arch$ext" ./cmd/conduitd
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$LD" -o "dist/conduit-hub-$os-$arch$ext" ./cmd/conduit-hub
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+      - name: sign the daemon update manifest
+        if: env.CONDUIT_RELEASE_PRIVATE_KEY != ''
+        run: go run ./tools/release -version "$TAG" -dir dist -base "https://github.com/${{ github.repository }}/releases/download/$TAG" -out dist/conduitd-release.json
+      - name: no release key
+        if: env.CONDUIT_RELEASE_PRIVATE_KEY == ''
+        run: echo "::warning::CONDUIT_RELEASE_PRIVATE_KEY isn't set; daemons won't see this release as an update"
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber
+
+  desktop:
+    needs: create
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            goos: windows
+            goarch: amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            goos: darwin
+            goarch: arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            goos: darwin
+            goarch: amd64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            goos: linux
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libayatana-appindicator3-dev
+      - name: sidecar daemon
+        shell: bash
+        run: |
+          cd web && pnpm install --frozen-lockfile && pnpm build && cd ..
+          rm -rf internal/ui/dist && cp -r web/dist internal/ui/dist
+          V="${TAG#v}"; ext=""; [ "${{ matrix.goos }}" = windows ] && ext=".exe"
+          mkdir -p apps/desktop/src-tauri/binaries
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -trimpath -tags ui \
+            -ldflags "-s -w -X github.com/elchi-dev/conduit/internal/version.Version=$V" \
+            -o "apps/desktop/src-tauri/binaries/conduitd-${{ matrix.target }}$ext" ./cmd/conduitd
+      - name: version from tag
+        shell: bash
+        run: |
+          V="${TAG#v}"
+          node -e "const f='apps/desktop/src-tauri/tauri.conf.json';const c=require('./'+f);c.version='$V';require('fs').writeFileSync(f,JSON.stringify(c,null,2)+'\n')"
+      - name: no updater key
+        if: env.TAURI_SIGNING_PRIVATE_KEY == ''
+        shell: bash
+        run: |
+          echo "::warning::TAURI_SIGNING_PRIVATE_KEY isn't set; building without updater signatures"
+          node -e "const f='apps/desktop/src-tauri/tauri.conf.json';const c=require('./'+f);c.bundle.createUpdaterArtifacts=false;require('fs').writeFileSync(f,JSON.stringify(c,null,2)+'\n')"
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm dlx @tauri-apps/cli@2
+          tagName: ${{ env.TAG }}
+          releaseDraft: true
+          includeUpdaterJson: ${{ env.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          args: --target ${{ matrix.target }}
+
+  android:
+    needs: create
+    runs-on: ubuntu-latest
+    env:
+      KS_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - name: web app
+        run: cd web && pnpm install --frozen-lockfile && pnpm build
+      - name: version from tag
+        run: |
+          V="${TAG#v}"
+          node -e "const f='apps/desktop/src-tauri/tauri.conf.json';const c=require('./'+f);c.version='$V';require('fs').writeFileSync(f,JSON.stringify(c,null,2)+'\n')"
+      - name: signing key
+        if: env.KS_BASE64 != ''
+        working-directory: apps/desktop/src-tauri/gen/android
+        env:
+          KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KS_BASE64" | base64 -d > "$RUNNER_TEMP/conduit-release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$RUNNER_TEMP/conduit-release.jks" "$KS_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+      - name: no signing key
+        if: env.KS_BASE64 == ''
+        run: echo "::warning::Android keystore secrets aren't set; the release APK is unsigned and won't install"
+      - name: build
+        working-directory: apps/desktop/src-tauri
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          pnpm dlx @tauri-apps/cli@2 android build --apk --ci --target aarch64 --target x86_64
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
+          cp "$apk" "conduit-android-${TAG#v}.apk"
+          gh release upload "$TAG" "conduit-android-${TAG#v}.apk" --clobber
+
+  publish:
+    needs: [binaries, desktop, android]
+    if: always() && needs.binaries.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false --latest

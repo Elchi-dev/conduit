@@ -418,6 +418,7 @@ type stream struct {
 	mu     sync.Mutex // orders seal+write
 	sess   *relay.Session
 	client string
+	rc     *conn
 }
 
 type tunnel struct {
@@ -439,6 +440,9 @@ func (t *tunnel) send(ctx context.Context, id uint32, frame []byte) error {
 }
 
 func (t *tunnel) closeStream(ctx context.Context, id uint32) {
+	if st := t.streams[id]; st != nil {
+		st.rc.closeAll()
+	}
 	delete(t.streams, id)
 	b, _ := json.Marshal(map[string]any{"type": "close", "stream": id})
 	t.writeMu.Lock()
@@ -459,6 +463,9 @@ func (s *Service) serve(ctx context.Context, l Link) error {
 	s.Log.Info("relay: connected to hub", "hub", l.Hub)
 	t := &tunnel{s: s, ws: ws, streams: map[uint32]*stream{}}
 	defer func() {
+		for _, st := range t.streams {
+			st.rc.closeAll()
+		}
 		s.mu.Lock()
 		s.streams = 0
 		s.mu.Unlock()
@@ -474,6 +481,9 @@ func (s *Service) serve(ctx context.Context, l Link) error {
 				Stream uint32 `json:"stream"`
 			}
 			if json.Unmarshal(b, &m) == nil && m.Type == "close" {
+				if st := t.streams[m.Stream]; st != nil {
+					st.rc.closeAll()
+				}
 				delete(t.streams, m.Stream)
 			}
 			s.mu.Lock()
@@ -502,15 +512,13 @@ func (s *Service) serve(ctx context.Context, l Link) error {
 			t.closeStream(ctx, id)
 			continue
 		}
-		go func() {
-			res := s.execute(ctx, st.client, req)
+		go s.dispatch(ctx, st.rc, st.client, req, func(res relay.Response) {
 			st.mu.Lock()
 			defer st.mu.Unlock()
-			out, err := st.sess.SealJSON(res)
-			if err == nil {
+			if out, err := st.sess.SealJSON(res); err == nil {
 				_ = t.send(ctx, id, out)
 			}
-		}()
+		})
 	}
 }
 
@@ -538,7 +546,7 @@ func (t *tunnel) handshake(ctx context.Context, id uint32, frame []byte) {
 		t.closeStream(ctx, id)
 		return
 	}
-	t.streams[id] = &stream{sess: sess, client: client}
+	t.streams[id] = &stream{sess: sess, client: client, rc: newConn()}
 }
 
 // Headers a relayed request may carry; anything else is dropped.
@@ -552,12 +560,6 @@ func (s *Service) execute(ctx context.Context, client string, r relay.Request) r
 	if !strings.HasPrefix(r.Path, "/api/") || strings.Contains(r.Path, "..") {
 		res.Status = http.StatusNotFound
 		res.Body = []byte(`{"error":"only the API is reachable through the relay"}`)
-		return res
-	}
-	// Server-sent events never end, so they can't be answered as one frame.
-	if strings.HasPrefix(r.Path, "/api/v1/events") {
-		res.Status = http.StatusNotImplemented
-		res.Body = []byte(`{"error":"live events aren't carried over the relay yet; poll instead"}`)
 		return res
 	}
 	method := strings.ToUpper(r.Method)

@@ -31,6 +31,9 @@ takes the same path:
 | Automations | `internal/automation` | [automations.md](automations.md) |
 | AI layer: tools, MCP, providers, assistant, bridge | `internal/ai` | [ai.md](ai.md) |
 | Web app | `web/`, `internal/ui` | [web.md](web.md) |
+| WebAssembly sandbox | `internal/sandbox`, `pkg/sdk/wasm` | [../protocol/sandbox.md](../protocol/sandbox.md) |
+| Self-update | `internal/update`, `tools/release` | [../protocol/updates.md](../protocol/updates.md) |
+| Website | `site/` | [site/README.md](../../site/README.md) |
 | Desktop and Android shell | `apps/desktop` | [desktop.md](desktop.md) |
 
 Pages are written as each subsystem lands. Non-obvious choices are recorded as

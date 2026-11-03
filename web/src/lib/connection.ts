@@ -176,3 +176,55 @@ export function routeLabel(p: RelayProfile): string {
     return "through the hub";
   }
 }
+
+/**
+ * The daemon's event stream through the relay: calls onEvent with each
+ * parsed server-sent event. Reconnects after a drop. Returns a stop function.
+ */
+export function relayEvents(onEvent: (type: string, data: string) => void, onState: (live: boolean) => void): () => void {
+  let stopped = false;
+  let cancel: (() => void) | null = null;
+  let retry: number | undefined;
+  const open = async () => {
+    if (stopped || !profile) return;
+    try {
+      const c = await connect();
+      const headers: Record<string, string> = { Accept: "text/event-stream" };
+      if (profile.token) headers.Authorization = `Bearer ${profile.token}`;
+      let buf = "";
+      onState(true);
+      cancel = c.stream(
+        "/api/v1/events",
+        headers,
+        (text) => {
+          buf += text;
+          let i: number;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            let type = "message";
+            const data: string[] = [];
+            for (const line of block.split("\n")) {
+              if (line.startsWith("event:")) type = line.slice(6).trim();
+              else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+            }
+            if (data.length) onEvent(type, data.join("\n"));
+          }
+        },
+        () => {
+          onState(false);
+          if (!stopped) retry = window.setTimeout(open, 3000);
+        },
+      );
+    } catch {
+      onState(false);
+      if (!stopped) retry = window.setTimeout(open, 5000);
+    }
+  };
+  void open();
+  return () => {
+    stopped = true;
+    clearTimeout(retry);
+    cancel?.();
+  };
+}

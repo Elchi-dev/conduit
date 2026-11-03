@@ -142,7 +142,7 @@ export async function clientHandshake(
 /** The daemon's first frame on a stream. */
 export type Welcome = { ok: boolean; error?: string; client?: string; daemon?: string };
 
-type WireResponse = { id: number; status: number; headers?: Record<string, string>; body?: string };
+type WireResponse = { id: number; status: number; headers?: Record<string, string>; body?: string; stream?: boolean };
 
 /** What a pairing QR code carries (conduit://pair?d=…). */
 export type PairingInfo = { v: number; hub: string; daemon: string; key: string; secret: string; name: string; lan?: string };
@@ -166,6 +166,7 @@ export class RelayClient {
   private session!: Session;
   private nextId = 0;
   private pending = new Map<number, { resolve: (r: WireResponse) => void; reject: (e: Error) => void }>();
+  private streams = new Map<number, { chunk: (text: string) => void; end: (reason?: string) => void }>();
   private sendChain: Promise<void> = Promise.resolve();
   private recvChain: Promise<void> = Promise.resolve();
   onClose?: (reason: string) => void;
@@ -223,6 +224,15 @@ export class RelayClient {
       c.recvChain = c.recvChain.then(async () => {
         try {
           const r = await session.openJSON<WireResponse>(frame);
+          const st = c.streams.get(r.id);
+          if (st) {
+            if (r.stream) st.chunk(r.body ? dec.decode(unb64std(r.body)) : "");
+            else {
+              c.streams.delete(r.id);
+              st.end(r.status >= 400 ? `status ${r.status}` : undefined);
+            }
+            return;
+          }
           const p = c.pending.get(r.id);
           c.pending.delete(r.id);
           p?.resolve(r);
@@ -238,11 +248,32 @@ export class RelayClient {
   private fail(reason: string) {
     for (const p of this.pending.values()) p.reject(new Error(`Relay: ${reason}`));
     this.pending.clear();
+    for (const s of this.streams.values()) s.end(reason);
+    this.streams.clear();
     this.onClose?.(reason);
   }
 
   get open() {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Open a streamed GET (the event stream). chunk receives text as it
+   * arrives; end is called when the daemon or the connection ends it.
+   * Returns a function that cancels the stream.
+   */
+  stream(path: string, headers: Record<string, string>, chunk: (text: string) => void, end: (reason?: string) => void): () => void {
+    const id = ++this.nextId;
+    this.streams.set(id, { chunk, end });
+    this.sendChain = this.sendChain.then(async () => {
+      this.ws.send((await this.session.sealJSON({ id, method: "GET", path, headers })) as Uint8Array<ArrayBuffer>);
+    });
+    return () => {
+      if (!this.streams.delete(id) || !this.open) return;
+      this.sendChain = this.sendChain.then(async () => {
+        this.ws.send((await this.session.sealJSON({ id, method: "CANCEL", path: "" })) as Uint8Array<ArrayBuffer>);
+      });
+    };
   }
 
   /** Send one HTTP request through the tunnel. */

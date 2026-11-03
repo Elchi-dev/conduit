@@ -79,6 +79,8 @@ func (s *Service) ServeLAN(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 	var smu sync.Mutex // orders seal+write
+	rc := newConn()
+	defer rc.closeAll()
 	for {
 		_, frame, err := ws.Read(ctx)
 		if err != nil {
@@ -89,14 +91,13 @@ func (s *Service) ServeLAN(w http.ResponseWriter, r *http.Request) {
 			s.Log.Warn("relay (LAN): dropping a connection after a bad frame", "client", client)
 			return
 		}
-		go func() {
-			res := s.execute(ctx, client, req)
+		go s.dispatch(ctx, rc, client, req, func(res relay.Response) {
 			smu.Lock()
 			defer smu.Unlock()
 			if b, err := sess.SealJSON(res); err == nil {
 				_ = write(b)
 			}
-		}()
+		})
 	}
 }
 

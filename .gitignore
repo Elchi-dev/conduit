@@ -30,3 +30,5 @@ apps/desktop/src-tauri/gen/schemas/
 .vscode/*
 !.vscode/extensions.json
 internal/ui/dist/
+sdk/clients/typescript/node_modules/
+__pycache__/

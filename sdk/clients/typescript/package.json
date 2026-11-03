@@ -1,0 +1,14 @@
+{
+  "name": "@conduit/client",
+  "version": "0.1.0",
+  "description": "Typed clients for the Conduit daemon and hub APIs, generated from the OpenAPI specs.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "gen": "pnpm dlx --package openapi-typescript@7 --package typescript@5 openapi-typescript ../../../api/openapi/daemon.yaml -o src/daemon.d.ts && pnpm dlx --package openapi-typescript@7 --package typescript@5 openapi-typescript ../../../api/openapi/hub.yaml -o src/hub.d.ts"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
+  }
+}

@@ -30,6 +30,7 @@ type Client struct {
 	mu      sync.Mutex
 	nextID  uint64
 	pending map[uint64]chan Response
+	streams map[uint64]chan Response
 	readErr error
 	done    chan struct{}
 }
@@ -84,7 +85,7 @@ func DialURL(ctx context.Context, wsURL, daemonPub string, me KeyPair, pairingSe
 		ws.CloseNow()
 		return nil, errors.New("the daemon refused the connection: " + w.Error)
 	}
-	c := &Client{ws: ws, sess: sess, Welcome: w, pending: map[uint64]chan Response{}, done: make(chan struct{})}
+	c := &Client{ws: ws, sess: sess, Welcome: w, pending: map[uint64]chan Response{}, streams: map[uint64]chan Response{}, done: make(chan struct{})}
 	go c.readLoop()
 	return c, nil
 }
@@ -97,6 +98,19 @@ func (c *Client) readLoop() {
 			var res Response
 			if err = c.sess.OpenJSON(frame, &res); err == nil {
 				c.mu.Lock()
+				if sc := c.streams[res.ID]; sc != nil {
+					if !res.Stream {
+						delete(c.streams, res.ID)
+						close(sc)
+					} else {
+						select {
+						case sc <- res:
+						default: // a slow reader drops frames rather than stalling the connection
+						}
+					}
+					c.mu.Unlock()
+					continue
+				}
 				ch := c.pending[res.ID]
 				delete(c.pending, res.ID)
 				c.mu.Unlock()
@@ -111,6 +125,10 @@ func (c *Client) readLoop() {
 		for id, ch := range c.pending {
 			close(ch)
 			delete(c.pending, id)
+		}
+		for id, ch := range c.streams {
+			close(ch)
+			delete(c.streams, id)
 		}
 		c.mu.Unlock()
 		return
@@ -152,6 +170,41 @@ func (c *Client) Do(ctx context.Context, req Request) (Response, error) {
 		c.mu.Unlock()
 		return Response{}, ctx.Err()
 	}
+}
+
+// Stream opens a streamed request (the event stream). Frames arrive on the
+// channel until the daemon ends the stream, cancel is called or the
+// connection closes.
+func (c *Client) Stream(ctx context.Context, req Request) (<-chan Response, func(), error) {
+	ch := make(chan Response, 64)
+	c.mu.Lock()
+	if c.readErr != nil {
+		err := c.readErr
+		c.mu.Unlock()
+		return nil, nil, err
+	}
+	c.nextID++
+	req.ID = c.nextID
+	c.streams[req.ID] = ch
+	frame, err := c.sess.SealJSON(req)
+	if err == nil {
+		err = c.ws.Write(ctx, websocket.MessageBinary, frame)
+	}
+	if err != nil {
+		delete(c.streams, req.ID)
+		c.mu.Unlock()
+		return nil, nil, err
+	}
+	c.mu.Unlock()
+	id := req.ID
+	cancel := func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if f, err := c.sess.SealJSON(Request{ID: id, Method: MethodCancel}); err == nil {
+			_ = c.ws.Write(context.Background(), websocket.MessageBinary, f)
+		}
+	}
+	return ch, cancel, nil
 }
 
 // Close ends the session.

@@ -117,8 +117,11 @@ The daemon runs relayed requests against its normal API handler, so they
 still need a daemon session or API key, and every action still passes the
 permission policy. Only `/api/…` paths are reachable. Headers other than
 `Authorization`, `Content-Type`, `Accept` and `Idempotency-Key` are dropped
-(no cookies). The event stream isn't carried yet; relayed clients refresh on a
-timer instead. A paired client can be removed in Settings, Remote access; it
+(no cookies). `GET /api/v1/events` is streamed: the daemon answers with a
+series of responses carrying the same `id` and `"stream":true`, one per
+flush of the server-sent event stream, and a final one without `stream`. The
+client stops it with a request `{"id":<same>,"method":"CANCEL"}`; at most four
+streams per connection. A paired client can be removed in Settings, Remote access; it
 can't open new sessions afterwards.
 
 ### What the hub sees

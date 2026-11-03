@@ -17,4 +17,13 @@ Daemon API keys (creation, scopes, rotation, revocation, usage logs) are in
 
 The daemon API is also reachable through a hub's encrypted relay; see
 [docs/protocol/hub.md](../protocol/hub.md#what-a-relayed-request-can-do) for
-what differs (no cookies, no event stream yet).
+what differs (bearer tokens instead of cookies; the event stream arrives as streamed frames).
+
+## Clients and kits
+
+- `sdk/clients/typescript`: typed daemon and hub clients generated from the
+  specs.
+- `sdk/clients/python`: a one-file client for scripts; `invoke()` waits for
+  approvals.
+- `sdk/external`: starter kits for writing modules in Python, TypeScript and
+  Go.

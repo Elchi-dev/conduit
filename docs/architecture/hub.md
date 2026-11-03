@@ -56,8 +56,9 @@ Choices:
 Relayed requests reach the same handler as local ones (`App.Server.Handler()`),
 with `RemoteAddr` set to `relay` and an `X-Conduit-Relay-Client` header.
 Only `/api/` paths and a short header allow-list pass; cookies are dropped,
-so relayed clients use bearer session tokens. The SSE event stream answers
-501 over the relay for now.
+so relayed clients use bearer session tokens. The SSE event stream is
+streamed frame by frame (`stream.go`) and cancelled when the client asks or
+leaves.
 
 `lan.go` serves the same protocol directly at `GET /relay` for phones on the
 local network (no hub); the daemon fills `LANAddrs` from its listen address.

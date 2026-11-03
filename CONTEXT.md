@@ -21,8 +21,7 @@ owner and a company equally; never tailor it to one setup.
   separate agent (vault, keys, auth, relay, updater, sandbox, hub), fixes,
   Python and TypeScript external-module starter kits, client SDKs. Then 16
   (release: tag v0.1.0, release workflow, handover).
-- **Known gaps:** the relay doesn't carry the event stream (relayed clients
-  poll every 10 s); no release published yet; the APK has only been built in
+- **Known gaps:** no release published yet; the APK has only been built in
   CI; the repository is private, so the Android update check (GitHub API)
   can't see releases until it's public; no registry browser on the site yet.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it

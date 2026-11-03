@@ -556,3 +556,51 @@ func TestMCPServer(t *testing.T) {
 		t.Fatal("unauthenticated MCP allowed")
 	}
 }
+
+func TestHostAndOriginChecks(t *testing.T) {
+	_, c, _, _ := setup(t)
+	raw := func(method, path, host string, hdr map[string]string, cookie bool) int {
+		req, _ := http.NewRequest(method, c.base+path, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		if host != "" {
+			req.Host = host
+		}
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		if cookie {
+			req.AddCookie(&http.Cookie{Name: SessionCookie, Value: c.token})
+		} else {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	// DNS rebinding: an attacker's name pointed at the daemon.
+	if code := raw("GET", "/api/v1/me", "evil.example:7600", nil, false); code != http.StatusMisdirectedRequest {
+		t.Fatalf("rebound host = %d", code)
+	}
+	for _, h := range []string{"localhost:7600", "127.0.0.1:7600", "[::1]:7600", "desk.local", "192.168.1.5"} {
+		if code := raw("GET", "/api/v1/me", h, nil, false); code != 200 {
+			t.Fatalf("host %s = %d", h, code)
+		}
+	}
+	// CSRF: a cookie-authenticated mutation from another site, even with no body.
+	if code := raw("POST", "/api/v1/auth/logout", "", map[string]string{"Sec-Fetch-Site": "cross-site"}, true); code != http.StatusForbidden {
+		t.Fatalf("cross-site cookie POST = %d", code)
+	}
+	if code := raw("POST", "/api/v1/auth/logout", "", map[string]string{"Origin": "https://evil.example"}, true); code != http.StatusForbidden {
+		t.Fatalf("foreign Origin cookie POST = %d", code)
+	}
+	// The same request with a bearer token is fine (browsers don't attach it).
+	if code := raw("GET", "/api/v1/me", "", map[string]string{"Sec-Fetch-Site": "cross-site"}, false); code != 200 {
+		t.Fatalf("bearer = %d", code)
+	}
+	if code := raw("POST", "/api/v1/auth/logout", "", map[string]string{"Sec-Fetch-Site": "same-origin"}, true); code >= 300 {
+		t.Fatalf("same-origin cookie POST = %d", code)
+	}
+}

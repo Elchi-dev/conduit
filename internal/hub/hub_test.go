@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -180,10 +181,16 @@ func TestClosedRegistration(t *testing.T) {
 
 func TestRateLimit(t *testing.T) {
 	h := newHarness(t, nil)
-	for i := 0; i < 20; i++ {
+	// Per account: 10 failures, then refused for that account only.
+	for i := 0; i < 10; i++ {
 		h.do("POST", "/v1/sessions", "", map[string]string{"email": "a@example.com", "password": "x"}, 401)
 	}
 	h.do("POST", "/v1/sessions", "", map[string]string{"email": "a@example.com", "password": "x"}, 429)
+	// Per address: 20 attempts in all.
+	for i := 0; i < 9; i++ {
+		h.do("POST", "/v1/sessions", "", map[string]string{"email": fmt.Sprintf("b%d@example.com", i), "password": "x"}, 401)
+	}
+	h.do("POST", "/v1/sessions", "", map[string]string{"email": "c@example.com", "password": "x"}, 429)
 }
 
 func TestOrgs(t *testing.T) {

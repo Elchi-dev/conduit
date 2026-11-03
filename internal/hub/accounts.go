@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/mail"
+	"strconv"
 	"strings"
 	"time"
 
@@ -264,17 +265,26 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if !s.logins.Allow(email) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(s.logins.RetryAfter(email).Seconds())+1))
+		writeErr(w, http.StatusTooManyRequests, "too many failed sign-ins for this account; try again in a few minutes or reset your password")
+		return
+	}
 	var id, h string
-	err := s.db.Row(ctx, `SELECT id, password_hash FROM accounts WHERE email = ?`, strings.ToLower(strings.TrimSpace(req.Email))).Scan(&id, &h)
+	err := s.db.Row(ctx, `SELECT id, password_hash FROM accounts WHERE email = ?`, email).Scan(&id, &h)
 	if errors.Is(err, sql.ErrNoRows) {
 		auth.VerifyPassword("$argon2id$v=19$m=65536,t=3,p=2$c2FsdHNhbHRzYWx0c2FsdA$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g", req.Password)
+		s.logins.Add(email)
 		writeErr(w, http.StatusUnauthorized, "wrong email or password")
 		return
 	}
 	if err != nil || !auth.VerifyPassword(h, req.Password) {
+		s.logins.Add(email)
 		writeErr(w, http.StatusUnauthorized, "wrong email or password")
 		return
 	}
+	s.logins.Reset(email)
 	tok := sessionPrefix + token(20)
 	device := req.Device
 	if device == "" {
@@ -288,7 +298,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	a, _ := s.account(ctx, id)
 	go func() {
 		_ = s.mail.Send(context.Background(), a.Email, "New sign-in to "+s.cfg.Name,
-			fmt.Sprintf("Your account was just signed in to from %s (%s) at %s.\n\nIf this wasn't you, reset your password at %s.", truncate(device, 80), clientIP(r), s.now().UTC().Format("2 Jan 2006 15:04 MST"), s.cfg.PublicURL))
+			fmt.Sprintf("Your account was just signed in to from %s (%s) at %s.\n\nIf this wasn't you, reset your password at %s.", truncate(device, 80), s.clientIP(r), s.now().UTC().Format("2 Jan 2006 15:04 MST"), s.cfg.PublicURL))
 	}()
 	writeJSON(w, http.StatusOK, map[string]any{"token": tok, "account": a})
 }

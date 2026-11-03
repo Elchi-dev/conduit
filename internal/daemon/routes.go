@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/ai"
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/ratelimit"
 	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -49,7 +53,46 @@ func (s *Server) Handler() http.Handler {
 	if s.UI != nil {
 		mux.Handle("/", s.UI)
 	}
-	return securityHeaders(mux)
+	return securityHeaders(s.hostGuard(mux))
+}
+
+// hostGuard refuses requests whose Host header isn't a name this daemon is
+// known by. A web page on another site can point its own DNS name at
+// 127.0.0.1 ("DNS rebinding") and then talk to the daemon as same-origin;
+// checking Host stops that. Allowed: IP literals, localhost and *.localhost,
+// mDNS *.local names, and anything in CONDUIT_ALLOWED_HOSTS (comma
+// separated, for a reverse proxy or a custom name). Webhooks and the health
+// check are exempt: they carry no session and hooks are authenticated by
+// their token.
+func (s *Server) hostGuard(h http.Handler) http.Handler {
+	extra := map[string]bool{}
+	for _, v := range strings.Split(os.Getenv("CONDUIT_ALLOWED_HOSTS"), ",") {
+		if v = strings.ToLower(strings.TrimSpace(v)); v != "" {
+			extra[v] = true
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.RemoteAddr == "relay" || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/hooks/") || allowedHost(r.Host, extra) {
+			h.ServeHTTP(w, r)
+			return
+		}
+		writeErr(w, http.StatusMisdirectedRequest, "this daemon isn't served under the name "+strconv.Quote(r.Host)+"; add it to CONDUIT_ALLOWED_HOSTS")
+	})
+}
+
+func allowedHost(host string, extra map[string]bool) bool {
+	h := strings.ToLower(host)
+	if hh, _, err := net.SplitHostPort(h); err == nil {
+		h = hh
+	}
+	h = strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")
+	switch {
+	case h == "":
+		return true // HTTP/1.0 clients
+	case net.ParseIP(h) != nil, h == "localhost", strings.HasSuffix(h, ".localhost"), strings.HasSuffix(h, ".local"):
+		return true
+	}
+	return extra[h] || extra[strings.ToLower(host)]
 }
 
 type route struct {
@@ -198,17 +241,47 @@ type loginReq struct {
 	Device   string `json:"device"`
 }
 
+// Failed sign-ins are limited per source and per account: 20 per source and
+// 10 per account in 15 minutes. A success clears the account's count.
+var (
+	loginFailsBySource  = ratelimit.New(20, 15*time.Minute, 10000)
+	loginFailsByAccount = ratelimit.New(10, 15*time.Minute, 10000)
+)
+
+// requestSource names where a request came from, for rate limits.
+func requestSource(r *http.Request) string {
+	if c := r.Header.Get("X-Conduit-Relay-Client"); c != "" && r.RemoteAddr == "relay" {
+		return "relay:" + c
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var req loginReq
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	src := requestSource(r)
+	acct := strings.ToLower(strings.TrimSpace(req.Email))
+	if !loginFailsBySource.Allow(src) || !loginFailsByAccount.Allow(acct) {
+		wait := max(loginFailsBySource.RetryAfter(src), loginFailsByAccount.RetryAfter(acct))
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeErr(w, http.StatusTooManyRequests, "too many failed sign-ins; try again in a few minutes")
+		return
+	}
 	u, err := s.Auth.Authenticate(r.Context(), req.Email, req.Password)
 	if err != nil {
+		loginFailsBySource.Add(src)
+		loginFailsByAccount.Add(acct)
 		writeErr(w, http.StatusUnauthorized, auth.ErrInvalidCredentials.Error())
 		return
 	}
+	loginFailsByAccount.Reset(acct)
 	s.startSession(w, r, u, req.Device, http.StatusOK)
 }
 
@@ -709,7 +782,10 @@ type panicResp struct {
 
 // panic is the one-tap emergency stop: freeze every agent, key and
 // automation, deny everything pending, revoke all agent keys and sign out
-// every other session. Anyone signed in (or any key) may pull it.
+// every other session. Anyone signed in (or any key) may pull it. A key that
+// pulls it is revoked too: either it noticed something wrong, or it leaked
+// and is being used to disrupt, and in both cases it shouldn't work after a
+// person lifts panic mode.
 func (s *Server) panic(w http.ResponseWriter, r *http.Request) {
 	p, _ := principal(r)
 	ctx := r.Context()
@@ -719,6 +795,9 @@ func (s *Server) panic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keys, _ := s.Auth.RevokeKind(ctx, auth.KeyAgent, "panic mode")
+	if p.Key != nil && p.Key.Kind != auth.KeyAgent {
+		_ = s.Auth.RevokeKey(ctx, p.Key.ID, "pulled the emergency stop")
+	}
 	keep := ""
 	if p.Session != nil {
 		keep = p.Session.ID

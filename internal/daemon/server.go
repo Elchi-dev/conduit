@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -171,13 +172,19 @@ func (s *Server) need(scope string, h http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusForbidden, "missing scope "+scope)
 			return
 		}
-		// Mutations from browsers must be JSON, which a cross-site form cannot
-		// send without a CORS preflight; together with SameSite=Strict cookies
-		// this blocks CSRF.
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && p.Session != nil && r.ContentLength != 0 &&
-			!strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-			writeErr(w, http.StatusUnsupportedMediaType, "send JSON")
-			return
+		// Mutations authenticated by the session cookie must come from this
+		// origin (Sec-Fetch-Site, or Origin on older browsers) and be JSON,
+		// whatever their length. Bearer tokens aren't sent by browsers on
+		// their own, so they need no such check.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && p.Session != nil && r.Header.Get("Authorization") == "" {
+			if !sameOrigin(r) {
+				writeErr(w, http.StatusForbidden, "cross-site requests can't use your session")
+				return
+			}
+			if r.ContentLength != 0 && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+				writeErr(w, http.StatusUnsupportedMediaType, "send JSON")
+				return
+			}
 		}
 		ctx := context.WithValue(r.Context(), ctxKey{}, p)
 		rec := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
@@ -186,6 +193,24 @@ func (s *Server) need(scope string, h http.HandlerFunc) http.HandlerFunc {
 			s.Auth.RecordUsage(context.WithoutCancel(r.Context()), p.Key.ID, auth.Usage{At: time.Now().UTC(), Method: r.Method, Path: r.URL.Path, Status: rec.code, IP: clientIP(r)})
 		}
 	}
+}
+
+// sameOrigin reports whether a browser request came from the daemon's own
+// pages. Requests from non-browser clients carry neither header and pass.
+func sameOrigin(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return true
+	case "":
+	default:
+		return false
+	}
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true
+	}
+	u, err := url.Parse(o)
+	return err == nil && strings.EqualFold(u.Host, r.Host)
 }
 
 type apiError struct {

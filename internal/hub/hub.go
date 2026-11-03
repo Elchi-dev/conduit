@@ -18,9 +18,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/ratelimit"
 	"github.com/elchi-dev/conduit/internal/version"
 )
 
@@ -44,6 +44,11 @@ type Config struct {
 	Mail       MailConfig
 	// SiteDir, if set, is served at / (the public website build).
 	SiteDir string
+	// TrustProxy: the hub runs behind a reverse proxy that sets
+	// X-Forwarded-For, so the client address for rate limits is the last
+	// address in that header. Leave it off when the hub faces the internet
+	// directly, or anyone could pick their own address.
+	TrustProxy bool
 }
 
 // DefaultConfig reads CONDUIT_HUB_* environment variables.
@@ -63,6 +68,7 @@ func DefaultConfig() Config {
 		AdminEmail:       strings.ToLower(env("CONDUIT_HUB_ADMIN_EMAIL", "")),
 		ReleaseKey:       env("CONDUIT_HUB_RELEASE_KEY", ""),
 		SiteDir:          env("CONDUIT_HUB_SITE_DIR", ""),
+		TrustProxy:       env("CONDUIT_HUB_TRUST_PROXY", "false") == "true",
 		Mail: MailConfig{
 			Driver:    env("CONDUIT_HUB_MAIL", "console"),
 			From:      env("CONDUIT_HUB_MAIL_FROM", ""),
@@ -84,8 +90,7 @@ type Server struct {
 	relay *relayHub
 	now   func() time.Time
 
-	limitMu sync.Mutex
-	limits  map[string][]time.Time
+	logins *ratelimit.Window // failed sign-ins per account
 }
 
 // New opens the database and prepares a hub.
@@ -99,7 +104,8 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Server{cfg: cfg, db: db, mail: m, log: log, relay: newRelayHub(), now: time.Now, limits: map[string][]time.Time{}}, nil
+	return &Server{cfg: cfg, db: db, mail: m, log: log, relay: newRelayHub(), now: time.Now,
+		logins: ratelimit.New(10, 15*time.Minute, 50000)}, nil
 }
 
 // Close releases the database.
@@ -277,7 +283,15 @@ func parseTS(s string) time.Time {
 	return t
 }
 
-func clientIP(r *http.Request) string {
+func (s *Server) clientIP(r *http.Request) string {
+	if s.cfg.TrustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			if ip := strings.TrimSpace(parts[len(parts)-1]); net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -285,28 +299,17 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// limited allows each client IP n requests per 10 minutes on an endpoint.
+// limited allows each client address n requests per 10 minutes on an
+// endpoint.
 func (s *Server) limited(name string, n int, h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		key := name + "|" + clientIP(r)
-		now := s.now()
-		s.limitMu.Lock()
-		var keep []time.Time
-		for _, t := range s.limits[key] {
-			if now.Sub(t) < 10*time.Minute {
-				keep = append(keep, t)
-			}
-		}
-		if len(keep) >= n {
-			s.limits[key] = keep
-			s.limitMu.Unlock()
-			w.Header().Set("Retry-After", "600")
-			writeErr(w, http.StatusTooManyRequests, "too many attempts; try again in a few minutes")
+	w := ratelimit.New(n, 10*time.Minute, 50000)
+	return func(rw http.ResponseWriter, r *http.Request) {
+		if !w.Add(s.clientIP(r)) {
+			rw.Header().Set("Retry-After", "600")
+			writeErr(rw, http.StatusTooManyRequests, "too many attempts; try again in a few minutes")
 			return
 		}
-		s.limits[key] = append(keep, now)
-		s.limitMu.Unlock()
-		h(w, r)
+		h(rw, r)
 	}
 }
 

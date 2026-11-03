@@ -18,7 +18,9 @@ docker compose -f deploy/hub/compose.yaml up -d
 ```
 
 The hub listens on `127.0.0.1:7700`. Put a TLS-terminating reverse proxy in
-front of it and pass WebSocket upgrades through. With Caddy:
+front of it, pass WebSocket upgrades through, and set
+`CONDUIT_HUB_TRUST_PROXY=true` so sign-in limits apply per client. With
+Caddy:
 
 ```
 hub.example.com {
@@ -55,6 +57,7 @@ override the first three).
 | `CONDUIT_HUB_RESEND_KEY` | | Resend API key (driver `resend`) |
 | `CONDUIT_HUB_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` | port 587 | SMTP (driver `smtp`; 465 uses TLS, others STARTTLS) |
 | `CONDUIT_HUB_RELEASE_KEY` | | Base64 ed25519 public key for the update feed |
+| `CONDUIT_HUB_TRUST_PROXY` | `false` | `true` behind a reverse proxy that sets `X-Forwarded-For`, so rate limits see each client's address instead of the proxy's. Leave it off when the hub faces the internet directly |
 | `CONDUIT_HUB_SITE_DIR` | `/site` in the Docker image | Serve the website (landing, docs, account pages) from this folder at `/` |
 
 ### Mail

@@ -8,11 +8,11 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/ratelimit"
 )
 
 func (s *Server) automationRoutes() []route {
@@ -134,42 +134,29 @@ func (s *Server) automationRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, runs)
 }
 
-// hookLimiter allows each webhook a burst of 10 and 1 request every 6 seconds.
-var hookLimiter = struct {
-	sync.Mutex
-	last map[string][]time.Time
-}{last: map[string][]time.Time{}}
+// hookLimiter allows each webhook automation 10 runs a minute.
+var hookLimiter = ratelimit.New(10, time.Minute, 10000)
 
-func hookAllowed(token string) bool {
-	hookLimiter.Lock()
-	defer hookLimiter.Unlock()
-	now := time.Now()
-	var keep []time.Time
-	for _, t := range hookLimiter.last[token] {
-		if now.Sub(t) < time.Minute {
-			keep = append(keep, t)
-		}
-	}
-	if len(keep) >= 10 {
-		hookLimiter.last[token] = keep
-		return false
-	}
-	hookLimiter.last[token] = append(keep, now)
-	return true
-}
+func hookAllowed(id string) bool { return hookLimiter.Add(id) }
 
 // hook starts a webhook-triggered automation. The unguessable token in the
 // path is the credential; the body (JSON, up to 256 KiB) becomes the
 // trigger data. It answers before the automation finishes.
 func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	tok := r.PathValue("token")
-	if len(tok) < 32 || !hookAllowed(tok) {
+	if len(tok) < 32 {
 		writeErr(w, http.StatusNotFound, "no such hook")
 		return
 	}
 	a, err := s.Automations.ByHookToken(r.Context(), tok)
 	if err != nil || !a.Enabled || a.Trigger.Kind != "webhook" {
 		writeErr(w, http.StatusNotFound, "no such hook")
+		return
+	}
+	// Limited after the lookup, so only real hooks take a slot.
+	if !hookAllowed(a.ID) {
+		w.Header().Set("Retry-After", "60")
+		writeErr(w, http.StatusTooManyRequests, "this hook is called too often; at most 10 times a minute")
 		return
 	}
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 256<<10))

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"runtime"
 	"strings"
 	"time"
 
@@ -113,13 +114,23 @@ const (
 	argonKeyLen  = 32
 )
 
+// argonSlots bounds concurrent Argon2id runs (64 MiB each), so a burst of
+// sign-in attempts queues instead of exhausting memory.
+var argonSlots = make(chan struct{}, max(2, min(runtime.NumCPU(), 8)))
+
+func argonKey(pw, salt []byte, t, m uint32, p uint8, n uint32) []byte {
+	argonSlots <- struct{}{}
+	defer func() { <-argonSlots }()
+	return argon2.IDKey(pw, salt, t, m, p, n)
+}
+
 // HashPassword returns an encoded Argon2id hash.
 func HashPassword(pw string) string {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
 		panic(err)
 	}
-	key := argon2.IDKey([]byte(pw), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	key := argonKey([]byte(pw), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", argonMemory, argonTime, argonThreads,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key))
 }
@@ -140,7 +151,10 @@ func VerifyPassword(encoded, pw string) bool {
 	if err1 != nil || err2 != nil {
 		return false
 	}
-	got := argon2.IDKey([]byte(pw), salt, t, m, p, uint32(len(want)))
+	if m > 256*1024 || t > 10 || p == 0 || len(want) == 0 || len(want) > 64 {
+		return false // not a hash this code wrote
+	}
+	got := argonKey([]byte(pw), salt, t, m, p, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 

@@ -41,6 +41,12 @@ func (s *Server) Handler() http.Handler {
 	if s.Webhooks != nil {
 		routes = append(routes, s.webhookRoutes()...)
 	}
+	if s.Sync != nil {
+		routes = append(routes, s.syncRoutes()...)
+		// Other daemons in the sync group, on the local network (the
+		// documents are encrypted for the group, so no session is needed).
+		mux.HandleFunc("POST /sync/exchange", s.syncExchange)
+	}
 	routes = append(routes, s.ambientRoutes()...)
 	if s.Remote != nil {
 		// Direct, end-to-end encrypted connections from paired devices on
@@ -903,6 +909,8 @@ func (s *Server) auditConfig(r *http.Request, action, instance string, details a
 	p, _ := principal(r)
 	b, _ := json.Marshal(details)
 	_, _ = s.Engine.Audit.Append(context.WithoutCancel(r.Context()), core.Entry{Actor: p.Actor, Module: "core", Instance: instance, Action: action, Risk: sdk.RiskWrite, Decision: core.Allow, Status: "ok", Input: b})
+	data, _ := json.Marshal(map[string]string{"action": action, "instance": instance})
+	s.Engine.Bus.Publish(sdk.Event{Type: "config.changed", Module: "core", Instance: instance, Data: data})
 }
 
 func (s *Server) auditVault(r *http.Request, action string) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/elchi-dev/conduit/internal/syncer"
 	"github.com/elchi-dev/conduit/internal/webhooks"
 	"log/slog"
 	"net"
@@ -39,7 +40,9 @@ type Server struct {
 	Updates *update.Updater
 	// Webhooks may be nil in tests.
 	Webhooks *webhooks.Service
-	Log      *slog.Logger
+	// Sync may be nil in tests.
+	Sync *syncer.Service
+	Log  *slog.Logger
 	// SetupToken must be presented to create the owner account. It is printed
 	// to the log and written to <data>/setup-token on first start.
 	SetupToken string

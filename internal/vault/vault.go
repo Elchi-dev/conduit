@@ -354,6 +354,27 @@ func (v *Vault) values(ctx context.Context) (map[string]string, error) {
 	return out, rows.Err()
 }
 
+// Export returns every secret's metadata and value, for sync. It needs the
+// vault unlocked and doesn't touch last-used times. The caller must not keep
+// the values longer than needed.
+func (v *Vault) Export(ctx context.Context) (map[string]Meta, map[string]string, error) {
+	vals, err := v.values(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	list, err := v.List(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	metas := map[string]Meta{}
+	for _, m := range list {
+		if _, ok := vals[m.Name]; ok {
+			metas[m.Name] = m
+		}
+	}
+	return metas, vals, nil
+}
+
 // Names returns all secret names, sorted.
 func (v *Vault) Names(ctx context.Context) ([]string, error) {
 	list, err := v.List(ctx)

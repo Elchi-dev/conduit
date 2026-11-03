@@ -234,6 +234,18 @@ func (s *Service) LinkHub(ctx context.Context, hub, code string) (Link, error) {
 	return l, nil
 }
 
+// HubCredentials returns the linked hub's URL and this daemon's device token
+// (for hub features other than the relay, such as sync), or "" when the
+// daemon isn't linked.
+func (s *Service) HubCredentials() (hub, token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.link == nil {
+		return "", ""
+	}
+	return s.link.Hub, s.link.token
+}
+
 // Unlink removes the device from the hub (best effort) and forgets the link.
 func (s *Service) Unlink(ctx context.Context) error {
 	s.mu.Lock()

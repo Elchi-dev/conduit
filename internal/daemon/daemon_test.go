@@ -396,12 +396,12 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 	served := map[string]bool{}
 	srv := &Server{}
 	all := srv.routes()
-	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes(), srv.ambientRoutes(), srv.webhookRoutes()} {
+	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes(), srv.ambientRoutes(), srv.webhookRoutes(), srv.syncRoutes()} {
 		all = append(all, extra...)
 	}
 	for _, r := range all {
 		method, path, _ := strings.Cut(r.pattern, " ")
-		if path == "/healthz" || path == "/mcp" || strings.HasPrefix(path, "/hooks/") {
+		if path == "/healthz" || path == "/mcp" || strings.HasPrefix(path, "/hooks/") || path == "/sync/exchange" {
 			continue // outside the /api/v1 base; documented in docs/api/webhooks.md
 		}
 		path = strings.TrimPrefix(path, "/api/v1")

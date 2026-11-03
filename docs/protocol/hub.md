@@ -197,15 +197,19 @@ and 100.64.0.0/10, so Tailscale-style overlays work too), and pairing works
 with no hub at all. Clients try the LAN address first (2.5 s) and fall back to
 the hub. At most 16 direct connections at a time.
 
-LAN discovery (mDNS) and peer-to-peer sync between daemons are designed but
-not built: pairing carries the address, so discovery isn't needed to connect.
+Daemons also sync directly on the local network, without a hub: see
+[architecture/sync.md](../architecture/sync.md). LAN discovery (mDNS) isn't
+built; pairing and sync peers carry addresses, so discovery isn't needed to
+connect.
 
 ## Sync
 
 `/v1/sync/{key}` stores opaque blobs the client encrypted itself (at most
 1 MiB each, 1000 per account). Writes carry the version last seen (0 to
 create); a mismatch answers 409 with the current blob, so clients merge and
-retry.
+retry. Daemons use it to sync the vault, agent rules and automations between
+themselves under a key the hub never sees; see
+[architecture/sync.md](../architecture/sync.md).
 
 ## Registry
 

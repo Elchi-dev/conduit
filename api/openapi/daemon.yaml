@@ -33,6 +33,7 @@ tags:
   - name: keys
   - name: events
   - name: webhooks
+  - name: sync
 paths:
   /version:
     get:
@@ -993,6 +994,69 @@ paths:
         - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } } } } }
+  /sync:
+    get:
+      operationId: syncStatus
+      tags: [sync]
+      summary: Whether this daemon syncs, what, with whom, and how the last round went
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SyncStatus" } } } }
+  /sync/group:
+    post:
+      operationId: createSyncGroup
+      tags: [sync]
+      summary: Start a sync group and get its join code (signed-in people only)
+      description: The join code is the group key. Anyone with it can read and change what the group syncs, so treat it like a password.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SyncSetup" } } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, required: [code, status], properties: { code: { type: string }, status: { $ref: "#/components/schemas/SyncStatus" } } }
+    delete:
+      operationId: leaveSyncGroup
+      tags: [sync]
+      summary: Stop syncing and forget the group key; local data stays
+      responses:
+        "204": { description: Left }
+  /sync/join:
+    post:
+      operationId: joinSyncGroup
+      tags: [sync]
+      summary: Join a group with a code from another daemon (signed-in people only)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SyncSetup" } } }
+      responses:
+        "200": { description: Joined, content: { application/json: { schema: { $ref: "#/components/schemas/SyncStatus" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /sync/code:
+    get:
+      operationId: syncJoinCode
+      tags: [sync]
+      summary: Show the join code again, to add another daemon (signed-in people only; audited)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } } }
+  /sync/settings:
+    put:
+      operationId: updateSyncSettings
+      tags: [sync]
+      summary: Change what syncs and the peers on the local network
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SyncSetup" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SyncStatus" } } } }
+  /sync/run:
+    post:
+      operationId: runSync
+      tags: [sync]
+      summary: Sync now
+      responses:
+        "200": { description: One result per collection and transport, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SyncRun" } } } } }
 components:
   securitySchemes:
     bearer:
@@ -1007,6 +1071,37 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    SyncSetup:
+      type: object
+      properties:
+        code: { type: string, description: The join code (joinSyncGroup only) }
+        collections: { type: array, items: { type: string, enum: [vault, policy, automations] } }
+        peers: { type: array, items: { type: string }, description: "Other daemons to sync with directly, like http://192.168.1.20:7600" }
+    SyncRun:
+      type: object
+      required: [collection, transport, ok, sent, received]
+      properties:
+        collection: { type: string }
+        transport: { type: string, description: "hub, or peer <address>" }
+        ok: { type: boolean }
+        skipped: { type: string }
+        error: { type: string }
+        sent: { type: integer, description: Local changes sent }
+        received: { type: integer, description: Changes applied here }
+    SyncStatus:
+      type: object
+      required: [enabled, collections, peers, viaHub, results, available]
+      properties:
+        enabled: { type: boolean }
+        groupId: { type: string, description: A short public name for the group; not secret }
+        collections: { type: array, items: { type: string } }
+        peers: { type: array, items: { type: string } }
+        viaHub: { type: boolean, description: True when this daemon is linked to a hub and syncs through it }
+        lastRun: { type: string, format: date-time }
+        results: { type: array, items: { $ref: "#/components/schemas/SyncRun" } }
+        available:
+          type: array
+          items: { type: object, required: [name, description], properties: { name: { type: string }, description: { type: string } } }
     Webhook:
       type: object
       required: [id, name, url, events, enabled, failures, createdAt]

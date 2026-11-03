@@ -29,6 +29,8 @@ takes the same path:
 | Hub and remote access | `internal/hub`, `internal/remote`, `pkg/relay` | [hub.md](hub.md) |
 | Vault | `internal/vault`, `modules/vault` | [vault.md](vault.md) |
 | Automations | `internal/automation` | [automations.md](automations.md) |
+| Sync between daemons | `internal/syncer` | [sync.md](sync.md) |
+| Outbound webhooks | `internal/webhooks` | [../api/webhooks.md](../api/webhooks.md) |
 | AI layer: tools, MCP, providers, assistant, bridge | `internal/ai` | [ai.md](ai.md) |
 | Web app | `web/`, `internal/ui` | [web.md](web.md) |
 | WebAssembly sandbox | `internal/sandbox`, `pkg/sdk/wasm` | [../protocol/sandbox.md](../protocol/sandbox.md) |

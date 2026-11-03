@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/elchi-dev/conduit/internal/syncer"
 	"github.com/elchi-dev/conduit/internal/webhooks"
 	"log/slog"
 	"net"
@@ -61,6 +62,7 @@ type App struct {
 	Remote      *remote.Service
 	Updates     *update.Updater
 	Games       *games.Module
+	Sync        *syncer.Service
 	DataDir     string
 	Server      *Server
 }
@@ -98,6 +100,8 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	app.Remote, app.Server.Remote = rem, rem
+	app.Sync = newSync(app)
+	app.Server.Sync = app.Sync
 	app.Updates = update.New(dataDir, log)
 	app.Server.Updates = app.Updates
 	rem.Handler = app.Server.Handler()
@@ -174,6 +178,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	go app.ambient().Watch(ctx)
 	go forwardAlerts(ctx, app)
 	go app.Server.Webhooks.Run(ctx)
+	go runSync(ctx, app)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

@@ -28,9 +28,6 @@ owner and a company equally; never tailor it to one setup.
   (GitHub API) can't see releases until it's public.
 - **Settings added in phase 15:** `CONDUIT_ALLOWED_HOSTS` (daemon, extra host
   names), `CONDUIT_HUB_TRUST_PROXY` (hub behind a reverse proxy).
-- **Known gaps:** no release published yet; the APK has only been built in
-  CI; the repository is private, so the Android update check (GitHub API)
-  can't see releases until it's public.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

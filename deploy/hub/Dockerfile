@@ -4,6 +4,7 @@ FROM node:22-alpine AS site
 WORKDIR /src
 RUN corepack enable
 COPY docs ./docs
+COPY scripts ./scripts
 COPY site/package.json site/pnpm-lock.yaml ./site/
 RUN cd site && pnpm install --frozen-lockfile
 COPY site ./site

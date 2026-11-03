@@ -50,6 +50,20 @@ is provided, and every install chooses:
 | Public website | `site/` | Astro |
 | Documentation | `docs/` | Markdown |
 
+## Install
+
+Desktop and Android apps are on the
+[releases page](https://github.com/Elchi-dev/conduit/releases). For the daemon
+or a hub on a server:
+
+```sh
+curl -fsSL https://<your hub>/install.sh | sh          # Linux, macOS
+irm https://<your hub>/install.ps1 | iex               # Windows PowerShell
+```
+
+The scripts check every download against the release's checksums. Options,
+services and uninstalling: [docs/install.md](docs/install.md).
+
 ## Build from source
 
 Requirements: Go 1.26+, Node 22 with pnpm 10, and for the desktop shell Rust

@@ -14,7 +14,7 @@ owner and a company equally; never tailor it to one setup.
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
 - **Phase:** 13 of 16 (modules and remaining features) — done 2026-11-03
-  ~03:35 CET.
+  ~02:30 CET.
 - **Works today:** everything through phase 12, plus 8 more modules (GitHub,
   GitLab, Cloudflare, Home Assistant, Discord, files and backups, games,
   notes; 20 in total), ambient status (lights, webhooks, Discord, Stream

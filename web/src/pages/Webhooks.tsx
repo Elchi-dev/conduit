@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ok, type S } from "../api/client";
 import { ago } from "../lib/format";
+import { t, tn } from "../i18n";
 import "./pages.css";
 
 type Webhook = S["Webhook"];
@@ -45,32 +46,29 @@ export function Webhooks({ admin }: { admin: boolean }) {
   return (
     <section className="stack" style={{ gap: 8 }}>
       <div className="spread">
-        <h2 className="section-title">Webhooks</h2>
+        <h2 className="section-title">{t("Webhooks")}</h2>
         {!adding && (
           <button className="btn sm" onClick={() => setAdding(true)}>
-            Add webhook
-          </button>
+            {t("Add webhook")}</button>
         )}
       </div>
       <p className="small muted">
-        Send events to your own service as they happen, signed so it can tell they came from here. See the{" "}
-        <a href="https://github.com/Elchi-dev/conduit/blob/main/docs/api/webhooks.md">signature format</a>.
+        {t("Send events to your own service as they happen, signed so it can tell they came from here. See the")}{" "}
+        <a href="https://github.com/Elchi-dev/conduit/blob/main/docs/api/webhooks.md">{t("signature format")}</a>.
       </p>
 
       {secret && (
         <div className="panel runner secret-once" role="status">
-          <h2>Copy the signing secret now</h2>
-          <p className="small">This is the only time the secret for "{secret.name}" is shown. Your receiver needs it to check signatures.</p>
+          <h2>{t("Copy the signing secret now")}</h2>
+          <p className="small">{t("This is the only time the secret for \"")}{secret.name}{t("\" is shown. Your receiver needs it to check signatures.")}</p>
           <div className="inline">
             <code className="secret-value">{secret.value}</code>
             <button className="btn sm" onClick={() => navigator.clipboard?.writeText(secret.value)}>
-              Copy
-            </button>
+              {t("Copy")}</button>
           </div>
           <div>
             <button className="btn sm quiet" onClick={() => setSecret(null)}>
-              I've saved it
-            </button>
+              {t("I've saved it")}</button>
           </div>
         </div>
       )}
@@ -84,26 +82,24 @@ export function Webhooks({ admin }: { admin: boolean }) {
           }}
         >
           <label className="field">
-            <span>Name</span>
-            <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Deploy bot" />
+            <span>{t("Name")}</span>
+            <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={t("Deploy bot")} />
           </label>
           <label className="field">
-            <span>URL</span>
+            <span>{"URL"}</span>
             <input className="data" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} required />
           </label>
           <label className="field">
-            <span>Events</span>
-            <input className="data" value={f.events} onChange={(e) => setF({ ...f, events: e.target.value })} placeholder="action.error approval.requested" />
-            <small>Event types or their beginnings, separated by spaces. Leave empty for everything.</small>
+            <span>{t("Events")}</span>
+            <input className="data" value={f.events} onChange={(e) => setF({ ...f, events: e.target.value })} placeholder={"action.error approval.requested"} />
+            <small>{t("Event types or their beginnings, separated by spaces. Leave empty for everything.")}</small>
           </label>
           {create.error && <div className="error">{create.error.message}</div>}
           <div className="inline">
             <button type="button" className="btn quiet" onClick={() => setAdding(false)}>
-              Cancel
-            </button>
+              {t("Cancel")}</button>
             <button className="btn primary" disabled={create.isPending}>
-              Add webhook
-            </button>
+              {t("Add webhook")}</button>
           </div>
         </form>
       )}
@@ -117,25 +113,22 @@ export function Webhooks({ admin }: { admin: boolean }) {
                   <strong>{w.name}</strong>
                   <span className="xs muted data">{w.url}</span>
                 </div>
-                <span className="xs muted data">{w.events.length ? w.events.join(" ") : "every event"}</span>
+                <span className="xs muted data">{w.events.length ? w.events.join(" ") : t("every event")}</span>
                 {w.enabled ? (
-                  w.failures > 0 ? <span className="tag warn">{w.failures} failed</span> : <span className="tag">On</span>
+                  w.failures > 0 ? <span className="tag warn">{w.failures} {t("failed")}</span> : <span className="tag">{t("On")}</span>
                 ) : (
-                  <span className="tag">Off</span>
+                  <span className="tag">{t("Off")}</span>
                 )}
                 <div className="inline">
                   <button className="btn sm quiet" onClick={() => setOpen(open === w.id ? null : w.id)} aria-expanded={open === w.id}>
-                    Deliveries
-                  </button>
+                    {t("Deliveries")}</button>
                   <button className="btn sm quiet" onClick={() => toggle.mutate(w)}>
-                    {w.enabled ? "Switch off" : "Switch on"}
+                    {w.enabled ? t("Switch off") : t("Switch on")}
                   </button>
                   <button className="btn sm quiet" onClick={() => rotate.mutate(w)}>
-                    New secret
-                  </button>
+                    {t("New secret")}</button>
                   <button className="btn sm danger" onClick={() => remove.mutate(w.id)}>
-                    Remove
-                  </button>
+                    {t("Remove")}</button>
                 </div>
               </div>
               {open === w.id && <Deliveries id={w.id} />}
@@ -158,16 +151,15 @@ function Deliveries({ id }: { id: string }) {
     <div className="stack" style={{ gap: 6, padding: "8px 12px 12px" }}>
       <div>
         <button className="btn sm" onClick={() => test.mutate()} disabled={test.isPending}>
-          Send a test event
-        </button>
+          {t("Send a test event")}</button>
       </div>
-      {list.data?.length === 0 && <p className="xs muted">Nothing sent yet.</p>}
+      {list.data?.length === 0 && <p className="xs muted">{t("Nothing sent yet.")}</p>}
       {list.data?.map((d) => (
         <div className="inline xs" key={d.id}>
-          <span className={d.ok ? "state-ok" : "state-down"}>{d.ok ? "Delivered" : "Failed"}</span>
+          <span className={d.ok ? "state-ok" : "state-down"}>{d.ok ? t("Delivered") : t("Failed")}</span>
           <span className="data">{d.event}</span>
           <span className="muted">
-            {d.status ? `HTTP ${d.status}` : "no answer"}, {d.attempts} {d.attempts === 1 ? "try" : "tries"}, {d.durationMs} ms, {ago(d.at)}
+            {d.status ? `HTTP ${d.status}` : t("no answer")}, {tn("{n} try", "{n} tries", d.attempts)}, {t("{ms} ms,", { ms: d.durationMs })}{" "}{ago(d.at)}
           </span>
           {d.error && <span className="muted">{d.error}</span>}
         </div>

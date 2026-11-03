@@ -3,22 +3,23 @@ import { useState } from "react";
 import { api, ok, type S } from "../api/client";
 import { SchemaForm, type JSONSchema } from "../components/SchemaForm";
 import { ago, stamp } from "../lib/format";
+import { t, tn } from "../i18n";
 import "./pages.css";
 
 type Automation = S["Automation"];
 type Step = S["Step"];
 type Trigger = S["Trigger"];
 
-const triggerText = (t: Trigger) => {
-  switch (t.kind) {
+const triggerText = (tr: Trigger) => {
+  switch (tr.kind) {
     case "schedule":
-      return `On a schedule (${t.cron}${t.timezone ? `, ${t.timezone}` : ""})`;
+      return tr.timezone ? t("On a schedule ({cron}, {zone})", { cron: tr.cron, zone: tr.timezone }) : t("On a schedule ({cron})", { cron: tr.cron });
     case "event":
-      return `When ${t.event} happens`;
+      return t("When {event} happens", { event: tr.event });
     case "webhook":
-      return "When its webhook is called";
+      return t("When its webhook is called");
     default:
-      return "When you run it";
+      return t("When you run it");
   }
 };
 
@@ -34,7 +35,7 @@ export function Automations() {
       ok(
         api.POST("/automations", {
           body: {
-            name: "Morning brief",
+            name: t("Morning brief"),
             enabled: true,
             trigger: { kind: "schedule", cron: "30 7 * * 1-5", timezone: tz },
             steps: [{ instance: "brief", action: "send" }],
@@ -58,24 +59,22 @@ export function Automations() {
     <div className="page">
       <div className="spread">
         <div className="page-head">
-          <h1>Automations</h1>
-          <p>Chains of actions that run on a schedule, when something happens, or when a webhook is called. Steps you save here run without asking; drafts from agents wait for you.</p>
+          <h1>{t("Automations")}</h1>
+          <p>{t("Chains of actions that run on a schedule, when something happens, or when a webhook is called. Steps you save here run without asking; drafts from agents wait for you.")}</p>
         </div>
         <button className="btn primary" onClick={() => setEditing("new")}>
-          New automation
-        </button>
+          {t("New automation")}</button>
       </div>
 
       {!hasBrief && (
         <div className="panel runner">
           <div className="spread">
             <div className="stack" style={{ gap: 4 }}>
-              <h2>Get a morning brief</h2>
-              <p className="small muted">Unread mail, today's events, anything down and approvals waiting, sent to your notification channels at 7:30 on weekdays.</p>
+              <h2>{t("Get a morning brief")}</h2>
+              <p className="small muted">{t("Unread mail, today's events, anything down and approvals waiting, sent to your notification channels at 7:30 on weekdays.")}</p>
             </div>
             <button className="btn" onClick={() => quickBrief.mutate()} disabled={quickBrief.isPending}>
-              Turn on
-            </button>
+              {t("Turn on")}</button>
           </div>
           {quickBrief.error && <div className="error">{quickBrief.error.message}</div>}
         </div>
@@ -83,8 +82,8 @@ export function Automations() {
 
       {list.data?.length === 0 && (
         <div className="empty">
-          <h2>No automations yet</h2>
-          <p className="muted">For example: when a site goes down, restart its container and tell your phone.</p>
+          <h2>{t("No automations yet")}</h2>
+          <p className="muted">{t("For example: when a site goes down, restart its container and tell your phone.")}</p>
         </div>
       )}
       {(list.data?.length ?? 0) > 0 && (
@@ -123,47 +122,44 @@ function AutomationRow({ a, onEdit }: { a: Automation; onEdit: () => void }) {
       <button className="tl-title stack" style={{ gap: 2 }} onClick={() => setOpen(!open)} aria-expanded={open}>
         <strong>{a.name}</strong>
         <span className="xs muted">
-          {triggerText(a.trigger)}, {a.steps.length} {a.steps.length === 1 ? "step" : "steps"}
+          {triggerText(a.trigger)}, {tn("{n} step", "{n} steps", a.steps.length)}
         </span>
       </button>
-      {!a.trusted && <span className="tag" title="Drafted by an agent or key. Review the steps, then turn it on.">Needs review</span>}
+      {!a.trusted && <span className="tag" title={t("Drafted by an agent or key. Review the steps, then turn it on.")}>{t("Needs review")}</span>}
       <label className="check xs">
         <input type="checkbox" checked={a.enabled} onChange={() => toggle.mutate()} />
-        {a.enabled ? "On" : "Off"}
+        {a.enabled ? t("On") : t("Off")}
       </label>
       <div className="inline">
         <button className="btn sm" onClick={() => run.mutate()} disabled={!a.enabled || run.isPending}>
-          Run now
-        </button>
+          {t("Run now")}</button>
         <button className="btn sm quiet" onClick={onEdit}>
-          Edit
-        </button>
+          {t("Edit")}</button>
       </div>
       {(toggle.error || run.error) && <div className="error" style={{ gridColumn: "1 / -1" }}>{(toggle.error || run.error)!.message}</div>}
       {run.data && (
         <p className="xs" style={{ gridColumn: "1 / -1", color: run.data.status === "ok" ? "var(--ok)" : "var(--fault)" }}>
-          {run.data.status === "ok" ? "Finished." : run.data.error}
+          {run.data.status === "ok" ? t("Finished.") : run.data.error}
         </p>
       )}
       {open && (
         <div className="usage">
           {a.hookPath && (
             <p className="xs">
-              Webhook address: <code className="data">{window.location.origin + a.hookPath}</code>{" "}
+              {t("Webhook address:")}{" "}<code className="data">{window.location.origin + a.hookPath}</code>{" "}
               <button className="btn sm quiet" onClick={() => navigator.clipboard?.writeText(window.location.origin + a.hookPath)}>
-                Copy
-              </button>
+                {t("Copy")}</button>
             </p>
           )}
           <ol className="small steps-list">
             {a.steps.map((s, i) => (
               <li key={i}>
-                <span className="data">{s.action}</span> <span className="muted">on {s.instance}</span>
+                <span className="data">{s.action}</span> <span className="muted">{t("on")}{" "}{s.instance}</span>
               </li>
             ))}
           </ol>
-          <p className="xs muted">Recent runs</p>
-          {runs.data?.length === 0 && <p className="xs muted">Hasn't run yet.</p>}
+          <p className="xs muted">{t("Recent runs")}</p>
+          {runs.data?.length === 0 && <p className="xs muted">{t("Hasn't run yet.")}</p>}
           {runs.data?.map((r) => (
             <p className="xs" key={r.id}>
               <span className={`tag st-${r.status === "ok" ? "ok" : "error"}`}>{r.status}</span> <span title={stamp(r.startedAt)}>{ago(r.startedAt)}</span>
@@ -172,8 +168,7 @@ function AutomationRow({ a, onEdit }: { a: Automation; onEdit: () => void }) {
           ))}
           <div>
             <button className="btn sm danger" onClick={() => confirm(`Delete "${a.name}"?`) && del.mutate()}>
-              Delete
-            </button>
+              {t("Delete")}</button>
           </div>
         </div>
       )}
@@ -216,31 +211,31 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
       }}
     >
       <div className="page-head">
-        <h1>{initial ? `Edit ${initial.name}` : "New automation"}</h1>
+        <h1>{initial ? `Edit ${initial.name}` : t("New automation")}</h1>
       </div>
       <label className="field" style={{ maxWidth: 420 }}>
-        <span>Name</span>
+        <span>{t("Name")}</span>
         <input value={name} onChange={(e) => setName(e.target.value)} required />
       </label>
 
       <section className="panel runner">
-        <h2>When</h2>
-        <div className="inline" role="radiogroup" aria-label="Trigger">
+        <h2>{t("When")}</h2>
+        <div className="inline" role="radiogroup" aria-label={t("Trigger")}>
           {(["schedule", "event", "webhook", "manual"] as const).map((k) => (
             <button key={k} type="button" role="radio" aria-checked={trigger.kind === k} className={`btn sm ${trigger.kind === k ? "primary" : ""}`} onClick={() => setTrigger({ ...trigger, kind: k })}>
-              {k === "schedule" ? "On a schedule" : k === "event" ? "When something happens" : k === "webhook" ? "Webhook" : "Only when I run it"}
+              {k === "schedule" ? t("On a schedule") : k === "event" ? t("When something happens") : k === "webhook" ? t("Webhook") : t("Only when I run it")}
             </button>
           ))}
         </div>
         {trigger.kind === "schedule" && (
           <div className="rule-grid">
             <label className="field">
-              <span>Schedule</span>
+              <span>{t("Schedule")}</span>
               <input className="data" value={trigger.cron ?? ""} onChange={(e) => setTrigger({ ...trigger, cron: e.target.value })} />
-              <small>Minute, hour, day, month, weekday. "30 7 * * 1-5" is 7:30 on weekdays.</small>
+              <small>{t("Minute, hour, day, month, weekday. \"30 7 * * 1-5\" is 7:30 on weekdays.")}</small>
             </label>
             <label className="field">
-              <span>Time zone</span>
+              <span>{t("Time zone")}</span>
               <input value={trigger.timezone ?? ""} onChange={(e) => setTrigger({ ...trigger, timezone: e.target.value })} />
             </label>
           </div>
@@ -248,20 +243,20 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
         {trigger.kind === "event" && (
           <div className="rule-grid">
             <label className="field">
-              <span>Event</span>
+              <span>{t("Event")}</span>
               <input className="data" list="event-types" value={trigger.event ?? ""} onChange={(e) => setTrigger({ ...trigger, event: e.target.value })} />
               <datalist id="event-types">
                 {modules.data?.flatMap((m) => (m.events ?? []).map((ev) => <option key={ev.type} value={ev.type}>{ev.description}</option>))}
                 <option value="approval.requested" />
                 <option value="action.error" />
               </datalist>
-              <small>A type like web.down, or a prefix like mail.</small>
+              <small>{t("A type like web.down, or a prefix like mail.")}</small>
             </label>
             <label className="field">
-              <span>Only if (optional)</span>
+              <span>{t("Only if (optional)")}</span>
               <input
                 className="data"
-                placeholder="data.name=Shop"
+                placeholder={"data.name=Shop"}
                 value={Object.entries(trigger.match ?? {}).map(([k, v]) => `${k}=${v}`).join(", ")}
                 onChange={(e) =>
                   setTrigger({
@@ -279,30 +274,28 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
             </label>
           </div>
         )}
-        {trigger.kind === "webhook" && <p className="small muted">After saving, the automation gets a secret address. Anything that can send an HTTP POST can start it.</p>}
+        {trigger.kind === "webhook" && <p className="small muted">{t("After saving, the automation gets a secret address. Anything that can send an HTTP POST can start it.")}</p>}
       </section>
 
       <section className="panel runner">
-        <h2>Then</h2>
+        <h2>{t("Then")}</h2>
         <p className="small muted">
-          Steps run in order. Use <code>{"{{trigger.data.name}}"}</code> for event data and <code>{"{{steps.0.output.field}}"}</code> for an earlier step's result.
-        </p>
+          {t("Steps run in order. Use")}{" "}<code>{"{{trigger.data.name}}"}</code> {t("for event data and")}{" "}<code>{"{{steps.0.output.field}}"}</code> {t("for an earlier step's result.")}</p>
         {steps.map((s, i) => {
           const m = moduleOf(s.instance);
           const act = m?.actions.find((a) => a.name === s.action);
           return (
             <div key={i} className="step-card">
               <div className="spread">
-                <strong className="small">Step {i + 1}</strong>
+                <strong className="small">{t("Step")}{" "}{i + 1}</strong>
                 <button type="button" className="btn sm quiet" onClick={() => setSteps(steps.filter((_, j) => j !== i))}>
-                  Remove
-                </button>
+                  {t("Remove")}</button>
               </div>
               <div className="rule-grid">
                 <label className="field">
-                  <span>System</span>
+                  <span>{t("System")}</span>
                   <select value={s.instance} onChange={(e) => setStep(i, { instance: e.target.value, action: "", input: {} })}>
-                    <option value="">Choose…</option>
+                    <option value="">{t("Choose…")}</option>
                     {instances.data?.map((inst) => (
                       <option key={inst.id} value={inst.id}>
                         {inst.name}
@@ -311,9 +304,9 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
                   </select>
                 </label>
                 <label className="field">
-                  <span>Action</span>
+                  <span>{t("Action")}</span>
                   <select value={s.action} onChange={(e) => setStep(i, { ...s, action: e.target.value, input: {} })} disabled={!m}>
-                    <option value="">Choose…</option>
+                    <option value="">{t("Choose…")}</option>
                     {m?.actions.map((a) => (
                       <option key={a.name} value={a.name}>
                         {a.title || a.name}
@@ -332,30 +325,25 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
               )}
               <label className="check xs">
                 <input type="checkbox" checked={!!s.continueOnError} onChange={(e) => setStep(i, { ...s, continueOnError: e.target.checked })} />
-                Keep going if this step fails
-              </label>
+                {t("Keep going if this step fails")}</label>
             </div>
           );
         })}
         <div>
           <button type="button" className="btn" onClick={() => setSteps([...steps, { instance: "", action: "" }])}>
-            Add a step
-          </button>
+            {t("Add a step")}</button>
         </div>
       </section>
 
       <label className="check">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Turn it on now
-      </label>
+        {t("Turn it on now")}</label>
       {save.error && <div className="error">{save.error.message}</div>}
       <div className="inline">
         <button type="button" className="btn quiet" onClick={onDone}>
-          Cancel
-        </button>
+          {t("Cancel")}</button>
         <button className="btn primary" disabled={save.isPending}>
-          Save automation
-        </button>
+          {t("Save automation")}</button>
       </div>
     </form>
   );

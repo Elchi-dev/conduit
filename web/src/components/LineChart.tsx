@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { locale, t } from "../i18n";
 
 export type Series = { name: string; points: [number, number][] };
 
@@ -41,8 +42,8 @@ function fmtNum(v: number) {
 function fmtTime(t: number, span: number) {
   const d = new Date(t * 1000);
   return span > 2 * 86400
-    ? d.toLocaleDateString(undefined, { weekday: "short", hour: "2-digit" })
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    ? d.toLocaleDateString(locale(), { weekday: "short", hour: "2-digit" })
+    : d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 /**
@@ -70,7 +71,7 @@ export function LineChart({ series }: { series: Series[] }) {
     return { x0, x1, sx, sy, ticks, times };
   }, [shown]);
 
-  if (!geo) return <p className="small muted">No data in this range.</p>;
+  if (!geo) return <p className="small muted">{t("No data in this range.")}</p>;
   const { x0, x1, sx, sy, ticks, times } = geo;
   const span = x1 - x0;
   const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => x0 + f * span);
@@ -102,16 +103,16 @@ export function LineChart({ series }: { series: Series[] }) {
           <span className="data xs muted">{shown[0].name}</span>
         )}
         <button className="btn sm quiet" onClick={() => setAsTable(!asTable)}>
-          {asTable ? "Show chart" : "Show as table"}
+          {asTable ? t("Show chart") : t("Show as table")}
         </button>
       </div>
-      {series.length > 8 && <p className="xs muted">Showing the first 8 of {series.length} series. Narrow the query to see the rest.</p>}
+      {series.length > 8 && <p className="xs muted">{t("Showing the first 8 of {n} series. Narrow the query to see the rest.", { n: series.length })}</p>}
       {asTable ? (
         <div className="table-wrap" style={{ maxHeight: 320, overflow: "auto" }}>
           <table className="table">
             <thead>
               <tr>
-                <th>Time</th>
+                <th>{t("Time")}</th>
                 {shown.map((s) => (
                   <th key={s.name}>{s.name}</th>
                 ))}
@@ -120,7 +121,7 @@ export function LineChart({ series }: { series: Series[] }) {
             <tbody>
               {times.map((t) => (
                 <tr key={t}>
-                  <td className="xs">{new Date(t * 1000).toLocaleString()}</td>
+                  <td className="xs">{new Date(t * 1000).toLocaleString(locale())}</td>
                   {shown.map((s) => (
                     <td key={s.name} className="num">
                       {valueAt(s, t) ?? ""}
@@ -137,7 +138,7 @@ export function LineChart({ series }: { series: Series[] }) {
             ref={svgRef}
             viewBox={`0 0 ${W} ${H}`}
             role="img"
-            aria-label={`Line chart of ${shown.map((s) => s.name).join(", ")}`}
+            aria-label={t("Line chart of {v0}", { v0: shown.map((s) => s.name).join(", ") })}
             onPointerMove={onMove}
             onPointerLeave={() => setHover(null)}
           >
@@ -179,7 +180,7 @@ export function LineChart({ series }: { series: Series[] }) {
           </svg>
           {ht != null && (
             <div className="chart-tip" style={{ left: `${(sx(ht) / W) * 100}%` }} role="status">
-              <p className="xs muted">{new Date(ht * 1000).toLocaleString()}</p>
+              <p className="xs muted">{new Date(ht * 1000).toLocaleString(locale())}</p>
               {shown.map((s, i) => {
                 const v = valueAt(s, ht);
                 return v == null ? null : (

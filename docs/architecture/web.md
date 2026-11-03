@@ -79,6 +79,43 @@ Modules that need richer views can add a custom panel under `web/modules/`
 | `/keys` | API keys: create (shown once), rotate, revoke, usage |
 | `/settings` | Theme, devices, password, version |
 
+## Translations
+
+The app ships in English and German. Every string a person reads goes
+through `t()` from `src/i18n`, keyed by its English text:
+
+```tsx
+t("Emergency stop")
+t("Revoke \"{name}\"? Anything using it stops working now.", { name: k.name })
+tn("{n} step", "{n} steps", a.steps.length)
+```
+
+`{name}` placeholders are filled from the second argument; `tn()` picks the
+singular or plural key and passes the count as `{n}`. A string with no
+translation shows in English, so nothing breaks while a dictionary catches
+up. Keep whole sentences in one key with placeholders rather than gluing
+pieces together, since word order differs between languages.
+
+The language comes from Settings, Appearance, Language, stored on the
+device (`conduit.lang` in localStorage). Without a choice, a browser set to
+German starts in German and everything else in English. Switching reloads
+the page, so text computed at load time is right too, and sets
+`<html lang>`. Dates and relative times (`lib/format.ts`, charts) use `Intl`
+with the active locale.
+
+What the daemon sends stays as it is: module names, manifest titles and
+descriptions, action names, and API error messages. Product and technical
+names (Conduit, Hub, Daemon, MCP, Webhook, Single Sign-on) are not
+translated either.
+
+`src/i18n/de.ts` holds the German dictionary, with a glossary at the top
+(Freigabe, Notstopp, Verlauf, Agentenregeln, Verbindung for an instance,
+Synchronisierung for Sync) and the informal "du" throughout.
+`pnpm test:i18n` (in CI's `web` job) fails when a `t()` or `tn()` string
+has no German entry or the placeholders differ, and lists entries nothing
+uses. To add a language, add a dictionary next to `de.ts` and list it in
+`languages` and `dicts` in `src/i18n/index.ts`.
+
 ## Testing
 
 `web/e2e` holds browser tests that drive the real app against a real daemon
@@ -104,6 +141,8 @@ Covered, at 1280 px and at 412 px (phone):
 - People: add a member
 - Settings shows Remote access, Sync, Webhooks, Appearance and Password
 - sign out, a wrong password is refused, sign back in
+- switching the language to Deutsch and back, and a German browser
+  starting in German
 - the emergency stop, pulled and lifted by the person (it runs last: it
   ends other sessions and locks the vault)
 

@@ -9,6 +9,7 @@ import { BackupSection } from "./Backup";
 import { SyncSection } from "./Sync";
 import { TwoFactorSection } from "./TwoFactor";
 import { Webhooks } from "./Webhooks";
+import { languages, t, useLang } from "../i18n";
 import "./pages.css";
 
 function useTheme() {
@@ -35,6 +36,7 @@ function useTheme() {
 export function Settings() {
   const qc = useQueryClient();
   const [theme, setTheme] = useTheme();
+  const [lang, setLang] = useLang();
   const me = useQuery({ queryKey: ["me"], queryFn: () => ok(api.GET("/me")) });
   const sessions = useQuery({ queryKey: ["sessions"], queryFn: () => ok(api.GET("/me/sessions")) });
   const version = useQuery({ queryKey: ["version"], queryFn: () => ok(api.GET("/version")) });
@@ -59,9 +61,9 @@ export function Settings() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Settings</h1>
+        <h1>{t("Settings")}</h1>
         <p>
-          Signed in as {me.data?.user.name} ({me.data?.user.email}), {me.data?.user.role}.
+          {t("Signed in as")}{" "}{me.data?.user.name} ({me.data?.user.email}), {me.data?.user.role}.
         </p>
       </div>
 
@@ -79,33 +81,39 @@ export function Settings() {
       <Webhooks admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
       <section className="stack" style={{ gap: 8 }}>
-        <h2 className="section-title">Appearance</h2>
-        <div className="inline" role="radiogroup" aria-label="Theme">
-          {["system", "dark", "light"].map((t) => (
-            <button key={t} role="radio" aria-checked={theme === t} className={`btn ${theme === t ? "primary" : ""}`} onClick={() => setTheme(t)}>
-              {t === "system" ? "Match system" : t === "dark" ? "Dark" : "Light"}
+        <h2 className="section-title">{t("Appearance")}</h2>
+        <div className="inline" role="radiogroup" aria-label={t("Theme")}>
+          {["system", "dark", "light"].map((th) => (
+            <button key={th} role="radio" aria-checked={theme === th} className={`btn ${theme === th ? "primary" : ""}`} onClick={() => setTheme(th)}>
+              {th === "system" ? t("Match system") : th === "dark" ? t("Dark") : t("Light")}
+            </button>
+          ))}
+        </div>
+        <div className="inline" role="radiogroup" aria-label={t("Language")}>
+          {languages.map((l) => (
+            <button key={l.id} role="radio" lang={l.id} aria-checked={lang === l.id} className={`btn ${lang === l.id ? "primary" : ""}`} onClick={() => setLang(l.id)}>
+              {l.label}
             </button>
           ))}
         </div>
       </section>
 
       <section className="stack" style={{ gap: 8 }}>
-        <h2 className="section-title">Signed-in devices</h2>
+        <h2 className="section-title">{t("Signed-in devices")}</h2>
         <div className="panel rows">
           {(allSessions ? sessions.data : sessions.data?.slice(0, 5))?.map((s) => (
             <div className="row session-row" key={s.id}>
-              <span className="small">{s.device || "Unknown device"}</span>
-              <span className="xs muted">active {ago(s.lastSeenAt)}</span>
+              <span className="small">{s.device || t("Unknown device")}</span>
+              <span className="xs muted">{t("active")}{" "}{ago(s.lastSeenAt)}</span>
               <button className="btn sm quiet" onClick={() => endSession.mutate(s.id)}>
-                Sign out
-              </button>
+                {t("Sign out")}</button>
             </div>
           ))}
         </div>
         {!allSessions && (sessions.data?.length ?? 0) > 5 && (
           <div>
             <button className="btn sm quiet" onClick={() => setAllSessions(true)}>
-              Show all {sessions.data?.length}
+              {t("Show all")}{" "}{sessions.data?.length}
             </button>
           </div>
         )}
@@ -113,7 +121,7 @@ export function Settings() {
 
 
       <section className="stack" style={{ gap: 8, maxWidth: 420 }}>
-        <h2 className="section-title">Password</h2>
+        <h2 className="section-title">{t("Password")}</h2>
         <form
           className="stack"
           onSubmit={(e) => {
@@ -122,18 +130,18 @@ export function Settings() {
           }}
         >
           <label className="field">
-            <span>Current password</span>
+            <span>{t("Current password")}</span>
             <input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} autoComplete="current-password" required />
           </label>
           <label className="field">
-            <span>New password</span>
+            <span>{t("New password")}</span>
             <input type="password" minLength={10} value={pw.new} onChange={(e) => setPw({ ...pw, new: e.target.value })} autoComplete="new-password" required />
-            <small>Changing it signs out every other device.</small>
+            <small>{t("Changing it signs out every other device.")}</small>
           </label>
           {changePw.error && <div className="error">{changePw.error.message}</div>}
-          {changePw.isSuccess && <p className="small muted">Password changed.</p>}
+          {changePw.isSuccess && <p className="small muted">{t("Password changed.")}</p>}
           <div>
-            <button className="btn">Change password</button>
+            <button className="btn">{t("Change password")}</button>
           </div>
         </form>
       </section>
@@ -142,11 +150,10 @@ export function Settings() {
 
       <section className="spread">
         <span className="xs muted">
-          Conduit <span className="data">{version.data?.version}</span> ({version.data?.os}/{version.data?.arch})
+          {t("Conduit")}{" "}<span className="data">{version.data?.version}</span> ({version.data?.os}/{version.data?.arch})
         </span>
         <button className="btn" onClick={() => logout.mutate()}>
-          Sign out
-        </button>
+          {t("Sign out")}</button>
       </section>
     </div>
   );

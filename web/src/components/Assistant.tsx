@@ -5,6 +5,7 @@ import { api, ok, type S } from "../api/client";
 import { apiFetchUrl } from "../lib/connection";
 import { useDictation, voiceSupported } from "../lib/voice";
 import { ApprovalCard } from "../pages/Approvals";
+import { t } from "../i18n";
 import "./assistant.css";
 
 type Step = S["AssistantStep"];
@@ -147,13 +148,12 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
   const none = providers.data && providers.data.length === 0;
 
   return (
-    <aside className="assistant" aria-label="Assistant">
+    <aside className="assistant" aria-label={t("Assistant")}>
       <header className="assistant-head">
-        <strong>Assistant</strong>
+        <strong>{t("Assistant")}</strong>
         <div className="inline">
           <button className="btn sm quiet" onClick={() => setShowList(!showList)} aria-expanded={showList}>
-            History
-          </button>
+            {t("History")}</button>
           <button
             className="btn sm quiet"
             onClick={() => {
@@ -162,17 +162,15 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
               setShowList(false);
             }}
           >
-            New
-          </button>
-          <button className="btn sm quiet" onClick={onClose} aria-label="Close assistant">
-            Close
-          </button>
+            {t("New")}</button>
+          <button className="btn sm quiet" onClick={onClose} aria-label={t("Close assistant")}>
+            {t("Close")}</button>
         </div>
       </header>
 
       {showList && (
         <div className="assistant-list">
-          {convs.data?.length === 0 && <p className="xs muted">No conversations yet.</p>}
+          {convs.data?.length === 0 && <p className="xs muted">{t("No conversations yet.")}</p>}
           {convs.data?.map((c) => (
             <button key={c.id} className={c.id === conv ? "active" : undefined} onClick={() => loadConv(c.id)}>
               {c.title}
@@ -184,16 +182,15 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
       <div className="assistant-body" ref={scroller}>
         {none && (
           <div className="stack small" style={{ gap: 8 }}>
-            <p>The assistant needs an AI model to talk to: a cloud provider with an API key, or one running on this computer.</p>
+            <p>{t("The assistant needs an AI model to talk to: a cloud provider with an API key, or one running on this computer.")}</p>
             <Link href="/assistant" className="btn" onClick={onClose}>
-              Set up a model
-            </Link>
+              {t("Set up a model")}</Link>
           </div>
         )}
         {!none && items.length === 0 && (
           <div className="assistant-empty">
-            <p className="small muted">Ask about anything connected, or tell it what to do. Changes wait for your approval.</p>
-            {["What needs my attention?", "Why is my server slow?", "What changed in the last hour?"].map((q) => (
+            <p className="small muted">{t("Ask about anything connected, or tell it what to do. Changes wait for your approval.")}</p>
+            {[t("What needs my attention?"), t("Why is my server slow?"), t("What changed in the last hour?")].map((q) => (
               <button key={q} className="btn sm" onClick={() => send(q)}>
                 {q}
               </button>
@@ -225,7 +222,7 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
                 <div key={i} className="msg-tool">
                   <details>
                     <summary className={`xs ${it.isError ? "tool-error" : "muted"}`}>
-                      {it.result === undefined ? "Working: " : it.isError ? "Failed: " : it.approval ? "Asked you: " : "Checked: "}
+                      {it.result === undefined ? t("Working: ") : it.isError ? t("Failed: ") : it.approval ? t("Asked you: ") : t("Checked: ")}
                       {it.title}
                     </summary>
                     {it.result && <pre className="json">{it.result}</pre>}
@@ -234,7 +231,7 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
                     <ApprovalCard
                       a={it.approval}
                       onDecided={(approved) => {
-                        if (approved) void send("Approved. Go ahead.");
+                        if (approved) void send(t("Approved. Go ahead."));
                       }}
                     />
                   )}
@@ -242,7 +239,7 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
               );
           }
         })}
-        {busy && <p className="xs muted working">Working…</p>}
+        {busy && <p className="xs muted working">{t("Working…")}</p>}
       </div>
 
       <form
@@ -256,7 +253,7 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
           ref={inputRef}
           rows={2}
           value={input}
-          placeholder={none ? "Set up a model first" : "Ask or tell it what to do"}
+          placeholder={none ? t("Set up a model first") : t("Ask or tell it what to do")}
           disabled={none}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -273,14 +270,13 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
               className={`btn ${voice.listening ? "signal" : ""}`}
               onClick={() => (voice.listening ? voice.stop() : voice.start())}
               aria-pressed={voice.listening}
-              title="Speak instead of typing; check the text, then send"
+              title={t("Speak instead of typing; check the text, then send")}
             >
-              {voice.listening ? "Listening…" : "Speak"}
+              {voice.listening ? t("Listening…") : t("Speak")}
             </button>
           )}
           <button className="btn primary" disabled={busy || none || !input.trim()}>
-            Send
-          </button>
+            {t("Send")}</button>
         </div>
       </form>
       {voice.error && <p className="xs muted voice-error">{voice.error}</p>}
@@ -306,7 +302,7 @@ function apply(items: Item[], st: Step): Item[] {
       return out;
     }
     case "error":
-      return [...items, { kind: "error", text: st.text ?? "Something went wrong" }];
+      return [...items, { kind: "error", text: st.text ?? t("Something went wrong") }];
   }
   return items;
 }

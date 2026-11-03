@@ -8,6 +8,7 @@ import { ResultView } from "../components/ResultView";
 import { PinButton } from "../components/Tiles";
 import { VaultGate } from "../modules/vault/VaultGate";
 import { ago } from "../lib/format";
+import { t } from "../i18n";
 import "./pages.css";
 
 export function InstancePage({ id }: { id: string }) {
@@ -69,28 +70,28 @@ export function InstancePage({ id }: { id: string }) {
           </div>
           <p>
             {m.name !== i.name && `${m.name}. `}
-            {h?.message || (h?.status === "ok" ? "Working normally." : "")}
+            {h?.message || (h?.status === "ok" ? t("Working normally.") : "")}
           </p>
         </div>
         <div className="inline">
           <button className="btn" onClick={() => setEditing(!editing)}>
-            {editing ? "Close settings" : "Settings"}
+            {editing ? t("Close settings") : t("Settings")}
           </button>
         </div>
       </div>
 
-      {editing && <InstanceSettings id={id} schema={m.configSchema as JSONSchema} initial={i.config as Record<string, unknown>} name={i.name} enabled={i.enabled} onDelete={() => confirm(`Disconnect ${i.name}? Its history stays in the timeline.`) && del.mutate()} />}
+      {editing && <InstanceSettings id={id} schema={m.configSchema as JSONSchema} initial={i.config as Record<string, unknown>} name={i.name} enabled={i.enabled} onDelete={() => confirm(t("Disconnect {name}? Its history stays in the timeline.", { name: i.name })) && del.mutate()} />}
 
       {m.id === "vault" && <VaultGate />}
 
       <div className="instance-grid">
-        <nav className="actions panel" aria-label="Actions">
+        <nav className="actions panel" aria-label={t("Actions")}>
           {(["read", "write", "destructive"] as const).map((risk) => {
             const list = m.actions.filter((a) => a.risk === risk);
             if (!list.length) return null;
             return (
               <div key={risk}>
-                <p className="actions-head">{risk === "read" ? "Look" : risk === "write" ? "Change" : "Careful"}</p>
+                <p className="actions-head">{risk === "read" ? t("Look") : risk === "write" ? t("Change") : t("Careful")}</p>
                 {list.map((a) => (
                   <button key={a.name} className={selected === a.name ? "active" : undefined} onClick={() => setSelected(a.name)}>
                     {a.title || a.name}
@@ -101,10 +102,10 @@ export function InstancePage({ id }: { id: string }) {
           })}
         </nav>
         <section className="stack">
-          {action ? <ActionRunner key={action.name} instance={id} action={action} /> : <p className="muted">Choose an action.</p>}
+          {action ? <ActionRunner key={action.name} instance={id} action={action} /> : <p className="muted">{t("Choose an action.")}</p>}
           {recent.data && recent.data.length > 0 && (
             <div className="stack" style={{ gap: 8 }}>
-              <h2 className="section-title">Recent on {i.name}</h2>
+              <h2 className="section-title">{t("Recent on")}{" "}{i.name}</h2>
               <div className="panel rows">
                 {recent.data.map((e) => (
                   <div className="row recent-row" key={e.seq}>
@@ -154,14 +155,13 @@ function ActionRunner({ instance, action }: { instance: string; action: ActionSp
       )}
       <div className="inline">
         <button className={`btn ${action.risk === "destructive" ? "danger" : "primary"}`} onClick={() => run.mutate(false)} disabled={run.isPending}>
-          {action.risk === "read" ? (result ? "Refresh" : "Run") : action.title || "Run"}
+          {action.risk === "read" ? (result ? t("Refresh") : t("Run")) : action.title || t("Run")}
         </button>
         {action.dryRun && (
           <button className="btn" onClick={() => run.mutate(true)} disabled={run.isPending}>
-            Preview changes
-          </button>
+            {t("Preview changes")}</button>
         )}
-        {run.isPending && <span className="xs muted">Working…</span>}
+        {run.isPending && <span className="xs muted">{t("Working…")}</span>}
       </div>
       {run.error && <div className="error">{run.error.message}</div>}
       {result?.result.plan && <PlanView plan={result.result.plan} />}
@@ -170,7 +170,7 @@ function ActionRunner({ instance, action }: { instance: string; action: ActionSp
         <PinButton instance={instance} action={action.name} title={action.title || action.name} input={input} output={result.result.output} />
       )}
       {result?.audit.undo && !result.result.plan && (
-        <p className="xs muted">Done. You can undo this from the timeline ({result.audit.undo.description}).</p>
+        <p className="xs muted">{t("Done. You can undo this from the timeline (")}{result.audit.undo.description}).</p>
       )}
     </div>
   );
@@ -206,27 +206,25 @@ function InstanceSettings({
         save.mutate(enabled);
       }}
     >
-      <h2>Settings</h2>
+      <h2>{t("Settings")}</h2>
       <label className="field">
-        <span>Name</span>
+        <span>{t("Name")}</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
       <SchemaForm schema={schema} value={config} onChange={setConfig} idPrefix={`edit-${id}`} />
       {save.error && <div className="error">{save.error.message}</div>}
       <div className="spread">
         <button type="button" className="btn danger" onClick={onDelete}>
-          Disconnect
-        </button>
+          {t("Disconnect")}</button>
         <div className="inline">
           <button type="button" className="btn" onClick={() => save.mutate(!enabled)}>
-            {enabled ? "Pause" : "Resume"}
+            {enabled ? t("Pause") : t("Resume")}
           </button>
           <button className="btn primary" disabled={save.isPending}>
-            Save
-          </button>
+            {t("Save")}</button>
         </div>
       </div>
-      {save.isSuccess && <p className="xs muted">Saved.</p>}
+      {save.isSuccess && <p className="xs muted">{t("Saved.")}</p>}
     </form>
   );
 }

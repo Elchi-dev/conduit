@@ -1,21 +1,22 @@
-const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+import { locale, t } from "../i18n";
+const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: "auto" });
 
 /** "3 min ago", "in 2 h", or a date for anything older than a week. */
 export function ago(iso?: string | null): string {
   if (!iso) return "";
-  const t = new Date(iso).getTime();
-  const diff = (t - Date.now()) / 1000;
+  const ms = new Date(iso).getTime();
+  const diff = (ms - Date.now()) / 1000;
   const abs = Math.abs(diff);
-  if (abs < 45) return "just now";
+  if (abs < 45) return t("just now");
   if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute");
   if (abs < 86400) return rtf.format(Math.round(diff / 3600), "hour");
   if (abs < 7 * 86400) return rtf.format(Math.round(diff / 86400), "day");
-  return new Date(iso).toLocaleDateString();
+  return new Date(iso).toLocaleDateString(locale());
 }
 
 export function stamp(iso?: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(iso).toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function json(v: unknown): string {
@@ -34,13 +35,13 @@ export function actorLabel(a?: { kind: string; name?: string; id: string }): str
     case "user":
       return who;
     case "agent":
-      return a.name ? who : `Agent ${who}`;
+      return a.name ? who : t("Agent {who}", { who });
     case "key":
-      return a.name ? who : `Key ${who}`;
+      return a.name ? who : t("Key {who}", { who });
     case "automation":
-      return a.name ? `Automation "${who}"` : `Automation ${who}`;
+      return a.name ? t("Automation \"{who}\"", { who }) : t("Automation {who}", { who });
     default:
-      return "Conduit";
+      return t("Conduit");
   }
 }
 

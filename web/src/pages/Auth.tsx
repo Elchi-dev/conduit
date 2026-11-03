@@ -4,6 +4,7 @@ import { api, ok } from "../api/client";
 import { forgetRelay, pairFromCode, relayProfile, routeLabel } from "../lib/connection";
 import { fingerprint } from "../lib/relay";
 import { isMobileApp, scanQR } from "../lib/native";
+import { t } from "../i18n";
 import "../components/shell.css";
 
 export function Brand() {
@@ -12,7 +13,7 @@ export function Brand() {
       <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" style={{ color: "var(--signal)" }}>
         <path d="M6 10h20M6 16h13M6 22h20" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
       </svg>
-      <strong style={{ fontSize: "var(--t-xl)", letterSpacing: "-0.02em" }}>Conduit</strong>
+      <strong style={{ fontSize: "var(--t-xl)", letterSpacing: "-0.02em" }}>{t("Conduit")}</strong>
     </div>
   );
 }
@@ -33,15 +34,13 @@ export function Setup() {
       <div className="gate-box stack" style={{ gap: 24 }}>
         <Brand />
         <div className="stack" style={{ gap: 8 }}>
-          <h1>Create the owner account</h1>
+          <h1>{t("Create the owner account")}</h1>
           <p className="muted">
-            This account controls everything Conduit manages on this machine. The setup code is in the daemon's log and
-            in the file <code>setup-token</code> in its data folder.
-          </p>
+            {t("This account controls everything Conduit manages on this machine. The setup code is in the daemon's log and in the file")}{" "}<code>setup-token</code> {t("in its data folder.")}</p>
         </div>
         <form onSubmit={submit}>
           <label className="field">
-            <span>Setup code</span>
+            <span>{t("Setup code")}</span>
             <input
               className="data"
               value={f.token}
@@ -51,15 +50,15 @@ export function Setup() {
             />
           </label>
           <label className="field">
-            <span>Your name</span>
+            <span>{t("Your name")}</span>
             <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoComplete="name" />
           </label>
           <label className="field">
-            <span>Email</span>
+            <span>{t("Email")}</span>
             <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required autoComplete="email" />
           </label>
           <label className="field">
-            <span>Password</span>
+            <span>{t("Password")}</span>
             <input
               type="password"
               minLength={10}
@@ -68,12 +67,11 @@ export function Setup() {
               required
               autoComplete="new-password"
             />
-            <small>At least 10 characters.</small>
+            <small>{t("At least 10 characters.")}</small>
           </label>
           {m.error && <div className="error">{m.error.message}</div>}
           <button className="btn primary" disabled={m.isPending}>
-            Create account
-          </button>
+            {t("Create account")}</button>
         </form>
       </div>
     </div>
@@ -123,8 +121,8 @@ export function Login() {
         <div className="gate-box stack" style={{ gap: 24 }}>
           <Brand />
           <div className="stack" style={{ gap: 8 }}>
-            <h1>Enter your code</h1>
-            <p className="muted">Open your authenticator app and enter the six-digit code for Conduit. Lost your phone? Enter one of your recovery codes.</p>
+            <h1>{t("Enter your code")}</h1>
+            <p className="muted">{t("Open your authenticator app and enter the six-digit code for Conduit. Lost your phone? Enter one of your recovery codes.")}</p>
           </div>
           <form
             onSubmit={(e) => {
@@ -133,7 +131,7 @@ export function Login() {
             }}
           >
             <label className="field">
-              <span>Code</span>
+              <span>{t("Code")}</span>
               <input
                 className="data"
                 value={code}
@@ -147,8 +145,7 @@ export function Login() {
             </label>
             {second.error && <div className="error">{second.error.message}</div>}
             <button className="btn primary" disabled={second.isPending}>
-              Sign in
-            </button>
+              {t("Sign in")}</button>
           </form>
           <button
             className="btn quiet"
@@ -157,8 +154,7 @@ export function Login() {
               setCode("");
             }}
           >
-            Back
-          </button>
+            {t("Back")}</button>
         </div>
       </div>
     );
@@ -168,12 +164,11 @@ export function Login() {
       <div className="gate-box stack" style={{ gap: 24 }}>
         <Brand />
         <div className="stack" style={{ gap: 8 }}>
-          <h1>Sign in</h1>
+          <h1>{t("Sign in")}</h1>
           {relay && (
             <p className="muted">
-              To {relay.name}, {routeLabel(relay)}. The connection is end-to-end encrypted to the key{" "}
-              <span className="data">{fp}</span>, which should match the fingerprint shown on that computer.
-            </p>
+              {t("To")}{" "}{relay.name}, {routeLabel(relay)}{t(". The connection is end-to-end encrypted to the key")}{" "}
+              <span className="data">{fp}</span>{t(", which should match the fingerprint shown on that computer.")}</p>
           )}
         </div>
         <form
@@ -183,11 +178,11 @@ export function Login() {
           }}
         >
           <label className="field">
-            <span>Email</span>
+            <span>{t("Email")}</span>
             <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required autoComplete="email" />
           </label>
           <label className="field">
-            <span>Password</span>
+            <span>{t("Password")}</span>
             <input
               type="password"
               value={f.password}
@@ -198,12 +193,11 @@ export function Login() {
           </label>
           {m.error && <div className="error">{m.error.message}</div>}
           <button className="btn primary" disabled={m.isPending}>
-            Sign in
-          </button>
+            {t("Sign in")}</button>
         </form>
         {!relay && sso.data?.enabled && (
           <a className="btn" href="/api/v1/auth/oidc/start">
-            Sign in with {sso.data.label}
+            {t("Sign in with")}{" "}{sso.data.label}
           </a>
         )}
         {!relay && ssoError && <div className="error">{ssoMessage(ssoError)}</div>}
@@ -215,12 +209,10 @@ export function Login() {
               qc.invalidateQueries();
             }}
           >
-            Forget {relay.name} and disconnect
-          </button>
+            {t("Forget {name} and disconnect", { name: relay.name })}</button>
         ) : (
           <button className="btn quiet" onClick={() => setElsewhere(true)}>
-            Connect to a Conduit on another computer
-          </button>
+            {t("Connect to a Conduit on another computer")}</button>
         )}
       </div>
     </div>
@@ -251,17 +243,15 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
       <div className="gate-box stack" style={{ gap: 24 }}>
         <Brand />
         <div className="stack" style={{ gap: 8 }}>
-          <h1>Connect to your Conduit</h1>
+          <h1>{t("Connect to your Conduit")}</h1>
           {reason && <p className="muted">{reason}</p>}
           <p className="muted">
-            On the computer running Conduit, open Settings, then Remote access, and choose Pair a device. Scan the code
-            with your phone's camera, or copy the pairing link and paste it here.
-          </p>
+            {t("On the computer running Conduit, open Settings, then Remote access, and choose Pair a device. Scan the code with your phone's camera, or copy the pairing link and paste it here.")}</p>
         </div>
         {isMobileApp() && (
           <div className="stack" style={{ gap: 8 }}>
             <button className="btn primary scan-btn" onClick={() => scan.mutate()} disabled={scan.isPending || m.isPending}>
-              {scan.isPending ? "Opening the camera…" : "Scan the pairing code"}
+              {scan.isPending ? t("Opening the camera…") : t("Scan the pairing code")}
             </button>
             {scan.error && <div className="error">{String(scan.error)}</div>}
           </div>
@@ -273,28 +263,27 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
           }}
         >
           <label className="field">
-            <span>Pairing link</span>
+            <span>{t("Pairing link")}</span>
             <textarea
               className="data"
               rows={3}
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="conduit://pair?d=…"
+              placeholder={"conduit://pair?d=…"}
               required
               autoComplete="off"
               spellCheck={false}
             />
-            <small>Single use, valid for 10 minutes.</small>
+            <small>{t("Single use, valid for 10 minutes.")}</small>
           </label>
           {m.error && <div className="error">{m.error.message}</div>}
           <button className={`btn ${isMobileApp() ? "" : "primary"}`} disabled={m.isPending}>
-            {m.isPending ? "Connecting…" : "Connect"}
+            {m.isPending ? t("Connecting…") : t("Connect")}
           </button>
         </form>
         {onBack && (
           <button className="btn quiet" onClick={onBack}>
-            Back to sign in
-          </button>
+            {t("Back to sign in")}</button>
         )}
       </div>
     </div>
@@ -305,25 +294,25 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
 function ssoMessage(code: string): string {
   switch (code) {
     case "unverified":
-      return "Your provider didn't confirm your email address, so single sign-on can't use it.";
+      return t("Your provider didn't confirm your email address, so single sign-on can't use it.");
     case "domain":
-      return "Your email address isn't in a domain this Conduit accepts. Ask its owner to add it.";
+      return t("Your email address isn't in a domain this Conduit accepts. Ask its owner to add it.");
     case "link_required":
-      return "Owners and admins sign in with their password first, then link single sign-on in Settings.";
+      return t("Owners and admins sign in with their password first, then link single sign-on in Settings.");
     case "linked_elsewhere":
-      return "This account is linked to a different identity at your provider. Sign in with that one, or with your password.";
+      return t("This account is linked to a different identity at your provider. Sign in with that one, or with your password.");
     case "no_account":
-      return "There's no account here for your email address yet. Ask the owner to add you.";
+      return t("There's no account here for your email address yet. Ask the owner to add you.");
     case "disabled":
-      return "Your account here is switched off. Ask the owner.";
+      return t("Your account here is switched off. Ask the owner.");
     case "state":
     case "expired":
-      return "That sign-in expired or was started in another browser. Try again.";
+      return t("That sign-in expired or was started in another browser. Try again.");
     case "provider_refused":
-      return "The sign-in was cancelled at your provider.";
+      return t("The sign-in was cancelled at your provider.");
     case "busy":
-      return "Too many sign-in attempts. Wait a minute and try again.";
+      return t("Too many sign-in attempts. Wait a minute and try again.");
     default:
-      return "Single sign-on didn't work. Try again, or sign in with your password; the owner can see the reason in the daemon's log.";
+      return t("Single sign-on didn't work. Try again, or sign in with your password; the owner can see the reason in the daemon's log.");
   }
 }

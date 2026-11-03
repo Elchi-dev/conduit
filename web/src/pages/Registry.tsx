@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
+import { t } from "../i18n";
 import "./pages.css";
 
 type Pkg = { name: string; owner: string; description: string; latest?: string; downloads: number };
@@ -23,36 +24,34 @@ export function RegistryPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Modules from your hub</h1>
+        <h1>{t("Modules from your hub")}</h1>
         <p>
-          Modules other people published, signed by their authors. They run sandboxed: no access to this computer, and only the
-          internet addresses they list. <Link href="/modules">Back to modules</Link>
+          {t("Modules other people published, signed by their authors. They run sandboxed: no access to this computer, and only the internet addresses they list.")}{" "}<Link href="/modules">{t("Back to modules")}</Link>
         </p>
       </div>
 
       {(installed.data?.length ?? 0) > 0 && (
         <section className="stack" style={{ gap: 8 }}>
-          <h2 className="section-title">Installed</h2>
+          <h2 className="section-title">{t("Installed")}</h2>
           <div className="panel rows">
             {installed.data!.map((m) => (
               <div className="row key-row" key={m.name}>
                 <div className="stack" style={{ gap: 2 }}>
                   <strong className="data">{m.name}</strong>
                   <span className="xs muted">
-                    {m.version}, installed {ago(m.installedAt)}, author key <span className="data">{m.fingerprint}</span>
+                    {m.version}{t(", installed")}{" "}{ago(m.installedAt)}{t(", author key")}{" "}<span className="data">{m.fingerprint}</span>
                   </span>
                 </div>
-                <span className="xs muted">{m.network.length ? `Reaches ${m.network.join(", ")}` : "No network"}</span>
+                <span className="xs muted">{m.network.length ? `Reaches ${m.network.join(", ")}` : t("No network")}</span>
                 {m.latest && m.latest !== m.version ? (
                   <button className="btn sm" onClick={() => setOpen(m.name)}>
-                    Update to {m.latest}
+                    {t("Update to")}{" "}{m.latest}
                   </button>
                 ) : (
                   <span />
                 )}
                 <button className="btn sm danger" onClick={() => remove.mutate(m.name)}>
-                  Remove
-                </button>
+                  {t("Remove")}</button>
               </div>
             ))}
           </div>
@@ -69,15 +68,14 @@ export function RegistryPage() {
         }}
       >
         <label className="field" style={{ minWidth: 280 }}>
-          <span>Search</span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="weather, router, backup…" />
+          <span>{t("Search")}</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("weather, router, backup…")} />
         </label>
         <button className="btn" style={{ alignSelf: "end" }}>
-          Search
-        </button>
+          {t("Search")}</button>
       </form>
       {search.error && <div className="error">{(search.error as Error).message}</div>}
-      {search.data?.length === 0 && <p className="muted">{term ? "Nothing matches." : "Nothing is published on this hub yet."}</p>}
+      {search.data?.length === 0 && <p className="muted">{term ? t("Nothing matches.") : t("Nothing is published on this hub yet.")}</p>}
       <div className="panel rows">
         {search.data?.map((p) => (
           <div key={p.name}>
@@ -86,11 +84,10 @@ export function RegistryPage() {
                 <strong className="data">{p.name}</strong>
                 <span className="small muted">{p.description}</span>
               </div>
-              <span className="xs muted">{p.latest ?? "pre-release"}, {p.downloads} installs</span>
+              <span className="xs muted">{p.latest ?? "pre-release"}, {p.downloads} {t("installs")}</span>
               <span />
               <button className="btn sm" onClick={() => setOpen(open === p.name ? null : p.name)} aria-expanded={open === p.name}>
-                Details
-              </button>
+                {t("Details")}</button>
             </div>
             {open === p.name && <Install name={p.name} />}
           </div>
@@ -109,33 +106,31 @@ function Install({ name }: { name: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["registry"] }),
   });
   if (info.error) return <div className="error">{(info.error as Error).message}</div>;
-  if (!info.data) return <p className="xs muted" style={{ padding: 12 }}>Checking the signature…</p>;
+  if (!info.data) return <p className="xs muted" style={{ padding: 12 }}>{t("Checking the signature…")}</p>;
   const d = info.data;
   return (
     <div className="stack" style={{ gap: 8, padding: "8px 12px 14px" }}>
       <p className="small">
-        Version <span className="data">{d.version}</span>, signed by the author's key <span className="data">{d.fingerprint}</span>.
+        {t("Version")}{" "}<span className="data">{d.version}</span>{t(", signed by the author's key")}{" "}<span className="data">{d.fingerprint}</span>.
         {d.homepage && (
           <>
             {" "}
             <a href={d.homepage} target="_blank" rel="noreferrer">
-              Homepage
-            </a>
+              {t("Homepage")}</a>
           </>
         )}
       </p>
-      <p className="small">{d.network.length ? <>It may reach: <span className="data">{d.network.join(", ")}</span>.</> : "It can't reach the network."}</p>
+      <p className="small">{d.network.length ? <>{t("It may reach:")}{" "}<span className="data">{d.network.join(", ")}</span>.</> : t("It can't reach the network.")}</p>
       {!d.installable ? (
-        <p className="small muted">This module has no sandboxed build, so it can't be installed from here.</p>
+        <p className="small muted">{t("This module has no sandboxed build, so it can't be installed from here.")}</p>
       ) : install.isSuccess ? (
         <p className="small">
-          Installed. Set it up from <Link href="/modules">Modules</Link>.
+          {t("Installed. Set it up from")}{" "}<Link href="/modules">{t("Modules")}</Link>.
         </p>
       ) : (
         <div>
           <button className="btn primary" onClick={() => install.mutate()} disabled={install.isPending}>
-            Install
-          </button>
+            {t("Install")}</button>
         </div>
       )}
       {install.error && <div className="error">{install.error.message}</div>}

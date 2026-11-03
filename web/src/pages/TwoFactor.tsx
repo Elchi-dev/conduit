@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { api, ok } from "../api/client";
+import { t, tn } from "../i18n";
 import "./pages.css";
 
 /** Settings section: two-factor sign-in with an authenticator app. */
@@ -68,18 +69,17 @@ export function TwoFactorSection() {
       }}
     >
       <label className="field">
-        <span>Password</span>
+        <span>{t("Password")}</span>
         <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required autoComplete="current-password" />
       </label>
       <label className="field">
-        <span>Code from your app, or a recovery code</span>
+        <span>{t("Code from your app, or a recovery code")}</span>
         <input className="data" value={code} onChange={(e) => setCode(e.target.value)} required autoComplete="one-time-code" />
       </label>
       {m.error && <div className="error">{m.error.message}</div>}
       <div className="inline">
         <button type="button" className="btn quiet" onClick={reset}>
-          Cancel
-        </button>
+          {t("Cancel")}</button>
         <button className={`btn ${danger ? "danger" : "primary"}`} disabled={m.isPending}>
           {label}
         </button>
@@ -89,27 +89,24 @@ export function TwoFactorSection() {
 
   return (
     <section className="stack" style={{ gap: 8, maxWidth: 560 }}>
-      <h2 className="section-title">Two-factor sign-in</h2>
+      <h2 className="section-title">{t("Two-factor sign-in")}</h2>
       <p className="small muted">
         {st.data.enabled
-          ? `On. Signing in asks for a code from your authenticator app after your password. ${st.data.recoveryCodesLeft} recovery ${st.data.recoveryCodesLeft === 1 ? "code" : "codes"} left.`
-          : "Ask for a code from an authenticator app (such as Aegis, 2FAS, Google Authenticator or your password manager) after your password, so a stolen password isn't enough."}
+          ? tn("On. Signing in asks for a code from your authenticator app after your password. {n} recovery code left.", "On. Signing in asks for a code from your authenticator app after your password. {n} recovery codes left.", st.data.recoveryCodesLeft)
+          : t("Ask for a code from an authenticator app (such as Aegis, 2FAS, Google Authenticator or your password manager) after your password, so a stolen password isn't enough.")}
       </p>
 
       {codes && (
         <div className="panel runner secret-once" role="status">
-          <h2>Save your recovery codes</h2>
+          <h2>{t("Save your recovery codes")}</h2>
           <p className="small">
-            Each works once, instead of a code from your app, if you lose your phone. This is the only time they're shown.
-          </p>
+            {t("Each works once, instead of a code from your app, if you lose your phone. This is the only time they're shown.")}</p>
           <pre className="data recovery-codes">{codes.join("\n")}</pre>
           <div className="inline">
             <button className="btn sm" onClick={() => navigator.clipboard?.writeText(codes.join("\n"))}>
-              Copy
-            </button>
+              {t("Copy")}</button>
             <button className="btn sm quiet" onClick={() => setCodes(null)}>
-              I've saved them
-            </button>
+              {t("I've saved them")}</button>
           </div>
         </div>
       )}
@@ -117,8 +114,7 @@ export function TwoFactorSection() {
       {!st.data.enabled && step === "idle" && (
         <div>
           <button className="btn" onClick={() => setStep("password")}>
-            Set up two-factor sign-in
-          </button>
+            {t("Set up two-factor sign-in")}</button>
         </div>
       )}
 
@@ -131,17 +127,15 @@ export function TwoFactorSection() {
           }}
         >
           <label className="field">
-            <span>Your password</span>
+            <span>{t("Your password")}</span>
             <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required autoFocus autoComplete="current-password" />
           </label>
           {begin.error && <div className="error">{begin.error.message}</div>}
           <div className="inline">
             <button type="button" className="btn quiet" onClick={reset}>
-              Cancel
-            </button>
+              {t("Cancel")}</button>
             <button className="btn primary" disabled={begin.isPending}>
-              Continue
-            </button>
+              {t("Continue")}</button>
           </div>
         </form>
       )}
@@ -155,15 +149,15 @@ export function TwoFactorSection() {
           }}
         >
           <div className="pairing">
-            <div className="pairing-qr" dangerouslySetInnerHTML={{ __html: svg }} aria-label="QR code for your authenticator app" role="img" />
+            <div className="pairing-qr" dangerouslySetInnerHTML={{ __html: svg }} aria-label={t("QR code for your authenticator app")} role="img" />
             <div className="stack" style={{ gap: 8 }}>
-              <strong className="small">Scan this with your authenticator app</strong>
-              <p className="xs muted">Or type this key into it:</p>
+              <strong className="small">{t("Scan this with your authenticator app")}</strong>
+              <p className="xs muted">{t("Or type this key into it:")}</p>
               <code className="secret-value">{setup.secret}</code>
             </div>
           </div>
           <label className="field">
-            <span>Code the app shows now</span>
+            <span>{t("Code the app shows now")}</span>
             <input className="data" value={code} onChange={(e) => setCode(e.target.value)} required inputMode="numeric" autoComplete="one-time-code" placeholder="123456" />
           </label>
           {enable.error && <div className="error">{enable.error.message}</div>}
@@ -176,11 +170,9 @@ export function TwoFactorSection() {
                 reset();
               }}
             >
-              Cancel
-            </button>
+              {t("Cancel")}</button>
             <button className="btn primary" disabled={enable.isPending}>
-              Turn on
-            </button>
+              {t("Turn on")}</button>
           </div>
         </form>
       )}
@@ -188,15 +180,13 @@ export function TwoFactorSection() {
       {st.data.enabled && step === "idle" && (
         <div className="inline">
           <button className="btn sm quiet" onClick={() => setStep("codes")}>
-            New recovery codes
-          </button>
+            {t("New recovery codes")}</button>
           <button className="btn sm danger" onClick={() => setStep("off")}>
-            Turn off
-          </button>
+            {t("Turn off")}</button>
         </div>
       )}
-      {step === "off" && confirmForm("Turn off", disable, true)}
-      {step === "codes" && confirmForm("Make new codes", regenerate, false)}
+      {step === "off" && confirmForm(t("Turn off"), disable, true)}
+      {step === "codes" && confirmForm(t("Make new codes"), regenerate, false)}
     </section>
   );
 }

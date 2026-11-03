@@ -3,13 +3,14 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { api, ok, type AuditEntry } from "../api/client";
 import { actorLabel, ago, json, stamp } from "../lib/format";
+import { locale, t, tn } from "../i18n";
 import "./pages.css";
 
 const statusText: Record<string, string> = {
-  ok: "Done",
-  error: "Failed",
-  denied: "Blocked",
-  planned: "Dry run",
+  ok: t("Done"),
+  error: t("Failed"),
+  denied: t("Blocked"),
+  planned: t("Dry run"),
 };
 
 export function Timeline() {
@@ -35,7 +36,7 @@ export function Timeline() {
         .filter((e) => picked.includes(e.seq))
         .sort((a, b) => a.seq - b.seq)
         .map((e) => ({ instance: e.instance, action: e.action, input: e.input ?? {} }));
-      return ok(api.POST("/automations", { body: { name: `Recorded ${new Date().toLocaleDateString()}`, enabled: false, trigger: { kind: "manual" }, steps } }));
+      return ok(api.POST("/automations", { body: { name: t("Recorded {date}", { date: new Date().toLocaleDateString(locale()) }), enabled: false, trigger: { kind: "manual" }, steps } }));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["automations"] });
@@ -46,8 +47,8 @@ export function Timeline() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Timeline</h1>
-        <p>Everything that happened, by anyone or anything, newest first. Reversible actions can be undone from here.</p>
+        <h1>{t("Timeline")}</h1>
+        <p>{t("Everything that happened, by anyone or anything, newest first. Reversible actions can be undone from here.")}</p>
       </div>
       <div className="spread">
         <form
@@ -57,15 +58,15 @@ export function Timeline() {
             setSearch(q);
           }}
         >
-          <input className="input" style={{ width: 280 }} placeholder="Search actions and data" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button className="btn">Search</button>
+          <input className="input" style={{ width: 280 }} placeholder={t("Search actions and data")} value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className="btn">{t("Search")}</button>
         </form>
         {verify.data &&
           (verify.data.ok ? (
-            <span className="xs muted">Log intact: all {verify.data.entries} entries verified</span>
+            <span className="xs muted">{t("Log intact: all")}{" "}{verify.data.entries} {t("entries verified")}</span>
           ) : (
             <span className="xs" style={{ color: "var(--fault)" }}>
-              Log tampered at entry {verify.data.brokenAt}: {verify.data.problem}
+              {t("Log tampered at entry")}{" "}{verify.data.brokenAt}: {verify.data.problem}
             </span>
           ))}
       </div>
@@ -73,23 +74,20 @@ export function Timeline() {
       {picked.length > 0 && (
         <div className="panel runner record-bar" role="status">
           <span className="small">
-            {picked.length} {picked.length === 1 ? "step" : "steps"} picked. Turn them into an automation you can run again or schedule.
-          </span>
+            {tn("{n} step picked. Turn them into an automation you can run again or schedule.", "{n} steps picked. Turn them into an automation you can run again or schedule.", picked.length)}</span>
           <div className="inline">
             <button className="btn sm quiet" onClick={() => setPicked([])}>
-              Clear
-            </button>
+              {t("Clear")}</button>
             <button className="btn sm primary" onClick={() => record.mutate()} disabled={record.isPending}>
-              Make an automation
-            </button>
+              {t("Make an automation")}</button>
           </div>
           {record.error && <div className="error">{record.error.message}</div>}
         </div>
       )}
       {entries.length === 0 && !list.isPending && (
         <div className="empty">
-          <h2>{search ? "No matches" : "Nothing has happened yet"}</h2>
-          <p className="muted">Every action, approval and change appears here as it happens.</p>
+          <h2>{search ? t("No matches") : t("Nothing has happened yet")}</h2>
+          <p className="muted">{t("Every action, approval and change appears here as it happens.")}</p>
         </div>
       )}
       <ol className="timeline">
@@ -99,8 +97,7 @@ export function Timeline() {
       </ol>
       {list.hasNextPage && (
         <button className="btn" onClick={() => list.fetchNextPage()} disabled={list.isFetchingNextPage}>
-          Load older
-        </button>
+          {t("Load older")}</button>
       )}
     </div>
   );
@@ -120,20 +117,19 @@ function TimelineRow({ e, picked, onPick }: { e: AuditEntry; picked: boolean; on
       <div className="tl-body">
         <div className="spread">
           <div className="inline" style={{ flexWrap: "nowrap" }}>
-            {onPick && <input type="checkbox" checked={picked} onChange={onPick} aria-label="Pick this step for a new automation" title="Pick for a new automation" />}
+            {onPick && <input type="checkbox" checked={picked} onChange={onPick} aria-label={t("Pick this step for a new automation")} title={t("Pick for a new automation")} />}
           <button className="tl-title" onClick={() => setOpen(!open)} aria-expanded={open}>
-            <strong>{actorLabel(e.actor)}</strong> <span className="muted">ran</span> <span className="data">{e.action}</span>{" "}
-            <span className="muted">on {e.module}</span>
+            <strong>{actorLabel(e.actor)}</strong> <span className="muted">{t("ran")}</span> <span className="data">{e.action}</span>{" "}
+            <span className="muted">{t("on")}{" "}{e.module}</span>
           </button>
           </div>
           <div className="inline">
-            {e.undoneBy && <span className="tag">Undone</span>}
-            {e.undoes && <span className="tag">Undo of #{e.undoes}</span>}
+            {e.undoneBy && <span className="tag">{t("Undone")}</span>}
+            {e.undoes && <span className="tag">{t("Undo of #")}{e.undoes}</span>}
             <span className={`tag st-${e.status}`}>{statusText[e.status] ?? e.status}</span>
             {canUndo && (
               <button className="btn sm" onClick={() => undo.mutate()} disabled={undo.isPending} title={e.undo?.description}>
-                Undo
-              </button>
+                {t("Undo")}</button>
             )}
             <time className="xs muted" dateTime={e.at} title={stamp(e.at)}>
               {ago(e.at)}
@@ -145,26 +141,26 @@ function TimelineRow({ e, picked, onPick }: { e: AuditEntry; picked: boolean; on
         {open && (
           <div className="tl-detail">
             <dl className="kv xs">
-              <dt>Entry</dt>
+              <dt>{t("Entry")}</dt>
               <dd className="data">#{e.seq}</dd>
-              <dt>Instance</dt>
+              <dt>{t("Instance")}</dt>
               <dd className="data">{e.instance}</dd>
-              <dt>Risk</dt>
+              <dt>{t("Risk")}</dt>
               <dd>{e.risk}</dd>
-              <dt>Policy</dt>
+              <dt>{t("Policy")}</dt>
               <dd>{e.decision}</dd>
-              <dt>Hash</dt>
+              <dt>{t("Hash")}</dt>
               <dd className="data">{e.hash.slice(0, 16)}…</dd>
             </dl>
             {e.input != null && (
               <>
-                <p className="xs muted">Input</p>
+                <p className="xs muted">{t("Input")}</p>
                 <pre className="json">{json(e.input)}</pre>
               </>
             )}
             {e.output != null && (
               <>
-                <p className="xs muted">Result</p>
+                <p className="xs muted">{t("Result")}</p>
                 <pre className="json">{json(e.output)}</pre>
               </>
             )}
@@ -188,8 +184,7 @@ function WhatChanged() {
     return (
       <div>
         <button className="btn" onClick={() => setOpen(true)}>
-          What changed?
-        </button>
+          {t("What changed?")}</button>
       </div>
     );
   }
@@ -218,35 +213,34 @@ function WhatChanged() {
   return (
     <section className="panel runner">
       <div className="spread">
-        <h2>What changed?</h2>
+        <h2>{t("What changed?")}</h2>
         <button className="btn sm quiet" onClick={() => setOpen(false)}>
-          Close
-        </button>
+          {t("Close")}</button>
       </div>
       <div className="rule-grid">
         <label className="field">
-          <span>Before</span>
+          <span>{t("Before")}</span>
           <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
-          <small>Leave empty for now.</small>
+          <small>{t("Leave empty for now.")}</small>
         </label>
         <label className="field">
-          <span>Looking back</span>
+          <span>{t("Looking back")}</span>
           <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-            <option value={15}>15 minutes</option>
-            <option value={60}>1 hour</option>
-            <option value={360}>6 hours</option>
-            <option value={1440}>1 day</option>
-            <option value={10080}>1 week</option>
+            <option value={15}>{t("15 minutes")}</option>
+            <option value={60}>{t("1 hour")}</option>
+            <option value={360}>{t("6 hours")}</option>
+            <option value={1440}>{t("1 day")}</option>
+            <option value={10080}>{t("1 week")}</option>
           </select>
         </label>
       </div>
       {d && d.changes.length + d.failures.length + d.blocked.length === 0 && (
-        <p className="small muted">Nothing changed in this window{d.readsOmitted ? `; there were ${d.readsOmitted} reads` : ""}.</p>
+        <p className="small muted">{t("Nothing changed in this window")}{d.readsOmitted ? tn("; there was {n} read", "; there were {n} reads", d.readsOmitted) : ""}.</p>
       )}
-      {d && section("Failed", d.failures, "var(--fault)")}
-      {d && section("Changed", d.changes)}
-      {d && section("Blocked by your rules", d.blocked)}
-      {d && d.readsOmitted > 0 && <p className="xs muted">{d.readsOmitted} reads in this window are left out because they change nothing.</p>}
+      {d && section(t("Failed"), d.failures, "var(--fault)")}
+      {d && section(t("Changed"), d.changes)}
+      {d && section(t("Blocked by your rules"), d.blocked)}
+      {d && d.readsOmitted > 0 && <p className="xs muted">{tn("{n} read in this window is left out because it changes nothing.", "{n} reads in this window are left out because they change nothing.", d.readsOmitted)}</p>}
     </section>
   );
 }

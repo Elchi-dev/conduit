@@ -3,17 +3,18 @@ import { Command } from "cmdk";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { api, ok, type Instance } from "../api/client";
+import { t } from "../i18n";
 
 const pages = [
-  ["Overview", "/"],
-  ["Approvals", "/approvals"],
-  ["Timeline", "/timeline"],
-  ["Automations", "/automations"],
-  ["Modules", "/modules"],
-  ["Agent rules", "/policy"],
-  ["Assistant and agents", "/assistant"],
-  ["API keys", "/keys"],
-  ["Settings", "/settings"],
+  [t("Overview"), "/"],
+  [t("Approvals"), "/approvals"],
+  [t("Timeline"), "/timeline"],
+  [t("Automations"), "/automations"],
+  [t("Modules"), "/modules"],
+  [t("Agent rules"), "/policy"],
+  [t("Assistant and agents"), "/assistant"],
+  [t("API keys"), "/keys"],
+  [t("Settings"), "/settings"],
 ] as const;
 
 /** Ctrl/⌘+K: jump anywhere, or open any action on any connected system. */
@@ -39,12 +40,12 @@ export function CommandBar({
   };
 
   return (
-    <Command.Dialog open={open} onOpenChange={onOpenChange} label="Search and run" className="cmdk">
-      <Command.Input placeholder="Go to a page, run an action, or ask the assistant…" value={search} onValueChange={setSearch} />
+    <Command.Dialog open={open} onOpenChange={onOpenChange} label={t("Search and run")} className="cmdk">
+      <Command.Input placeholder={t("Go to a page, run an action, or ask the assistant…")} value={search} onValueChange={setSearch} />
       <Command.List>
-        <Command.Empty>No match. Press Enter on "Ask the assistant" below, or try a module name.</Command.Empty>
+        <Command.Empty>{t("No match. Press Enter on \"Ask the assistant\" below, or try a module name.")}</Command.Empty>
         {search.trim().length > 3 && (
-          <Command.Group heading="Assistant">
+          <Command.Group heading={t("Assistant")}>
             <Command.Item
               value={`ask ${search}`}
               forceMount
@@ -54,11 +55,11 @@ export function CommandBar({
                 setSearch("");
               }}
             >
-              Ask the assistant: <span className="muted">{search.trim()}</span>
+              {t("Ask the assistant:")}{" "}<span className="muted">{search.trim()}</span>
             </Command.Item>
           </Command.Group>
         )}
-        <Command.Group heading="Go to">
+        <Command.Group heading={t("Go to")}>
           {pages.map(([name, href]) => (
             <Command.Item key={href} value={`go ${name}`} onSelect={() => run(href)}>
               {name}
@@ -66,7 +67,7 @@ export function CommandBar({
           ))}
         </Command.Group>
         {instances.length > 0 && (
-          <Command.Group heading="Actions">
+          <Command.Group heading={t("Actions")}>
             {instances.flatMap((i) =>
               (byId.get(i.module)?.actions ?? []).map((a) => (
                 <Command.Item
@@ -75,7 +76,7 @@ export function CommandBar({
                   onSelect={() => run(`/i/${i.id}?action=${encodeURIComponent(a.name)}`)}
                 >
                   <span>{a.title || a.name}</span>
-                  <span className="muted"> on {i.name}</span>
+                  <span className="muted"> {t("on")}{" "}{i.name}</span>
                   {a.risk !== "read" && <span className={`tag ${a.risk}`}>{a.risk}</span>}
                 </Command.Item>
               )),

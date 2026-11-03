@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { api, ok } from "../api/client";
 import { isMobileApp, openExternal } from "../lib/native";
+import { t } from "../i18n";
 
 /**
  * Notifications on the phone when Conduit isn't open, through the ntfy app
@@ -24,10 +25,9 @@ export function PhonePush() {
   if (!open) {
     return (
       <div className="spread">
-        <span className="xs muted">Get approvals and alerts on your phone even when Conduit is closed.</span>
+        <span className="xs muted">{t("Get approvals and alerts on your phone even when Conduit is closed.")}</span>
         <button className="btn sm" onClick={() => setOpen(true)}>
-          Phone notifications
-        </button>
+          {t("Phone notifications")}</button>
       </div>
     );
   }
@@ -35,26 +35,21 @@ export function PhonePush() {
     const d = setup.data;
     return (
       <div className="pairing">
-        <div className="pairing-qr" dangerouslySetInnerHTML={{ __html: svg }} aria-label="Subscription QR code" role="img" />
+        <div className="pairing-qr" dangerouslySetInnerHTML={{ __html: svg }} aria-label={t("Subscription QR code")} role="img" />
         <div className="stack" style={{ gap: 8 }}>
-          <strong className="small">Subscribe in the ntfy app</strong>
+          <strong className="small">{t("Subscribe in the ntfy app")}</strong>
           <p className="xs muted">
-            Install ntfy from F-Droid or Google Play, then scan this code or open the link on your phone. A test message is already
-            waiting there. The topic name is the only thing that protects it, so don't share it.
-          </p>
+            {t("Install ntfy from F-Droid or Google Play, then scan this code or open the link on your phone. A test message is already waiting there. The topic name is the only thing that protects it, so don't share it.")}</p>
           <div className="inline">
             {isMobileApp() ? (
               <button className="btn sm primary" onClick={() => openExternal(d.subscribe)}>
-                Open in ntfy
-              </button>
+                {t("Open in ntfy")}</button>
             ) : (
               <a className="btn sm" href={d.web} target="_blank" rel="noreferrer">
-                Open in a browser
-              </a>
+                {t("Open in a browser")}</a>
             )}
             <button className="btn sm quiet" onClick={() => setOpen(false)}>
-              Done
-            </button>
+              {t("Done")}</button>
           </div>
           <span className="xs muted data">{d.web}</span>
         </div>
@@ -70,22 +65,20 @@ export function PhonePush() {
       }}
     >
       <label className="field">
-        <span>ntfy server</span>
+        <span>{t("ntfy server")}</span>
         <input className="data" value={server} onChange={(e) => setServer(e.target.value)} required />
-        <small>The public ntfy.sh works; your own server keeps everything in your hands.</small>
+        <small>{t("The public ntfy.sh works; your own server keeps everything in your hands.")}</small>
       </label>
       <label className="check">
         <input type="checkbox" checked={details} onChange={(e) => setDetails(e.target.checked)} />
-        <span>Include what needs approval in the notification. Leave off for servers you don't run: they see every message.</span>
+        <span>{t("Include what needs approval in the notification. Leave off for servers you don't run: they see every message.")}</span>
       </label>
       {setup.error && <div className="error">{setup.error.message}</div>}
       <div className="inline">
         <button type="button" className="btn quiet" onClick={() => setOpen(false)}>
-          Cancel
-        </button>
+          {t("Cancel")}</button>
         <button className="btn primary" disabled={setup.isPending}>
-          Set up
-        </button>
+          {t("Set up")}</button>
       </div>
     </form>
   );

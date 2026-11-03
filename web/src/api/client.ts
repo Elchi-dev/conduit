@@ -1,4 +1,5 @@
 import createClient from "openapi-fetch";
+import { t } from "../i18n";
 import { apiFetch } from "../lib/connection";
 import type { components, paths } from "./schema";
 
@@ -34,7 +35,7 @@ export async function ok<T>(p: Promise<{ data?: T; error?: unknown; response: Re
   if (!response.ok && response.status !== 202) {
     const msg =
       error && typeof error === "object" && "error" in error ? String((error as { error: string }).error) : response.statusText;
-    throw new ApiError(msg || `Request failed (${response.status})`, response.status);
+    throw new ApiError(msg || t("Request failed ({status})", { status: response.status }), response.status);
   }
   return data as T;
 }

@@ -4,6 +4,7 @@ import { confirmWithDevice } from "../lib/native";
 import { api, ok, type Approval } from "../api/client";
 import { PlanView } from "../components/PlanView";
 import { actorLabel, ago, json } from "../lib/format";
+import { t } from "../i18n";
 import "./pages.css";
 
 export function Approvals() {
@@ -15,22 +16,20 @@ export function Approvals() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Approvals</h1>
-        <p>Agents and keys ask here before doing anything your rules don't allow outright. You see exactly what will change.</p>
+        <h1>{t("Approvals")}</h1>
+        <p>{t("Agents and keys ask here before doing anything your rules don't allow outright. You see exactly what will change.")}</p>
       </div>
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === "pending"} onClick={() => setTab("pending")}>
-          Waiting
-        </button>
+          {t("Waiting")}</button>
         <button role="tab" aria-selected={tab === ""} onClick={() => setTab("")}>
-          All
-        </button>
+          {t("All")}</button>
       </div>
       {q.error && <div className="error">{q.error.message}</div>}
       {q.data?.length === 0 && (
         <div className="empty">
-          <h2>{tab === "pending" ? "Nothing is waiting for you" : "No approvals yet"}</h2>
-          <p className="muted">When an agent wants to change something, the request appears here and on your other devices.</p>
+          <h2>{tab === "pending" ? t("Nothing is waiting for you") : t("No approvals yet")}</h2>
+          <p className="muted">{t("When an agent wants to change something, the request appears here and on your other devices.")}</p>
         </div>
       )}
       <div className="stack">
@@ -47,7 +46,7 @@ export function ApprovalCard({ a, onDecided }: { a: Approval; onDecided?: (appro
       // On the phone app, approving is confirmed with a fingerprint, face or
       // PIN: the phone acts as a hardware key for risky actions.
       if (approve && !(await confirmWithDevice(`Approve ${a.action} on ${a.instance}`))) {
-        throw new Error("Not approved: the confirmation on this device was cancelled.");
+        throw new Error(t("Not approved: the confirmation on this device was cancelled."));
       }
       return ok(
         approve
@@ -69,10 +68,10 @@ export function ApprovalCard({ a, onDecided }: { a: Approval; onDecided?: (appro
       <header className="spread">
         <div className="stack" style={{ gap: 2 }}>
           <h2>
-            {actorLabel(a.actor)} wants to run <span className="data">{a.action}</span>
+            {actorLabel(a.actor)} {t("wants to run")}{" "}<span className="data">{a.action}</span>
           </h2>
           <p className="xs muted">
-            on {a.module} (<span className="data">{a.instance}</span>), {ago(a.createdAt)}
+            {t("on")}{" "}{a.module} (<span className="data">{a.instance}</span>), {ago(a.createdAt)}
           </p>
         </div>
         <span className={`tag ${a.risk}`}>{a.risk}</span>
@@ -85,21 +84,19 @@ export function ApprovalCard({ a, onDecided }: { a: Approval; onDecided?: (appro
       <footer className="spread">
         {pending ? (
           <>
-            <span className="xs muted">Expires {ago(a.expiresAt)}</span>
+            <span className="xs muted">{t("Expires")}{" "}{ago(a.expiresAt)}</span>
             <div className="inline">
               <button className="btn" onClick={() => decide.mutate(false)} disabled={decide.isPending}>
-                Deny
-              </button>
+                {t("Deny")}</button>
               <button className="btn signal" onClick={() => decide.mutate(true)} disabled={decide.isPending}>
-                Approve
-              </button>
+                {t("Approve")}</button>
             </div>
           </>
         ) : (
           <span className="xs muted">
-            {status === "approved" ? "Approved" : status === "denied" ? "Denied" : "Expired"}
+            {status === "approved" ? t("Approved") : status === "denied" ? t("Denied") : t("Expired")}
             {a.decidedAt ? ` ${ago(a.decidedAt)}` : ""}
-            {a.resultSeq != null && <>, ran as timeline entry {a.resultSeq}</>}
+            {a.resultSeq != null && <>{t(", ran as timeline entry")}{" "}{a.resultSeq}</>}
           </span>
         )}
       </footer>

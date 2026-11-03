@@ -1,5 +1,6 @@
 import { json } from "../lib/format";
 import { isSeriesOutput, LineChart } from "./LineChart";
+import { t } from "../i18n";
 
 type Row = Record<string, unknown>;
 
@@ -14,7 +15,7 @@ function isScalarList(v: unknown): v is (string | number | boolean)[] {
 function cell(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (isScalarList(v)) return v.join(", ");
-  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (typeof v === "boolean") return v ? t("Yes") : t("No");
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
 }
@@ -102,8 +103,7 @@ export function ResultView({ value, depth = 0 }: { value: unknown; depth?: numbe
                       <Meter value={r[c] as number} name={label(c)} />
                     ) : typeof r[c] === "string" && /^https?:\/\//.test(r[c] as string) ? (
                       <a href={r[c] as string} target="_blank" rel="noreferrer noopener">
-                        Open
-                      </a>
+                        {t("Open")}</a>
                     ) : (
                       cell(r[c])
                     )}
@@ -113,14 +113,14 @@ export function ResultView({ value, depth = 0 }: { value: unknown; depth?: numbe
             ))}
           </tbody>
         </table>
-        {value.length > 500 && <p className="xs muted">Showing 500 of {value.length}.</p>}
+        {value.length > 500 && <p className="xs muted">{t("Showing 500 of {n}.", { n: value.length })}</p>}
       </div>
     );
   }
   if (typeof value === "string" && value.includes("\n")) {
     return <pre className="json log">{value}</pre>;
   }
-  if (Array.isArray(value) && value.length === 0) return <p className="small muted">Nothing to show.</p>;
+  if (Array.isArray(value) && value.length === 0) return <p className="small muted">{t("Nothing to show.")}</p>;
   if (isPlainObject(value) && Object.keys(value).length > 0) return <ObjectView value={value} depth={depth} />;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return <p className="small">{String(value)}</p>;

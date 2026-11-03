@@ -19,6 +19,7 @@ import { Modules } from "./pages/Modules";
 import { PolicyPage } from "./pages/Policy";
 import { Settings } from "./pages/Settings";
 import { Timeline } from "./pages/Timeline";
+import { t } from "./i18n";
 
 export default function App() {
   const qc = useQueryClient();
@@ -48,15 +49,12 @@ export default function App() {
       return (
         <div className="gate">
           <div className="gate-box stack">
-            <h1>{relay.name} isn't reachable</h1>
+            <h1>{t("{name} isn't reachable", { name: relay.name })}</h1>
             <p className="muted">
-              {setup.error.message} Check that the computer is on and reachable {routeLabel(relay)}, then
-              try again.
-            </p>
+              {setup.error.message} {t("Check that the computer is on and reachable {route}, then try again.", { route: routeLabel(relay) })}</p>
             <div className="inline">
               <button className="btn primary" onClick={() => setup.refetch()}>
-                Try again
-              </button>
+                {t("Try again")}</button>
               <button
                 className="btn"
                 onClick={() => {
@@ -64,14 +62,13 @@ export default function App() {
                   setup.refetch();
                 }}
               >
-                Forget this pairing
-              </button>
+                {t("Forget this pairing")}</button>
             </div>
           </div>
         </div>
       );
     }
-    return <Connect reason="No Conduit daemon answered here. If it runs on another computer, pair with it." />;
+    return <Connect reason={t("No Conduit daemon answered here. If it runs on another computer, pair with it.")} />;
   }
   if (setup.data.needsSetup) return <Setup />;
   if (me.isPending) return null;
@@ -95,8 +92,8 @@ export default function App() {
         <Route path="/settings" component={Settings} />
         <Route>
           <div className="page">
-            <h1>Not found</h1>
-            <p className="muted">There's nothing at this address.</p>
+            <h1>{t("Not found")}</h1>
+            <p className="muted">{t("There's nothing at this address.")}</p>
           </div>
         </Route>
       </Switch>

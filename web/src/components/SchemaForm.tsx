@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { t } from "../i18n";
 
 /** The subset of JSON Schema modules use to describe inputs and settings. */
 export type JSONSchema = {
@@ -57,12 +58,12 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
     <div className="stack">
       {props.map(([key, s]) => {
         const id = `${idPrefix}-${key}`;
-        const t = Array.isArray(s.type) ? s.type[0] : s.type;
+        const ty = Array.isArray(s.type) ? s.type[0] : s.type;
         const v = value[key];
         const head = (
           <span>
             {label(key, s)}
-            {required.has(key) ? "" : <span className="muted"> (optional)</span>}
+            {required.has(key) ? "" : <span className="muted"> {t("(optional)")}</span>}
           </span>
         );
         const help = s.description ? <small>{s.description}</small> : null;
@@ -83,7 +84,7 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
             </label>
           );
         }
-        if (t === "boolean") {
+        if (ty === "boolean") {
           return (
             <div key={key} className="stack" style={{ gap: 4 }}>
               <label className="check" htmlFor={id}>
@@ -94,7 +95,7 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
             </div>
           );
         }
-        if (t === "integer" || t === "number") {
+        if (ty === "integer" || ty === "number") {
           return (
             <label className="field" key={key} htmlFor={id}>
               {head}
@@ -103,7 +104,7 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
                 type="number"
                 min={s.minimum}
                 max={s.maximum}
-                step={t === "integer" ? 1 : "any"}
+                step={ty === "integer" ? 1 : "any"}
                 value={v === undefined ? "" : String(v)}
                 onChange={(e) => set(key, e.target.value === "" ? undefined : Number(e.target.value))}
               />
@@ -111,7 +112,7 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
             </label>
           );
         }
-        if (t === "array" && (s.items?.type === "string" || !s.items)) {
+        if (ty === "array" && (s.items?.type === "string" || !s.items)) {
           const text = Array.isArray(v) ? (v as string[]).join("\n") : "";
           return (
             <label className="field" key={key} htmlFor={id}>
@@ -119,7 +120,7 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
               <textarea
                 id={id}
                 value={text}
-                placeholder="One per line"
+                placeholder={t("One per line")}
                 onChange={(e) =>
                   set(
                     key,
@@ -134,14 +135,14 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
             </label>
           );
         }
-        if (t === "object" || t === "array") {
+        if (ty === "object" || ty === "array") {
           return (
             <label className="field" key={key} htmlFor={id}>
               {head}
               <textarea
                 id={id}
                 defaultValue={v === undefined ? "" : JSON.stringify(v, null, 2)}
-                placeholder="JSON"
+                placeholder={"JSON"}
                 onBlur={(e) => {
                   try {
                     set(key, e.target.value.trim() ? JSON.parse(e.target.value) : undefined);
@@ -172,7 +173,7 @@ export function SchemaForm({ schema, value, onChange, idPrefix }: Props) {
                 spellCheck={false}
               />
             )}
-            {s["x-secret"] ? <small>Stored in the vault. Enter a reference like secret://mail-password.</small> : help}
+            {s["x-secret"] ? <small>{t("Stored in the vault. Enter a reference like secret://mail-password.")}</small> : help}
           </label>
         );
       })}

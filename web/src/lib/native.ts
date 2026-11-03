@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 // Bridge to the native shell (apps/desktop) when the web app runs inside it.
 // In a plain browser every function here is a harmless no-op, so the app
 // never depends on the shell.
@@ -28,36 +29,36 @@ export type ShellInfo = { version: string; platform: string; managedDaemon: bool
 export type UpdateInfo = { version: string; current: string; notes?: string; date?: string };
 
 export async function shellInfo(): Promise<ShellInfo | null> {
-  const t = tauri();
-  return t ? t.core.invoke<ShellInfo>("shell_info") : null;
+  const tw = tauri();
+  return tw ? tw.core.invoke<ShellInfo>("shell_info") : null;
 }
 
 let lastAttention = "";
 /** Light the tray icon when approvals wait or the emergency stop is on. */
 export function setAttention(waiting: number, frozen: boolean) {
-  const t = tauri();
+  const tw = tauri();
   const key = `${waiting}/${frozen}`;
-  if (!t || key === lastAttention) return;
+  if (!tw || key === lastAttention) return;
   lastAttention = key;
-  t.core.invoke("set_attention", { waiting, frozen }).catch(() => {});
+  tw.core.invoke("set_attention", { waiting, frozen }).catch(() => {});
 }
 
 export async function checkUpdate(): Promise<UpdateInfo | null> {
-  const t = tauri();
-  if (!t) return null;
-  return t.core.invoke<UpdateInfo | null>("check_update");
+  const tw = tauri();
+  if (!tw) return null;
+  return tw.core.invoke<UpdateInfo | null>("check_update");
 }
 
 export async function installUpdate(): Promise<void> {
-  const t = tauri();
-  if (!t) return;
-  await t.core.invoke("install_update");
+  const tw = tauri();
+  if (!tw) return;
+  await tw.core.invoke("install_update");
 }
 
 export async function setAutostart(enabled: boolean): Promise<boolean> {
-  const t = tauri();
-  if (!t) return false;
-  return t.core.invoke<boolean>("set_autostart", { enabled });
+  const tw = tauri();
+  if (!tw) return false;
+  return tw.core.invoke<boolean>("set_autostart", { enabled });
 }
 
 let permission: Promise<boolean> | null = null;
@@ -84,11 +85,11 @@ export async function notify(title: string, body?: string) {
 
 /** Listen to a shell event (tray menu actions). Returns an unsubscribe. */
 export function onShell<T>(event: "conduit://navigate" | "conduit://panic", cb: (payload: T) => void): () => void {
-  const t = tauri();
-  if (!t) return () => {};
+  const tw = tauri();
+  if (!tw) return () => {};
   let off: (() => void) | null = null;
   let cancelled = false;
-  t.event
+  tw.event
     .listen<T>(event, (e) => cb(e.payload))
     .then((u) => {
       if (cancelled) u();
@@ -104,9 +105,9 @@ export function onShell<T>(event: "conduit://navigate" | "conduit://panic", cb: 
 // --- phone ---------------------------------------------------------------------
 
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const t = tauri();
-  if (!t) return Promise.reject(new Error("not in the Conduit app"));
-  return t.core.invoke<T>(cmd, args);
+  const tw = tauri();
+  if (!tw) return Promise.reject(new Error(t("not in the Conduit app")));
+  return tw.core.invoke<T>(cmd, args);
 }
 
 /** The Conduit app on a phone (not the desktop shell, not a browser). */
@@ -139,7 +140,7 @@ export async function confirmWithDevice(reason: string): Promise<boolean> {
     return true;
   }
   try {
-    await invoke("plugin:biometric|authenticate", { reason, allowDeviceCredential: true, title: "Confirm in Conduit" });
+    await invoke("plugin:biometric|authenticate", { reason, allowDeviceCredential: true, title: t("Confirm in Conduit") });
     return true;
   } catch {
     return false;
@@ -165,11 +166,11 @@ export function onDeepLink(cb: (url: string) => void): () => void {
 }
 
 function onShellRaw<T>(event: string, cb: (payload: T) => void): () => void {
-  const t = tauri();
-  if (!t) return () => {};
+  const tw = tauri();
+  if (!tw) return () => {};
   let off: (() => void) | null = null;
   let cancelled = false;
-  t.event
+  tw.event
     .listen<T>(event, (e) => cb(e.payload))
     .then((u) => (cancelled ? u() : (off = u)))
     .catch(() => {});

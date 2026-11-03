@@ -2,16 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ok, type S } from "../api/client";
 import { ago } from "../lib/format";
+import { t } from "../i18n";
 import "./pages.css";
 
 type User = S["User"];
 type Role = "admin" | "member" | "viewer";
 
 const roleHelp: Record<string, string> = {
-  owner: "Everything, and the only one who manages admins.",
-  admin: "Everything except managing other admins.",
-  member: "Runs actions, decides approvals, undoes changes.",
-  viewer: "Sees everything, changes nothing.",
+  owner: t("Everything, and the only one who manages admins."),
+  admin: t("Everything except managing other admins."),
+  member: t("Runs actions, decides approvals, undoes changes."),
+  viewer: t("Sees everything, changes nothing."),
 };
 
 /** Accounts on this daemon: add people, change roles, switch accounts off. */
@@ -34,13 +35,12 @@ export function People() {
     <div className="page">
       <div className="page-head spread">
         <div>
-          <h1>People</h1>
-          <p>Everyone who can sign in to this Conduit. Agents and programs use API keys instead.</p>
+          <h1>{t("People")}</h1>
+          <p>{t("Everyone who can sign in to this Conduit. Agents and programs use API keys instead.")}</p>
         </div>
         {!adding && (
           <button className="btn primary" onClick={() => setAdding(true)}>
-            Add a person
-          </button>
+            {t("Add a person")}</button>
         )}
       </div>
 
@@ -54,24 +54,24 @@ export function People() {
             <div className="stack" style={{ gap: 2 }}>
               <strong className={u.disabled ? "muted" : ""}>
                 {u.name}
-                {u.id === me.data?.user.id && <span className="muted"> (you)</span>}
+                {u.id === me.data?.user.id && <span className="muted"> {t("(you)")}</span>}
               </strong>
               <span className="xs muted">
-                {u.email}, added {ago(u.createdAt)}
-                {u.disabled && ", switched off"}
+                {u.email}{t(", added")}{" "}{ago(u.createdAt)}
+                {u.disabled && t(", switched off")}
               </span>
             </div>
             {canManage(u) ? (
               <select
                 className="input role-select"
-                aria-label={`Role for ${u.name}`}
+                aria-label={t("Role for {name}", { name: u.name })}
                 value={u.role}
                 onChange={(e) => update.mutate({ id: u.id, role: e.target.value as Role })}
                 title={roleHelp[u.role]}
               >
-                {myRole === "owner" && <option value="admin">Admin</option>}
-                <option value="member">Member</option>
-                <option value="viewer">Viewer</option>
+                {myRole === "owner" && <option value="admin">{t("Admin")}</option>}
+                <option value="member">{t("Member")}</option>
+                <option value="viewer">{t("Viewer")}</option>
               </select>
             ) : (
               <span className="tag" title={roleHelp[u.role]}>
@@ -82,10 +82,9 @@ export function People() {
               {canManage(u) && (
                 <>
                   <button className="btn sm quiet" onClick={() => setResetFor(u)}>
-                    Set password
-                  </button>
+                    {t("Set password")}</button>
                   <button className={`btn sm ${u.disabled ? "" : "danger"}`} onClick={() => update.mutate({ id: u.id, disabled: !u.disabled })}>
-                    {u.disabled ? "Switch on" : "Switch off"}
+                    {u.disabled ? t("Switch on") : t("Switch off")}
                   </button>
                 </>
               )}
@@ -97,16 +96,14 @@ export function People() {
       {myRole === "owner" && <VaultFolders people={list.data ?? []} />}
 
       <section className="stack" style={{ gap: 6 }}>
-        <h2 className="section-title">Roles</h2>
+        <h2 className="section-title">{t("Roles")}</h2>
         {Object.entries(roleHelp).map(([r, d]) => (
           <p className="small" key={r}>
             <strong>{r[0].toUpperCase() + r.slice(1)}</strong> <span className="muted">{d}</span>
           </p>
         ))}
         <p className="small muted">
-          A person's API keys can never do more than their role allows. Teams can also sign in with their company account: see
-          Settings, Single sign-on.
-        </p>
+          {t("A person's API keys can never do more than their role allows. Teams can also sign in with their company account: see Settings, Single sign-on.")}</p>
       </section>
     </div>
   );
@@ -128,24 +125,24 @@ function AddPerson({ owner, onDone }: { owner: boolean; onDone: () => void }) {
     >
       <div className="grid-2">
         <label className="field">
-          <span>Name</span>
+          <span>{t("Name")}</span>
           <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoComplete="off" />
         </label>
         <label className="field">
-          <span>Email</span>
+          <span>{t("Email")}</span>
           <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required autoComplete="off" />
         </label>
         <label className="field">
-          <span>First password</span>
+          <span>{t("First password")}</span>
           <input type="password" minLength={10} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required autoComplete="new-password" />
-          <small>Give it to them in person; they can change it in Settings.</small>
+          <small>{t("Give it to them in person; they can change it in Settings.")}</small>
         </label>
         <label className="field">
-          <span>Role</span>
+          <span>{t("Role")}</span>
           <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Role })}>
-            {owner && <option value="admin">Admin</option>}
-            <option value="member">Member</option>
-            <option value="viewer">Viewer</option>
+            {owner && <option value="admin">{t("Admin")}</option>}
+            <option value="member">{t("Member")}</option>
+            <option value="viewer">{t("Viewer")}</option>
           </select>
           <small>{roleHelp[f.role]}</small>
         </label>
@@ -153,11 +150,9 @@ function AddPerson({ owner, onDone }: { owner: boolean; onDone: () => void }) {
       {create.error && <div className="error">{create.error.message}</div>}
       <div className="inline">
         <button type="button" className="btn quiet" onClick={onDone}>
-          Cancel
-        </button>
+          {t("Cancel")}</button>
         <button className="btn primary" disabled={create.isPending}>
-          Add person
-        </button>
+          {t("Add person")}</button>
       </div>
     </form>
   );
@@ -178,18 +173,16 @@ function ResetPassword({ user, onDone }: { user: User; onDone: () => void }) {
       }}
     >
       <label className="field">
-        <span>New password for {user.name}</span>
+        <span>{t("New password for")}{" "}{user.name}</span>
         <input type="password" minLength={10} value={pw} onChange={(e) => setPw(e.target.value)} required autoComplete="new-password" />
-        <small>This signs them out everywhere.</small>
+        <small>{t("This signs them out everywhere.")}</small>
       </label>
       {reset.error && <div className="error">{reset.error.message}</div>}
       <div className="inline">
         <button type="button" className="btn quiet" onClick={onDone}>
-          Cancel
-        </button>
+          {t("Cancel")}</button>
         <button className="btn primary" disabled={reset.isPending}>
-          Set password
-        </button>
+          {t("Set password")}</button>
       </div>
     </form>
   );
@@ -215,28 +208,24 @@ function VaultFolders({ people }: { people: User[] }) {
   return (
     <section className="stack" style={{ gap: 8 }}>
       <div className="spread">
-        <h2 className="section-title">Restricted vault folders</h2>
+        <h2 className="section-title">{t("Restricted vault folders")}</h2>
         <button className="btn sm" onClick={() => setDraft([...folders, { prefix: "", roles: ["owner"], users: [], automations: false }])}>
-          Restrict a folder
-        </button>
+          {t("Restrict a folder")}</button>
       </div>
       <p className="small muted">
-        Secrets in a restricted folder, such as <span className="data">finance/</span>, can only be revealed, changed or used in
-        settings by the roles and people you pick, and by agents and keys acting for them. Everyone still sees that they exist.
-      </p>
+        {t("Secrets in a restricted folder, such as")}{" "}<span className="data">finance/</span>{t(", can only be revealed, changed or used in settings by the roles and people you pick, and by agents and keys acting for them. Everyone still sees that they exist.")}</p>
       {folders.map((f, i) => (
         <div className="panel stack remote-panel" key={i}>
           <div className="spread">
             <label className="field" style={{ maxWidth: 260 }}>
-              <span>Folder</span>
-              <input className="data" value={f.prefix} onChange={(e) => edit(i, { prefix: e.target.value })} placeholder="finance/" />
+              <span>{t("Folder")}</span>
+              <input className="data" value={f.prefix} onChange={(e) => edit(i, { prefix: e.target.value })} placeholder={"finance/"} />
             </label>
             <button className="btn sm quiet" onClick={() => setDraft(folders.filter((_, j) => j !== i))}>
-              Remove restriction
-            </button>
+              {t("Remove restriction")}</button>
           </div>
           <fieldset className="inline" style={{ border: 0, padding: 0, flexWrap: "wrap" }}>
-            <legend className="small">Roles</legend>
+            <legend className="small">{t("Roles")}</legend>
             {["owner", "admin", "member", "viewer"].map((r) => (
               <label className="check" key={r}>
                 <input type="checkbox" checked={f.roles.includes(r as Folder["roles"][number]) || r === "owner"} disabled={r === "owner"}
@@ -246,7 +235,7 @@ function VaultFolders({ people }: { people: User[] }) {
             ))}
           </fieldset>
           <fieldset className="inline" style={{ border: 0, padding: 0, flexWrap: "wrap" }}>
-            <legend className="small">And these people</legend>
+            <legend className="small">{t("And these people")}</legend>
             {people.filter((u) => u.role !== "owner").map((u) => (
               <label className="check" key={u.id}>
                 <input type="checkbox" checked={f.users.includes(u.id)} onChange={() => edit(i, { users: toggle(f.users, u.id) })} />
@@ -256,7 +245,7 @@ function VaultFolders({ people }: { people: User[] }) {
           </fieldset>
           <label className="check">
             <input type="checkbox" checked={f.automations} onChange={(e) => edit(i, { automations: e.target.checked })} />
-            <span>Automations may use these secrets</span>
+            <span>{t("Automations may use these secrets")}</span>
           </label>
         </div>
       ))}
@@ -264,11 +253,9 @@ function VaultFolders({ people }: { people: User[] }) {
       {draft && (
         <div className="inline">
           <button className="btn quiet" onClick={() => setDraft(null)}>
-            Cancel
-          </button>
+            {t("Cancel")}</button>
           <button className="btn primary" onClick={() => save.mutate(draft)} disabled={save.isPending}>
-            Save restrictions
-          </button>
+            {t("Save restrictions")}</button>
         </div>
       )}
     </section>

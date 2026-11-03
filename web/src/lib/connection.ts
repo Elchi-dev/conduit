@@ -6,6 +6,7 @@
 // paired with a daemon by its QR code; calls go through the hub relay,
 // end-to-end encrypted, with a bearer session token.
 import { keyPairFrom, newKeyPair, parsePairing, RelayClient, type KeyPair } from "./relay";
+import { t } from "../i18n";
 
 export type RelayProfile = {
   mode: "relay";
@@ -61,7 +62,7 @@ function connect(secret?: string): Promise<RelayClient> {
   if (client?.open) return Promise.resolve(client);
   if (connecting) return connecting;
   const p = profile;
-  if (!p) return Promise.reject(new Error("Not paired with a daemon."));
+  if (!p) return Promise.reject(new Error(t("Not paired with a daemon.")));
   const name = deviceName();
   connecting = dialBest(p, { name, pairingSecret: secret })
     .then((c) => {
@@ -96,7 +97,7 @@ function deviceName(): string {
   const ua = navigator.userAgent;
   if (/Android/i.test(ua)) return "Android";
   if (/iPhone|iPad/i.test(ua)) return "iPhone";
-  return "Browser";
+  return t("Browser");
 }
 
 /** Pair with a daemon from the text of its QR code (conduit://pair?d=…). */
@@ -169,11 +170,12 @@ export function apiFetchUrl(url: string, init?: RequestInit): Promise<Response> 
 
 /** "through hub.example.com" or "on your network", for messages. */
 export function routeLabel(p: RelayProfile): string {
-  if (!p.hub) return "on your network";
+  if (!p.hub) return t("on your network");
   try {
-    return `through ${new URL(p.hub).host}${p.lan ? " (or directly on your network)" : ""}`;
+    const host = new URL(p.hub).host;
+    return p.lan ? t("through {host} (or directly on your network)", { host }) : t("through {host}", { host });
   } catch {
-    return "through the hub";
+    return t("through the hub");
   }
 }
 

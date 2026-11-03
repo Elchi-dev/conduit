@@ -3,6 +3,7 @@
 // recognised text lands in the input for the person to check and send;
 // nothing is sent by voice alone.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "../i18n";
 
 type Recognition = {
   lang: string;
@@ -47,7 +48,7 @@ export function useDictation(onText: (text: string) => void) {
       for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
       cb.current(text);
     };
-    r.onerror = (e) => setError(e.error === "not-allowed" ? "Microphone access was blocked." : `Voice input stopped (${e.error}).`);
+    r.onerror = (e) => setError(e.error === "not-allowed" ? t("Microphone access was blocked.") : t("Voice input stopped ({error}).", { error: e.error }));
     r.onend = () => setListening(false);
     rec.current = r;
     setError(null);

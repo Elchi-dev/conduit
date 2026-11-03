@@ -77,6 +77,9 @@ jobs:
       - name: relay wire format matches Go
         run: pnpm test:relay
         working-directory: web
+      - name: every UI string has a German translation
+        run: pnpm test:i18n
+        working-directory: web
 
   site:
     runs-on: ubuntu-latest

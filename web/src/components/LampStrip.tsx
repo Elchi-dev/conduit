@@ -1,6 +1,7 @@
 import { useQueries } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { api, ok, type Instance } from "../api/client";
+import { t } from "../i18n";
 
 /**
  * One indicator lamp per connected instance, lit by its live health. This is
@@ -20,14 +21,13 @@ export function LampStrip({ instances }: { instances: Instance[] }) {
     return (
       <div className="lamps lamps-empty">
         <Link href="/modules" className="xs muted">
-          Nothing connected yet. Add a module to light the panel.
-        </Link>
+          {t("Nothing connected yet. Add a module to light the panel.")}</Link>
       </div>
     );
   }
 
   return (
-    <ul className="lamps" aria-label="Connected systems">
+    <ul className="lamps" aria-label={t("Connected systems")}>
       {instances.map((i, n) => {
         const h = health[n]?.data;
         const state = !i.enabled ? "off" : (h?.status ?? "pending");

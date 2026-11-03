@@ -2,39 +2,40 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ok, type ApiKey } from "../api/client";
 import { ago, stamp } from "../lib/format";
+import { t } from "../i18n";
 import "./pages.css";
 
 const scopeGroups: { label: string; scopes: { id: string; text: string }[] }[] = [
   {
-    label: "Act",
+    label: t("Act"),
     scopes: [
-      { id: "actions:*:invoke", text: "Run actions on any module (rules still apply)" },
-      { id: "audit:*:undo", text: "Undo actions" },
+      { id: "actions:*:invoke", text: t("Run actions on any module (rules still apply)") },
+      { id: "audit:*:undo", text: t("Undo actions") },
     ],
   },
   {
-    label: "Read",
+    label: t("Read"),
     scopes: [
-      { id: "modules:*:read", text: "See modules, connections and health" },
-      { id: "audit:*:read", text: "Read the timeline" },
-      { id: "approvals:*:read", text: "See approvals and their status" },
-      { id: "events:*:read", text: "Receive live events" },
-      { id: "policy:*:read", text: "Read agent rules" },
+      { id: "modules:*:read", text: t("See modules, connections and health") },
+      { id: "audit:*:read", text: t("Read the timeline") },
+      { id: "approvals:*:read", text: t("See approvals and their status") },
+      { id: "events:*:read", text: t("Receive live events") },
+      { id: "policy:*:read", text: t("Read agent rules") },
     ],
   },
   {
-    label: "Manage",
+    label: t("Manage"),
     scopes: [
-      { id: "instances:*:manage", text: "Connect, change and disconnect systems" },
-      { id: "keys:*:manage", text: "List and revoke keys" },
+      { id: "instances:*:manage", text: t("Connect, change and disconnect systems") },
+      { id: "keys:*:manage", text: t("List and revoke keys") },
     ],
   },
 ];
 
 const kindText = {
-  agent: "For an AI agent. Its calls follow the agent rules, and emergency stop revokes it.",
-  live: "For a script or integration you run for real.",
-  test: "For development. Same powers, easy to spot and clean up.",
+  agent: t("For an AI agent. Its calls follow the agent rules, and emergency stop revokes it."),
+  live: t("For a script or integration you run for real."),
+  test: t("For development. Same powers, easy to spot and clean up."),
 };
 
 export function Keys() {
@@ -48,30 +49,27 @@ export function Keys() {
     <div className="page">
       <div className="spread">
         <div className="page-head">
-          <h1>API keys</h1>
-          <p>Keys let programs and AI agents use Conduit without you signed in. Each key only gets the access you tick.</p>
+          <h1>{t("API keys")}</h1>
+          <p>{t("Keys let programs and AI agents use Conduit without you signed in. Each key only gets the access you tick.")}</p>
         </div>
         {!creating && (
           <button className="btn primary" onClick={() => setCreating(true)}>
-            Create key
-          </button>
+            {t("Create key")}</button>
         )}
       </div>
 
       {secret && (
         <div className="panel runner secret-once" role="status">
-          <h2>Copy your new key now</h2>
-          <p className="small">This is the only time the full key for "{secret.name}" is shown. Store it somewhere safe.</p>
+          <h2>{t("Copy your new key now")}</h2>
+          <p className="small">{t("This is the only time the full key for \"")}{secret.name}{t("\" is shown. Store it somewhere safe.")}</p>
           <div className="inline">
             <code className="secret-value">{secret.value}</code>
             <button className="btn sm" onClick={() => navigator.clipboard?.writeText(secret.value)}>
-              Copy
-            </button>
+              {t("Copy")}</button>
           </div>
           <div>
             <button className="btn sm quiet" onClick={() => setSecret(null)}>
-              I've saved it
-            </button>
+              {t("I've saved it")}</button>
           </div>
         </div>
       )}
@@ -80,8 +78,8 @@ export function Keys() {
 
       {keys.data?.length === 0 && !creating && (
         <div className="empty">
-          <h2>No keys yet</h2>
-          <p className="muted">Create an agent key to connect Claude Desktop or another MCP client, or a live key for your own scripts.</p>
+          <h2>{t("No keys yet")}</h2>
+          <p className="muted">{t("Create an agent key to connect Claude Desktop or another MCP client, or a live key for your own scripts.")}</p>
         </div>
       )}
 
@@ -94,7 +92,7 @@ export function Keys() {
       )}
       {revoked.length > 0 && (
         <details>
-          <summary className="small muted">Revoked and expired ({revoked.length})</summary>
+          <summary className="small muted">{t("Revoked and expired (")}{revoked.length})</summary>
           <div className="panel rows" style={{ marginTop: 8 }}>
             {revoked.map((k) => (
               <div className="row key-row" key={k.id}>
@@ -139,36 +137,32 @@ function KeyRow({ k, onRotated }: { k: ApiKey; onRotated: (secret: string) => vo
       </div>
       <span className="tag">{k.kind}</span>
       <span className="xs muted">
-        {k.lastUsedAt ? `used ${ago(k.lastUsedAt)}` : "never used"}
+        {k.lastUsedAt ? `used ${ago(k.lastUsedAt)}` : t("never used")}
         {k.graceUntil ? `, retires ${ago(k.graceUntil)}` : ""}
         {k.expiresAt ? `, expires ${ago(k.expiresAt)}` : ""}
       </span>
       <div className="inline">
         <button className="btn sm quiet" onClick={() => setUsage(!usage)} aria-expanded={usage}>
-          Usage
-        </button>
+          {t("Usage")}</button>
         {!k.rotatedTo && (
-          <button className="btn sm" onClick={() => rotate.mutate()} disabled={rotate.isPending} title="Issue a replacement; this key keeps working for 24 hours">
-            Rotate
-          </button>
+          <button className="btn sm" onClick={() => rotate.mutate()} disabled={rotate.isPending} title={t("Issue a replacement; this key keeps working for 24 hours")}>
+            {t("Rotate")}</button>
         )}
-        <button className="btn sm danger" onClick={() => confirm(`Revoke "${k.name}"? Anything using it stops working now.`) && revoke.mutate()}>
-          Revoke
-        </button>
+        <button className="btn sm danger" onClick={() => confirm(t("Revoke \"{name}\"? Anything using it stops working now.", { name: k.name })) && revoke.mutate()}>
+          {t("Revoke")}</button>
       </div>
       {usage && (
         <div className="usage">
           <p className="xs muted">
-            Scopes: <span className="data">{k.scopes.join(", ")}</span>
+            {t("Scopes:")}{" "}<span className="data">{k.scopes.join(", ")}</span>
             {k.ipAllow.length > 0 && (
               <>
                 {" "}
-                Only from <span className="data">{k.ipAllow.join(", ")}</span>.
+                {t("Only from")}{" "}<span className="data">{k.ipAllow.join(", ")}</span>.
               </>
             )}{" "}
-            Up to {k.ratePerMin} requests a minute.
-          </p>
-          {log.data?.length === 0 && <p className="xs muted">No requests in the last 30 days.</p>}
+            {t("Up to")}{" "}{k.ratePerMin} {t("requests a minute.")}</p>
+          {log.data?.length === 0 && <p className="xs muted">{t("No requests in the last 30 days.")}</p>}
           {log.data && log.data.length > 0 && (
             <table className="table">
               <tbody>
@@ -227,17 +221,17 @@ function CreateKey({ onDone }: { onDone: (name: string, secret?: string) => void
         create.mutate();
       }}
     >
-      <h2>New API key</h2>
+      <h2>{t("New API key")}</h2>
       <label className="field">
-        <span>Name</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Assistant on my laptop" required />
+        <span>{t("Name")}</span>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Assistant on my laptop")} required />
       </label>
       <fieldset className="kinds">
-        <legend className="small">Used by</legend>
+        <legend className="small">{t("Used by")}</legend>
         {(["agent", "live", "test"] as const).map((k) => (
           <label key={k} className={`kind ${kind === k ? "on" : ""}`}>
             <input type="radio" name="kind" checked={kind === k} onChange={() => setKind(k)} />
-            <strong>{k === "agent" ? "An AI agent" : k === "live" ? "A program" : "Testing"}</strong>
+            <strong>{k === "agent" ? t("An AI agent") : k === "live" ? t("A program") : t("Testing")}</strong>
             <span className="xs muted">{kindText[k]}</span>
           </label>
         ))}
@@ -257,27 +251,25 @@ function CreateKey({ onDone }: { onDone: (name: string, secret?: string) => void
       </div>
       <div className="rule-grid">
         <label className="field">
-          <span>Only from these addresses (optional)</span>
+          <span>{t("Only from these addresses (optional)")}</span>
           <input className="data" value={ips} onChange={(e) => setIps(e.target.value)} placeholder="192.168.1.0/24" />
         </label>
         <label className="field">
-          <span>Expires</span>
+          <span>{t("Expires")}</span>
           <select value={days} onChange={(e) => setDays(e.target.value)}>
-            <option value="30">in 30 days</option>
-            <option value="90">in 90 days</option>
-            <option value="365">in a year</option>
-            <option value="">never</option>
+            <option value="30">{t("in 30 days")}</option>
+            <option value="90">{t("in 90 days")}</option>
+            <option value="365">{t("in a year")}</option>
+            <option value="">{t("never")}</option>
           </select>
         </label>
       </div>
       {create.error && <div className="error">{create.error.message}</div>}
       <div className="inline" style={{ justifyContent: "flex-end" }}>
         <button type="button" className="btn quiet" onClick={() => onDone("")}>
-          Cancel
-        </button>
+          {t("Cancel")}</button>
         <button className="btn primary" disabled={create.isPending || scopes.length === 0}>
-          Create key
-        </button>
+          {t("Create key")}</button>
       </div>
     </form>
   );

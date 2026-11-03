@@ -3,14 +3,15 @@ import { useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { api, ok, type Manifest } from "../api/client";
 import { defaults, SchemaForm, type JSONSchema } from "../components/SchemaForm";
+import { t } from "../i18n";
 import "./pages.css";
 
 export const presetNames = [
-  ["", "Everything"],
-  ["developer", "Developer"],
-  ["gamer", "Gaming PC"],
-  ["homelab", "Homelab"],
-  ["team", "Team"],
+  ["", t("Everything")],
+  ["developer", t("Developer")],
+  ["gamer", t("Gaming PC")],
+  ["homelab", t("Homelab")],
+  ["team", t("Team")],
 ] as const;
 
 export function Modules() {
@@ -29,22 +30,22 @@ export function Modules() {
   );
   const byCategory = new Map<string, Manifest[]>();
   for (const m of list) {
-    const c = m.category || "Other";
+    const c = m.category || t("Other");
     byCategory.set(c, [...(byCategory.get(c) ?? []), m]);
   }
 
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Modules</h1>
+        <h1>{t("Modules")}</h1>
         <p>
-          Each module connects one kind of thing — a mailbox, a server, a dashboard. Connect as many of each as you need, or{" "}
-          <Link href="/modules/registry">add modules from your hub</Link>.
+          {t("Each module connects one kind of thing — a mailbox, a server, a dashboard. Connect as many of each as you need, or")}{" "}
+          <Link href="/modules/registry">{t("add modules from your hub")}</Link>.
         </p>
       </div>
       <div className="spread">
-        <input className="input" style={{ maxWidth: 320 }} placeholder="Filter modules" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        <div className="inline" role="radiogroup" aria-label="Show modules for">
+        <input className="input" style={{ maxWidth: 320 }} placeholder={t("Filter modules")} value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <div className="inline" role="radiogroup" aria-label={t("Show modules for")}>
           {presetNames.map(([id, label]) => (
             <button key={id} role="radio" aria-checked={preset === id} className={`btn sm ${preset === id ? "primary" : "quiet"}`} onClick={() => setPreset(id)}>
               {label}
@@ -54,8 +55,8 @@ export function Modules() {
       </div>
       {modules.data?.length === 0 && (
         <div className="empty">
-          <h2>No modules installed</h2>
-          <p className="muted">Built-in modules ship with Conduit. External modules go in the daemon's modules folder.</p>
+          <h2>{t("No modules installed")}</h2>
+          <p className="muted">{t("Built-in modules ship with Conduit. External modules go in the daemon's modules folder.")}</p>
         </div>
       )}
       {[...byCategory.entries()].map(([cat, ms]) => (
@@ -72,8 +73,7 @@ export function Modules() {
                   {count(m.id) > 0 ? `${count(m.id)} connected` : `${m.actions.length} actions`}
                 </span>
                 <button className="btn sm" onClick={() => setAdding(m)}>
-                  Connect
-                </button>
+                  {t("Connect")}</button>
               </div>
             ))}
           </div>
@@ -108,21 +108,19 @@ function ConnectDialog({ m, onClose }: { m: Manifest; onClose: () => void }) {
             save.mutate();
           }}
         >
-          <h2 id="connect-title">Connect {m.name}</h2>
+          <h2 id="connect-title">{t("Connect")}{" "}{m.name}</h2>
           <label className="field">
-            <span>Name</span>
+            <span>{t("Name")}</span>
             <input value={name} onChange={(e) => setName(e.target.value)} required />
-            <small>Shown in the lamp row and the menu, e.g. "Work mail" or "Home server".</small>
+            <small>{t("Shown in the lamp row and the menu, e.g. \"Work mail\" or \"Home server\".")}</small>
           </label>
           <SchemaForm schema={schema} value={config} onChange={setConfig} idPrefix={`cfg-${m.id}`} />
           {save.error && <div className="error">{save.error.message}</div>}
           <div className="inline" style={{ justifyContent: "flex-end" }}>
             <button type="button" className="btn quiet" onClick={onClose}>
-              Cancel
-            </button>
+              {t("Cancel")}</button>
             <button className="btn primary" disabled={save.isPending}>
-              Connect
-            </button>
+              {t("Connect")}</button>
           </div>
         </form>
       </div>

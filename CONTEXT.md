@@ -12,16 +12,20 @@ owner and a company equally; never tailor it to one setup.
 
 ## Current state
 
-- **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 15 of 16 (hardening and security review) — done 2026-11-03
-  ~03:15 CET.
-- **Works today:** everything through phase 14, plus the module kits and
-  API clients, and every fix from the independent security review (see
-  BUILD_LOG.md, phase 15). Relay sessions now rekey with a daemon ephemeral
-  key; old clients from before this change can't connect (nothing was
-  released yet, so nothing is affected).
-- **Next:** phase 16: tag v0.1.0, watch the release workflow, final docs,
-  handover.
+- **Released:** v0.1.0 on 2026-11-03 (~03:55 CET), all 16 phases done.
+  https://github.com/Elchi-dev/conduit/releases/tag/v0.1.0
+- **Works today:** everything in `docs/releases/v0.1.0.md`; the security
+  review's fixes are in (BUILD_LOG.md, phase 15).
+- **Next:** the owner decisions below (signing secrets first, then re-run
+  the release workflow for signed assets), trying the APK on real devices,
+  and whatever the owner prioritises.
+- **Releasing:** push a `v*` tag, or run the release workflow by hand with
+  a tag name (it creates the tag on the commit it runs on). Notes come from
+  `docs/releases/<tag>.md`.
+- **Known gaps:** v0.1.0's assets are unsigned (no secrets yet), so the APK
+  won't install and installs don't see it as an update; the APK hasn't been
+  tried on a device; the repository is private, so the Android update check
+  (GitHub API) can't see releases until it's public.
 - **Settings added in phase 15:** `CONDUIT_ALLOWED_HOSTS` (daemon, extra host
   names), `CONDUIT_HUB_TRUST_PROXY` (hub behind a reverse proxy).
 - **Known gaps:** no release published yet; the APK has only been built in

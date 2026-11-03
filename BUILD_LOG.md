@@ -3,6 +3,27 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 16 — Release v0.1.0
+
+**Landed**
+
+- v0.1.0 is published: https://github.com/Elchi-dev/conduit/releases/tag/v0.1.0
+  (tag on a4c357e). 23 assets: daemon and hub binaries for six platforms
+  with `SHA256SUMS`, desktop installers (MSI and setup.exe, two DMGs and app
+  archives, deb, rpm, AppImage) and the Android APK.
+- Release notes in `docs/releases/v0.1.0.md`, used by the workflow.
+- Every job of the release workflow passed on the first run.
+
+**Changed from the plan**
+
+- The build environment can't push tags, so the release was started with
+  the workflow's manual trigger, which now creates the tag on the commit it
+  runs on. Pushing a `v*` tag still works too.
+- The signing secrets aren't set yet, so this release is unsigned: the APK
+  won't install until it's rebuilt with the keystore, and installs won't
+  treat it as an update. Once the secrets are in place, re-run the release
+  workflow for v0.1.0 (or release v0.1.1) to get signed assets.
+
 ## 2026-11-03 · Phase 15 — Hardening and security review
 
 **Landed**

@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "daemon",
+  "description": "The web app served by the local daemon. It may show notifications, light the tray, and run updates; nothing else native.",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:7600/*"] },
+  "permissions": [
+    "core:event:default",
+    "notification:default",
+    "allow-shell-info",
+    "allow-set-attention",
+    "allow-check-update",
+    "allow-install-update",
+    "allow-set-autostart"
+  ]
+}

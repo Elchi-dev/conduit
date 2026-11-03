@@ -3,6 +3,7 @@
 //
 //	conduitd                 run the daemon
 //	conduitd mcp             bridge an MCP client (stdio) to a running daemon
+//	conduitd update          install the newest signed release (-check to only look)
 //	conduitd version         print the version
 package main
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/ai"
 	"github.com/elchi-dev/conduit/internal/daemon"
+	"github.com/elchi-dev/conduit/internal/update"
 	"github.com/elchi-dev/conduit/internal/version"
 )
 
@@ -34,6 +36,32 @@ func main() {
 				fmt.Fprintln(os.Stderr, "conduit mcp:", err)
 				os.Exit(1)
 			}
+			return
+		case "update":
+			fs := flag.NewFlagSet("update", flag.ExitOnError)
+			data := fs.String("data", daemon.DefaultConfig().DataDir, "data directory")
+			only := fs.Bool("check", false, "only report whether an update exists")
+			_ = fs.Parse(os.Args[2:])
+			u := update.New(*data, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+			if *only {
+				p, err := u.Check(ctx)
+				switch {
+				case err != nil:
+					fmt.Fprintln(os.Stderr, "conduit update:", err)
+					os.Exit(1)
+				case p == nil:
+					fmt.Println("conduitd", version.Version, "is up to date")
+				default:
+					fmt.Println("conduitd", p.Version, "is available (you have", version.Version+")")
+				}
+				return
+			}
+			p, err := u.Apply(ctx)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "conduit update:", err)
+				os.Exit(1)
+			}
+			fmt.Println("installed conduitd", p.Version+"; restart the daemon to use it")
 			return
 		case "version":
 			v := version.Get()

@@ -657,3 +657,19 @@ pre.log {
     grid-template-columns: 1fr;
   }
 }
+
+/* App (Settings, desktop only) */
+.app-panel {
+  padding: 16px;
+  gap: 12px;
+  max-width: 760px;
+}
+.update-offer {
+  padding: 12px 14px;
+  border-left: 2px solid var(--signal);
+  background: color-mix(in srgb, var(--signal) 6%, transparent);
+}
+.update-notes {
+  white-space: pre-line;
+  max-width: 68ch;
+}

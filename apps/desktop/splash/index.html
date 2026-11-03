@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conduit</title>
+<style>
+  :root { color-scheme: dark light; --bg: #1f2226; --ink: #e8e4dc; --muted: #9a968e; --signal: #f2a93b; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f2f1ee; --ink: #22252a; --muted: #6b6860; } }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { height: 100%; display: grid; place-content: center; gap: 14px; text-align: center; padding: 16px; }
+  svg { margin: 0 auto; color: var(--signal); }
+  .bars path { animation: pulse 1.4s ease-in-out infinite; }
+  .bars path:nth-child(2) { animation-delay: .15s } .bars path:nth-child(3) { animation-delay: .3s }
+  @keyframes pulse { 50% { opacity: .35 } }
+  @media (prefers-reduced-motion: reduce) { .bars path { animation: none } }
+  p { margin: 0; color: var(--muted); max-width: 34ch; }
+  #err { display: none; color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <svg width="40" height="40" viewBox="0 0 32 32" aria-hidden="true" class="bars">
+    <path d="M6 10h20" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    <path d="M6 16h13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    <path d="M6 22h20" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  </svg>
+  <p id="msg">Starting Conduit…</p>
+  <p id="err"></p>
+</main>
+<script>
+  // The shell navigates away once the daemon answers; it calls this if it can't.
+  window.conduitStartFailed = function (text) {
+    document.getElementById("msg").textContent = "Conduit couldn't start.";
+    var e = document.getElementById("err");
+    e.textContent = text;
+    e.style.display = "block";
+  };
+</script>
+</body>
+</html>

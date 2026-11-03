@@ -4,6 +4,7 @@ import { Link, useLocation } from "wouter";
 import { api, ok, type S } from "../api/client";
 import { useLiveEvents } from "../lib/events";
 import { featureInstances } from "../lib/format";
+import { onShell, setAttention } from "../lib/native";
 import { Assistant } from "./Assistant";
 import { CommandBar } from "./CommandBar";
 import { LampStrip } from "./LampStrip";
@@ -27,7 +28,7 @@ const navAdmin = [
 ];
 
 export function Shell({ me, children }: { me: Me; children: ReactNode }) {
-  const [loc] = useLocation();
+  const [loc, setLocation] = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [seed, setSeed] = useState<string | undefined>();
@@ -61,6 +62,18 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
 
   const frozen = policy.data?.frozen;
   const waiting = pending.data?.length ?? 0;
+
+  // Native shell: light the tray, and follow its menu.
+  useEffect(() => setAttention(waiting, !!frozen), [waiting, frozen]);
+  const panic = stop.mutate;
+  useEffect(() => {
+    const offNav = onShell<string>("conduit://navigate", (path) => setLocation(path));
+    const offPanic = onShell("conduit://panic", () => panic());
+    return () => {
+      offNav();
+      offPanic();
+    };
+  }, [setLocation, panic]);
 
   return (
     <div className={`shell ${assistantOpen ? "with-assistant" : ""}`}>

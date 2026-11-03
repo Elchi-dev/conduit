@@ -9,4 +9,4 @@ Specifications, versioned as they land:
 | --- | --- | --- |
 | External modules (JSON-RPC over stdio) | [external-modules.md](external-modules.md) | v1 |
 | Hub: accounts, pairing, relay, sync, registry, update feed | [hub.md](hub.md) | v1 |
-| Update clients and self-update | updates.md | phase 11 |
+| Updates: keys, release payloads, feeds, self-update and rollback | [updates.md](updates.md) | v1 |

@@ -745,6 +745,35 @@ paths:
       responses:
         "204": { description: Removed }
 
+  /system/update:
+    get:
+      operationId: updateStatus
+      tags: [system]
+      summary: Self-update state of this daemon
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateStatus" } } } }
+  /system/update/check:
+    post:
+      operationId: checkUpdate
+      tags: [system]
+      summary: Ask the release feed for a newer signed release
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateStatus" } } } }
+        "502": { description: The feed couldn't be read or the release didn't verify, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /system/update/apply:
+    post:
+      operationId: applyUpdate
+      tags: [system]
+      summary: Install the available release and restart (people only)
+      description: |
+        Downloads the release, checks its signature and checksum, swaps the
+        binary (keeping the old one), answers 202 and restarts. A new version
+        that fails to start three times is rolled back automatically. Refused
+        when the desktop app manages this daemon.
+      responses:
+        "202": { description: Installed; restarting, content: { application/json: { schema: { $ref: "#/components/schemas/UpdateStatus" } } } }
+        "409": { description: Nothing to install, or not allowed here, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /remote:
     get:
       operationId: remoteStatus
@@ -890,6 +919,37 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    UpdateRelease:
+      type: object
+      required: [component, channel, platform, version, url, sha256]
+      properties:
+        component: { type: string }
+        channel: { type: string }
+        platform: { type: string }
+        version: { type: string }
+        url: { type: string }
+        sha256: { type: string }
+        notes: { type: string }
+    UpdateStatus:
+      type: object
+      required: [current, platform, managed, feed]
+      properties:
+        current: { type: string }
+        platform: { type: string }
+        managed: { type: boolean, description: The desktop app updates this daemon }
+        feed: { type: string }
+        available: { $ref: "#/components/schemas/UpdateRelease" }
+        checkedAt: { type: string, format: date-time }
+        lastError: { type: string }
+        last:
+          type: object
+          required: [from, to, result, at]
+          properties:
+            from: { type: string }
+            to: { type: string }
+            result: { type: string, enum: [applied, confirmed, rolled_back] }
+            at: { type: string, format: date-time }
+            detail: { type: string }
     RemoteStatus:
       type: object
       required: [linked, connected, publicKey, fingerprint, clients, streams]

@@ -48,7 +48,7 @@ dev: daemon
 desktop: daemon
 	mkdir -p apps/desktop/src-tauri/binaries
 	cp bin/conduitd apps/desktop/src-tauri/binaries/conduitd-$(TRIPLE)
-	cd apps/desktop/src-tauri && cargo build --release
+	cd apps/desktop/src-tauri && pnpm dlx @tauri-apps/cli@2 build
 
 clean:
 	rm -rf bin dist web/dist

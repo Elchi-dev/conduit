@@ -8,8 +8,10 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,9 +23,11 @@ import (
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/remote"
 	"github.com/elchi-dev/conduit/internal/ui"
+	"github.com/elchi-dev/conduit/internal/update"
 	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
 	"github.com/elchi-dev/conduit/modules/notify"
+	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
 // Config holds daemon settings.
@@ -52,6 +56,7 @@ type App struct {
 	Notify      *notify.Module
 	Automations *automation.Service
 	Remote      *remote.Service
+	Updates     *update.Updater
 	Server      *Server
 }
 
@@ -85,6 +90,8 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	app.Remote, app.Server.Remote = rem, rem
+	app.Updates = update.New(dataDir, log)
+	app.Server.Updates = app.Updates
 	rem.Handler = app.Server.Handler()
 	if v.UnlockFromKeychain(ctx) {
 		log.Info("vault unlocked from the system keychain")
@@ -122,6 +129,13 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		return err
 	}
 	defer app.Close()
+	// A freshly installed update that keeps failing to start is rolled back
+	// here, before anything else can fail.
+	rolledBack, confirmUpdate := app.Updates.Probation()
+	if rolledBack {
+		app.Close()
+		return update.Restart(app.Updates.Exe)
+	}
 	if err := registerBuiltins(app); err != nil {
 		return err
 	}
@@ -150,9 +164,22 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		Handler:           app.Server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	ln, err := listen(ctx, cfg.Listen)
+	if err != nil {
+		return err
+	}
 	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
+	go func() { errc <- srv.Serve(ln) }()
 	log.Info("conduitd listening", "addr", cfg.Listen, "version", version.Version)
+	go func() {
+		// Serving for a minute confirms a just-installed update.
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Minute):
+			confirmUpdate()
+		}
+	}()
+	go checkUpdates(ctx, app)
 
 	select {
 	case err := <-errc:
@@ -201,6 +228,48 @@ func housekeeping(ctx context.Context, app *App) {
 		case <-t.C:
 			_ = app.Auth.PruneUsage(ctx)
 		}
+	}
+}
+
+// listen retries for a few seconds, so a restarted daemon can take over the
+// address from the process it replaces.
+func listen(ctx context.Context, addr string) (net.Listener, error) {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil || time.Now().After(deadline) {
+			return ln, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
+// checkUpdates looks for a new release a minute after start and then every
+// six hours, and announces it. Installing is always a person's choice.
+func checkUpdates(ctx context.Context, app *App) {
+	if os.Getenv("CONDUIT_UPDATE_CHECK") == "off" || app.Updates.Managed {
+		return
+	}
+	wait := time.Minute
+	announced := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = 6 * time.Hour
+		p, err := app.Updates.Check(ctx)
+		if err != nil || p == nil || p.Version == announced {
+			continue
+		}
+		announced = p.Version
+		data, _ := json.Marshal(map[string]string{"version": p.Version, "notes": p.Notes})
+		app.Engine.Bus.Publish(sdk.Event{Type: "update.available", Module: "core", Data: data})
 	}
 }
 

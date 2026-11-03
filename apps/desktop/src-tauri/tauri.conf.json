@@ -4,8 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.elchi.conduit",
   "build": {
-    "frontendDist": "../../../web/dist",
-    "devUrl": "http://localhost:5173",
+    "frontendDist": "../splash",
     "beforeDevCommand": "",
     "beforeBuildCommand": ""
   },
@@ -17,12 +16,14 @@
         "width": 1280,
         "height": 820,
         "minWidth": 900,
-        "minHeight": 600
+        "minHeight": 600,
+        "url": "index.html"
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
@@ -35,6 +36,18 @@
       "icons/128x128.png",
       "icons/icon.png",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4QTI0MTg4N0JCRTg2QUQKUldTdGhyNTdpRUdpaUhJYzdsNDVaT1Nubmg0QTlKWFNueEZsUzhOa28yT252OWV1VjhyVzFsRXAK",
+      "endpoints": [
+        "https://github.com/Elchi-dev/conduit/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

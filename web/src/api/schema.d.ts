@@ -832,6 +832,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Self-update state of this daemon */
+        get: operations["updateStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/update/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask the release feed for a newer signed release */
+        post: operations["checkUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install the available release and restart (people only)
+         * @description Downloads the release, checks its signature and checksum, swaps the
+         *     binary (keeping the old one), answers 202 and restarts. A new version
+         *     that fails to start three times is rolled back automatically. Refused
+         *     when the desktop app manages this daemon.
+         */
+        post: operations["applyUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/remote": {
         parameters: {
             query?: never;
@@ -996,6 +1053,35 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        UpdateRelease: {
+            component: string;
+            channel: string;
+            platform: string;
+            version: string;
+            url: string;
+            sha256: string;
+            notes?: string;
+        };
+        UpdateStatus: {
+            current: string;
+            platform: string;
+            /** @description The desktop app updates this daemon */
+            managed: boolean;
+            feed: string;
+            available?: components["schemas"]["UpdateRelease"];
+            /** Format: date-time */
+            checkedAt?: string;
+            lastError?: string;
+            last?: {
+                from: string;
+                to: string;
+                /** @enum {string} */
+                result: "applied" | "confirmed" | "rolled_back";
+                /** Format: date-time */
+                at: string;
+                detail?: string;
+            };
+        };
         RemoteStatus: {
             linked: boolean;
             link?: {
@@ -2999,6 +3085,84 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    updateStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
+                };
+            };
+        };
+    };
+    checkUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
+                };
+            };
+            /** @description The feed couldn't be read or the release didn't verify */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    applyUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Installed; restarting */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
+                };
+            };
+            /** @description Nothing to install */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

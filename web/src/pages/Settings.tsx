@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
+import { AppSection, DaemonUpdates } from "./AppSection";
 import { RemoteAccess } from "./RemoteAccess";
 import "./pages.css";
 
@@ -33,6 +34,7 @@ export function Settings() {
   const sessions = useQuery({ queryKey: ["sessions"], queryFn: () => ok(api.GET("/me/sessions")) });
   const version = useQuery({ queryKey: ["version"], queryFn: () => ok(api.GET("/version")) });
   const [pw, setPw] = useState({ current: "", new: "" });
+  const [allSessions, setAllSessions] = useState(false);
   const changePw = useMutation({
     mutationFn: () => ok(api.POST("/me/password", { body: pw })),
     onSuccess: () => {
@@ -58,6 +60,11 @@ export function Settings() {
         </p>
       </div>
 
+      <AppSection />
+      <DaemonUpdates admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
+
+      <RemoteAccess admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
+
       <section className="stack" style={{ gap: 8 }}>
         <h2 className="section-title">Appearance</h2>
         <div className="inline" role="radiogroup" aria-label="Theme">
@@ -72,7 +79,7 @@ export function Settings() {
       <section className="stack" style={{ gap: 8 }}>
         <h2 className="section-title">Signed-in devices</h2>
         <div className="panel rows">
-          {sessions.data?.map((s) => (
+          {(allSessions ? sessions.data : sessions.data?.slice(0, 5))?.map((s) => (
             <div className="row session-row" key={s.id}>
               <span className="small">{s.device || "Unknown device"}</span>
               <span className="xs muted">active {ago(s.lastSeenAt)}</span>
@@ -82,9 +89,15 @@ export function Settings() {
             </div>
           ))}
         </div>
+        {!allSessions && (sessions.data?.length ?? 0) > 5 && (
+          <div>
+            <button className="btn sm quiet" onClick={() => setAllSessions(true)}>
+              Show all {sessions.data?.length}
+            </button>
+          </div>
+        )}
       </section>
 
-      <RemoteAccess admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
       <section className="stack" style={{ gap: 8, maxWidth: 420 }}>
         <h2 className="section-title">Password</h2>

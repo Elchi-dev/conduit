@@ -1,0 +1,74 @@
+# Desktop and Android shell
+
+`apps/desktop/src-tauri` is a thin Tauri 2 shell (ADR 0001). The Go daemon
+and the web app hold all product logic; the shell adds only what a browser
+tab can't do.
+
+## Desktop start-up
+
+1. The window opens on a bundled splash page (`apps/desktop/splash`).
+2. If a daemon already answers `GET http://127.0.0.1:7600/healthz`, the shell
+   attaches to it. Otherwise it starts the bundled `conduitd` sidecar with
+   `-listen 127.0.0.1:7600 -data <app data>/daemon` and
+   `CONDUIT_MANAGED=desktop`.
+3. Once the daemon is healthy (up to 20 s), the window navigates to
+   `http://127.0.0.1:7600/`, the web app the daemon serves. If it never
+   answers, the splash shows why.
+4. Quitting the app stops a sidecar it started; an attached daemon keeps
+   running.
+
+A second launch focuses the running window (single-instance plugin).
+
+## Native surfaces
+
+| Surface | How |
+| --- | --- |
+| Tray | Open, "N approvals waiting" (jumps to Approvals), Emergency stop, Quit. The icon turns amber while approvals wait or the emergency stop is on. Closing the window hides it to the tray. |
+| Notifications | Approval requests, `notify.desktop` events (the notify module's desktop channel) and available updates, shown only when the window isn't in front. |
+| Start at login | Settings → App; starts hidden in the tray (`--background`). |
+| Updates | Settings → App → Check for updates. See below. |
+
+Linux desktops without an app-indicator library have no tray. The shell
+catches that, keeps running without one, and closing the window then quits
+(Settings says so).
+
+## Web app ↔ shell
+
+The daemon's page is a remote origin to Tauri. `capabilities/daemon.json`
+grants exactly `http://127.0.0.1:7600/*`: events, notifications and the five
+app commands (`shell_info`, `set_attention`, `check_update`,
+`install_update`, `set_autostart`), declared in `build.rs`. Nothing else
+native (no shell, no file system) is reachable from the page.
+
+`web/src/lib/native.ts` wraps `window.__TAURI__` (`withGlobalTauri`); in a
+plain browser every call is a no-op, so the web app never depends on the
+shell. The shell talks back with two events, `conduit://navigate` and
+`conduit://panic`, which `Shell.tsx` follows.
+
+## Updates
+
+There are two update paths, never both for the same daemon:
+
+- **Desktop app** (shell and sidecar together): the Tauri updater plugin
+  reads `latest.json` from the newest GitHub release, verifies the bundle's
+  minisign signature against the public key in `tauri.conf.json`, installs
+  and restarts. The release workflow signs bundles with
+  `TAURI_SIGNING_PRIVATE_KEY`.
+- **Standalone daemon** (servers, headless, packages): `internal/update`,
+  documented in [docs/protocol/updates.md](../protocol/updates.md). The
+  sidecar sees `CONDUIT_MANAGED=desktop` and refuses to replace itself.
+
+## Android
+
+Phase 12. The same shell builds for Android; the web app runs from bundled
+files and reaches a daemon over the LAN or through a hub relay
+(`web/src/lib/connection.ts`). Desktop-only code is behind `cfg(desktop)`.
+
+## Building
+
+```sh
+make desktop      # web build, sidecar for this platform, cargo tauri build
+```
+
+CI runs `cargo check --locked` on Linux, macOS and Windows with a sidecar
+built for each.

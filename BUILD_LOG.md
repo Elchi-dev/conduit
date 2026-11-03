@@ -3,6 +3,46 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 11 — Desktop
+
+**Landed**
+
+- The desktop shell starts the bundled daemon (or attaches to one already
+  running), shows a splash until it answers, then loads the daemon's web app.
+  Single instance; quitting stops the sidecar it started.
+- Tray with Open, approvals waiting (jumps to Approvals), Emergency stop and
+  Quit; the icon turns amber while something needs you. Closing the window
+  hides to the tray.
+- Native notifications for approval requests, the notify module's desktop
+  channel and available updates, only when the window isn't in front.
+- Start at login (hidden in the tray). Settings → App shows the version,
+  updates and this option.
+- Signed desktop updates through the Tauri updater (minisign key generated;
+  the release workflow will publish `latest.json`).
+- Daemon self-update (`internal/update`): signed release manifest or a hub
+  feed, SHA-256 check, binary swap with the old one kept, restart, and
+  automatic rollback after three unconfirmed starts. API, `conduitd update`,
+  Settings → Updates, `update.available` event, `tools/release` to sign
+  manifests. Desktop-managed and dev builds never replace themselves.
+- The web app talks to the shell only through `capabilities/daemon.json`,
+  which grants the daemon's origin five commands, events and notifications.
+- Verified by running the real app under Xvfb: boot, attach, sign in,
+  Settings → App over IPC, update check through the updater plugin.
+
+**Changed from the plan**
+
+- The window no longer bundles the web app on desktop; the daemon serves it.
+  The bundled page is a small splash, so the app and daemon can't drift.
+- The daemon now retries its listen address for ten seconds, so a restarted
+  process can take over from the one it replaces.
+
+**Fixed**
+
+- On Linux desktops without an app-indicator library, creating the tray
+  panicked and the app crashed at start. The shell now runs without a tray
+  there, and closing the window quits.
+- Settings put the app's sections first and folds long session lists.
+
 ## 2026-11-03 · Phase 10 — Hub and remote access
 
 **Landed**

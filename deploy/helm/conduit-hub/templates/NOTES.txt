@@ -1,0 +1,20 @@
+Conduit hub {{ .Chart.AppVersion }} is starting.
+
+Public address: {{ .Values.hub.url }}
+{{- if not .Values.ingress.enabled }}
+
+No ingress is enabled. To try it locally:
+  kubectl port-forward svc/{{ include "conduit-hub.fullname" . }} 7700:{{ .Values.service.port }}
+Put a TLS-terminating proxy in front before people use it; hub.url must be
+that https address.
+{{- end }}
+{{- if eq .Values.mail.driver "console" }}
+
+Mail is set to "console": verification and reset links are only written to
+the hub's log (kubectl logs deploy/{{ include "conduit-hub.fullname" . }}).
+Set mail.driver to resend or smtp for real use.
+{{- end }}
+{{- if .Values.hub.adminEmail }}
+
+Sign up with {{ .Values.hub.adminEmail }} and confirm it to become the hub's admin.
+{{- end }}

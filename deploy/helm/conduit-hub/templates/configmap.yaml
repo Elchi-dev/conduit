@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "conduit-hub.fullname" . }}
+  labels: {{- include "conduit-hub.labels" . | nindent 4 }}
+data:
+  CONDUIT_HUB_LISTEN: ":7700"
+  CONDUIT_HUB_URL: {{ required "hub.url is required" .Values.hub.url | quote }}
+  CONDUIT_HUB_NAME: {{ .Values.hub.name | quote }}
+  CONDUIT_HUB_ADMIN_EMAIL: {{ .Values.hub.adminEmail | quote }}
+  CONDUIT_HUB_OPEN_REGISTRATION: {{ .Values.hub.openRegistration | toString | quote }}
+  CONDUIT_HUB_TRUST_PROXY: {{ .Values.hub.trustProxy | toString | quote }}
+  CONDUIT_HUB_RELEASE_KEY: {{ .Values.hub.releaseKey | quote }}
+  CONDUIT_HUB_SITE_DIR: {{ ternary "/site" "" .Values.hub.site | quote }}
+  CONDUIT_HUB_MAIL: {{ .Values.mail.driver | quote }}
+  CONDUIT_HUB_MAIL_FROM: {{ .Values.mail.from | quote }}
+  CONDUIT_HUB_SMTP_HOST: {{ .Values.mail.smtp.host | quote }}
+  CONDUIT_HUB_SMTP_PORT: {{ .Values.mail.smtp.port | toString | quote }}
+  CONDUIT_HUB_SMTP_USER: {{ .Values.mail.smtp.user | quote }}
+  {{- if eq .Values.database.type "sqlite" }}
+  CONDUIT_HUB_DB: /data/hub.db
+  {{- end }}

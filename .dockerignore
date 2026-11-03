@@ -1,0 +1,15 @@
+# Keep image builds small and free of local state.
+.git
+**/node_modules
+**/dist
+apps/desktop/src-tauri/target
+apps/desktop/src-tauri/gen/android/app/build
+bin
+web/test-results
+web/playwright-report
+**/*.db
+**/*.db-shm
+**/*.db-wal
+.env
+**/.env
+deploy/hub/.env

@@ -219,3 +219,37 @@ jobs:
             web/playwright-report
             web/test-results
           retention-days: 7
+
+  # The hub's Helm chart renders in its main shapes.
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - name: lint and render
+        run: |
+          helm lint deploy/helm/conduit-hub
+          helm template t deploy/helm/conduit-hub > /dev/null
+          helm template t deploy/helm/conduit-hub --set database.type=postgres --set database.url=postgres://u@db/conduit \
+            --set ingress.enabled=true --set ingress.className=nginx > /dev/null
+          ! helm template t deploy/helm/conduit-hub --set database.type=postgres > /dev/null 2>&1
+
+  # Both container images build (amd64; the release builds arm64 too).
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: [deploy/daemon/Dockerfile, deploy/hub/Dockerfile]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.dockerfile }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}

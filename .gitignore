@@ -32,3 +32,8 @@ apps/desktop/src-tauri/gen/schemas/
 internal/ui/dist/
 sdk/clients/typescript/node_modules/
 __pycache__/
+
+# Local build leftovers
+/conduitd
+/conduit-hub
+/.ccr-ca.crt

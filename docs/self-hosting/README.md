@@ -39,6 +39,35 @@ SQLite runs in WAL mode and suits small hubs (a household, a team). Use
 PostgreSQL for anything larger. The schema is identical; migrations run on
 start.
 
+### Kubernetes with Helm
+
+The chart in `deploy/helm/conduit-hub` runs the image
+`ghcr.io/elchi-dev/conduit-hub` (amd64 and arm64, published with each
+release). Its values map onto the variables below.
+
+```sh
+helm install hub deploy/helm/conduit-hub \
+  --set hub.url=https://hub.example.com \
+  --set hub.adminEmail=you@example.com \
+  --set mail.driver=resend --set mail.from='Example hub <hub@example.com>' \
+  --set secrets.resendKey=re_… \
+  --set ingress.enabled=true --set ingress.className=nginx --set ingress.host=hub.example.com
+```
+
+- **Database:** SQLite on a persistent volume by default. For PostgreSQL set
+  `database.type=postgres` and `database.url`, or keep the URL in your own
+  Secret (`secrets.existingSecret` with the keys `DATABASE_URL`,
+  `RESEND_KEY`, `SMTP_PASSWORD`).
+- **One replica:** the relay holds each daemon's connection in the hub
+  process, so the chart runs one pod and replaces it on upgrade
+  (`strategy: Recreate`).
+- **Ingress:** the relay keeps WebSockets open for hours; raise the proxy
+  timeouts (for ingress-nginx, `proxy-read-timeout` and `proxy-send-timeout`
+  of `3600`). `hub.trustProxy` is on, so rate limits see each client's
+  address from `X-Forwarded-For`.
+- **Hardening:** non-root, read-only root filesystem, no service account
+  token, all capabilities dropped.
+
 ## Configuration
 
 Every setting is an environment variable (flags `-listen`, `-db` and `-url`

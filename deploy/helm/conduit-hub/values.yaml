@@ -1,0 +1,108 @@
+# Conduit hub. Every setting maps onto a CONDUIT_HUB_* environment variable;
+# see docs/self-hosting/README.md.
+
+image:
+  repository: ghcr.io/elchi-dev/conduit-hub
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# One replica: the relay keeps each daemon's connection in the hub process,
+# so several replicas would need sticky routing per daemon. Keep 1.
+replicaCount: 1
+
+hub:
+  # Where people reach this hub (CONDUIT_HUB_URL). Must be the exact public
+  # https origin, or passkeys and email links break.
+  url: https://hub.example.com
+  name: Conduit hub
+  # This address becomes admin once it's confirmed.
+  adminEmail: ""
+  openRegistration: false
+  # Behind the ingress, rate limits must see each client's address.
+  trustProxy: true
+  # Base64 ed25519 public key for an update feed this hub serves (optional).
+  releaseKey: ""
+  # Serve the website (landing, docs, account pages) from the image.
+  site: true
+
+mail:
+  # console (log only), resend or smtp. Each hub sends its own mail.
+  driver: console
+  from: ""
+  smtp:
+    host: ""
+    port: 587
+    user: ""
+
+# Secret values. Either set them here (the chart creates a Secret) or name an
+# existing Secret with the keys RESEND_KEY, SMTP_PASSWORD and DATABASE_URL.
+secrets:
+  existingSecret: ""
+  resendKey: ""
+  smtpPassword: ""
+
+database:
+  # sqlite: a file on the persistent volume (small hubs).
+  # postgres: set url (or DATABASE_URL in existingSecret).
+  type: sqlite
+  url: ""
+
+persistence:
+  # The SQLite database lives here. Not needed with PostgreSQL.
+  enabled: true
+  size: 2Gi
+  storageClass: ""
+  accessModes: [ReadWriteOnce]
+  existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 7700
+
+ingress:
+  enabled: false
+  className: ""
+  # The relay uses WebSockets that stay open for hours. With ingress-nginx:
+  #   nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  #   nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  #   nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+  annotations: {}
+  host: hub.example.com
+  tls:
+    enabled: true
+    secretName: conduit-hub-tls
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Extra environment variables for the hub container.
+extraEnv: []

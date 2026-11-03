@@ -62,6 +62,37 @@ With options, for example to start the daemon at logon:
 The binary goes to `%LOCALAPPDATA%\Conduit\bin`, which is added to your user
 PATH.
 
+## Docker
+
+The daemon image `ghcr.io/elchi-dev/conduitd` (amd64 and arm64) keeps
+everything in `/data`:
+
+```sh
+docker run -d --name conduit -p 127.0.0.1:7600:7600 -v conduit:/data ghcr.io/elchi-dev/conduitd
+docker logs conduit        # shows the setup token for the first sign-in
+```
+
+or `docker compose -f deploy/daemon/compose.yaml up -d`. Then open
+http://127.0.0.1:7600.
+
+- **Updates:** pull a newer image; the daemon's own updater is off in the
+  container (`CONDUIT_MANAGED=container`).
+- **Host names:** the daemon only answers to IP addresses, `localhost` and
+  names you list in `CONDUIT_ALLOWED_HOSTS` (it refuses others to stop DNS
+  rebinding). Behind a reverse proxy, set
+  `-e CONDUIT_ALLOWED_HOSTS=conduit.example.com`.
+- **Docker module:** to manage the host's containers, mount
+  `/var/run/docker.sock` and give the container the socket's group
+  (`--group-add <gid>`). Whoever controls Conduit then controls the host,
+  so only do this when you mean to.
+- **This computer:** inside a container the module sees the container, not
+  the host. Run the daemon directly on the machine (the install script or
+  the desktop app) to manage the host itself.
+- **Health:** the image has a health check (`conduitd healthcheck`, which
+  asks `/healthz`).
+- **Backups:** `docker exec -e CONDUIT_BACKUP_PASSPHRASE='…' conduit conduitd backup -data /data -out /data/backup.cdb`,
+  or use Settings, Backups ([backup.md](backup.md)).
+
 ## Android
 
 Download `conduit-android-<version>.apk` from the release and open it (allow

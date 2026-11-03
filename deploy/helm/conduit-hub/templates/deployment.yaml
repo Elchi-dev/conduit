@@ -1,0 +1,107 @@
+{{- if and (eq .Values.database.type "postgres") (not .Values.database.url) (not .Values.secrets.existingSecret) }}
+{{- fail "database.type is postgres: set database.url, or DATABASE_URL in secrets.existingSecret" }}
+{{- end }}
+{{- if not (has .Values.database.type (list "sqlite" "postgres")) }}
+{{- fail "database.type must be sqlite or postgres" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "conduit-hub.fullname" . }}
+  labels: {{- include "conduit-hub.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # SQLite and the relay both want a single writer: replace, don't overlap.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- include "conduit-hub.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "conduit-hub.selector" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.secrets.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "conduit-hub.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: hub
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 7700
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "conduit-hub.fullname" . }}
+          env:
+            - name: CONDUIT_HUB_RESEND_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "conduit-hub.secretName" . }}
+                  key: RESEND_KEY
+                  optional: true
+            - name: CONDUIT_HUB_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "conduit-hub.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+            {{- if eq .Values.database.type "postgres" }}
+            - name: CONDUIT_HUB_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "conduit-hub.secretName" . }}
+                  key: DATABASE_URL
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /v1/info
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/info
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          {{- if and (eq .Values.database.type "sqlite") .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (include "conduit-hub.fullname" .) .Values.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

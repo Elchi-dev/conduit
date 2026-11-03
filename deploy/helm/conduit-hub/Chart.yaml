@@ -1,0 +1,10 @@
+apiVersion: v2
+name: conduit-hub
+description: Conduit hub - accounts, device pairing, the end-to-end encrypted relay, sync, the module registry and update feeds for Conduit daemons.
+type: application
+version: 0.1.0
+appVersion: "0.2.0"
+home: https://github.com/Elchi-dev/conduit
+sources:
+  - https://github.com/Elchi-dev/conduit
+keywords: [conduit, relay, self-hosted]

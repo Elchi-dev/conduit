@@ -1,0 +1,28 @@
+# Conduit daemon in a container.
+#   docker compose -f deploy/daemon/compose.yaml up -d
+# Then open http://127.0.0.1:7600 and enter the setup token, which the
+# daemon prints at first start: docker compose logs conduitd
+services:
+  conduitd:
+    image: ghcr.io/elchi-dev/conduitd:latest
+    # build:
+    #   context: ../..
+    #   dockerfile: deploy/daemon/Dockerfile
+    restart: unless-stopped
+    ports:
+      # Only this machine. To reach it from your network, use a reverse
+      # proxy with TLS, or pair phones through a hub instead of opening it.
+      - "127.0.0.1:7600:7600"
+    volumes:
+      - conduit-data:/data
+      # Docker module: lets Conduit manage this host's containers. Anyone
+      # who controls Conduit then controls the host (root-equivalent);
+      # leave it out unless you want that. The container user also needs
+      # access to the socket (add `group_add: ["<docker gid>"]`).
+      # - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Names you reach Conduit by besides IP addresses and localhost.
+      CONDUIT_ALLOWED_HOSTS: ""
+      TZ: Etc/UTC
+volumes:
+  conduit-data:

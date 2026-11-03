@@ -1,22 +1,24 @@
 # conduit-hub container image.
 #   docker build -f deploy/hub/Dockerfile -t conduit-hub .
-FROM node:22-alpine AS site
+FROM --platform=$BUILDPLATFORM node:22-alpine AS site
 WORKDIR /src
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 COPY docs ./docs
+COPY api ./api
 COPY scripts ./scripts
 COPY site/package.json site/pnpm-lock.yaml ./site/
 RUN cd site && pnpm install --frozen-lockfile
 COPY site ./site
 RUN cd site && pnpm build
 
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
     -ldflags "-s -w -X github.com/elchi-dev/conduit/internal/version.Version=${VERSION}" \
     -o /out/conduit-hub ./cmd/conduit-hub
 

@@ -12,9 +12,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/elchi-dev/conduit/internal/ai"
 	"github.com/elchi-dev/conduit/internal/daemon"
@@ -62,6 +65,20 @@ func main() {
 				os.Exit(1)
 			}
 			fmt.Println("installed conduitd", p.Version+"; restart the daemon to use it")
+			return
+		case "healthcheck":
+			// For container health checks (images without curl): exit 0 when
+			// the daemon at -url answers /healthz.
+			fs := flag.NewFlagSet("healthcheck", flag.ExitOnError)
+			url := fs.String("url", envOr("CONDUIT_URL", "http://127.0.0.1:7600"), "daemon address")
+			_ = fs.Parse(os.Args[2:])
+			hc := &http.Client{Timeout: 3 * time.Second}
+			res, err := hc.Get(strings.TrimRight(*url, "/") + "/healthz")
+			if err != nil || res.StatusCode != http.StatusOK {
+				fmt.Fprintln(os.Stderr, "unhealthy:", err)
+				os.Exit(1)
+			}
+			res.Body.Close()
 			return
 		case "backup", "restore":
 			os.Exit(backupCommand(ctx, os.Args[1], os.Args[2:]))

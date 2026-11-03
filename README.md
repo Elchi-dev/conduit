@@ -68,6 +68,8 @@ irm https://<your hub>/install.ps1 | iex               # Windows PowerShell
 The scripts check every download against the release's checksums. Options,
 services and uninstalling: [docs/install.md](docs/install.md). The
 command-line client installs with `--cli`: [docs/cli.md](docs/cli.md).
+Container images: `ghcr.io/elchi-dev/conduitd` and `ghcr.io/elchi-dev/conduit-hub`,
+plus a Helm chart for the hub in `deploy/helm`.
 
 ## Build from source
 

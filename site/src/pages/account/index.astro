@@ -25,6 +25,13 @@ import Base from "../../layouts/Base.astro";
               <div class="error" id="passkey-error" hidden></div>
             </div>
           </form>
+          <form id="signin-2fa" class="panel stack" hidden>
+            <h2>Enter your code</h2>
+            <p class="muted small">Open your authenticator app and enter the six-digit code for this hub. Lost your phone? Enter one of your recovery codes.</p>
+            <label class="field"><span>Code</span><input name="code" class="data" autocomplete="one-time-code" required /></label>
+            <div class="error" data-error hidden></div>
+            <div class="row"><button class="btn primary" type="submit">Sign in</button><a href="#" id="back-2fa" class="quiet">Back</a></div>
+          </form>
           <form id="signup" class="panel stack">
             <h2>Create an account</h2>
             <label class="field"><span>Name</span><input name="name" autocomplete="name" /></label>
@@ -86,6 +93,40 @@ import Base from "../../layouts/Base.astro";
           <div class="error" data-error hidden></div>
         </form>
         <div class="rows" id="passkeys"></div>
+      </div>
+
+      <div class="block" id="twofactor-block" hidden>
+        <div class="block-head"><h2>Two-factor sign-in</h2></div>
+        <p class="muted" id="twofactor-state"></p>
+        <div class="secret" id="recovery" hidden>
+          <strong>Save your recovery codes now; they won't be shown again. Each works once instead of a code from your app.</strong>
+          <span class="data" id="recovery-codes"></span>
+          <div><button class="btn sm" type="button" id="recovery-copy">Copy</button></div>
+        </div>
+        <form id="tf-start" class="inline-form" hidden>
+          <label class="field"><span>Your password</span><input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="btn sm" type="submit">Set up two-factor sign-in</button>
+          <div class="error" data-error hidden></div>
+        </form>
+        <form id="tf-enable" class="stack" hidden>
+          <p class="small">Add this account to your authenticator app: open the link on your phone, or type the key into the app.</p>
+          <div class="secret">
+            <a id="tf-uri" href="#">Open in your authenticator app</a>
+            <span class="data" id="tf-secret"></span>
+          </div>
+          <div class="inline-form">
+            <label class="field"><span>Code the app shows now</span><input name="code" class="data" inputmode="numeric" autocomplete="one-time-code" required /></label>
+            <button class="btn sm primary" type="submit">Turn on</button>
+          </div>
+          <div class="error" data-error hidden></div>
+        </form>
+        <form id="tf-manage" class="inline-form" hidden>
+          <label class="field"><span>Your password</span><input name="password" type="password" autocomplete="current-password" required /></label>
+          <label class="field"><span>Code or recovery code</span><input name="code" class="data" autocomplete="one-time-code" required /></label>
+          <button class="btn sm" type="submit" name="action" value="codes">New recovery codes</button>
+          <button class="btn sm danger" type="submit" name="action" value="off">Turn off</button>
+          <div class="error" data-error hidden></div>
+        </form>
       </div>
 
       <div class="block">
@@ -153,12 +194,14 @@ import Base from "../../layouts/Base.astro";
     if (!signedIn || !me) return;
     $("who").textContent = me.name || "Account";
     $("who-sub").textContent = me.email + (me.admin ? ", hub admin" : "");
+    if (me.admin) $("who-sub").append(" (", el("a", { href: "/account/admin/" }, "run this hub"), ")");
     $("unverified").hidden = me.verified;
     $("hub-url").textContent = location.origin;
     devices();
     keys();
     orgs();
     passkeys();
+    twoFactor();
   }
 
   function row(...kids: (Node | string)[]) {
@@ -185,6 +228,24 @@ import Base from "../../layouts/Base.astro";
       );
     }));
     if (!list.length) box.append(empty("No devices yet. Make a pairing code and link a computer."));
+  }
+
+  function showRecovery(codes: string[]) {
+    $("recovery-codes").replaceChildren(...codes.flatMap((c, i) => (i ? [el("br"), c] : [c])));
+    $("recovery").hidden = false;
+    $("recovery-copy").onclick = () => navigator.clipboard?.writeText(codes.join("\n"));
+  }
+
+  async function twoFactor() {
+    if (!me) return;
+    $("twofactor-block").hidden = false;
+    const st = await api<{ enabled: boolean; recoveryCodesLeft: number }>("GET", "/me/2fa");
+    $("twofactor-state").textContent = st.enabled
+      ? `On. Signing in with your password also asks for a code from your authenticator app. ${st.recoveryCodesLeft} recovery ${st.recoveryCodesLeft === 1 ? "code" : "codes"} left. Passkeys don't need a code.`
+      : "Ask for a code from an authenticator app after your password, so a stolen password isn't enough.";
+    $("tf-start").hidden = st.enabled;
+    $("tf-manage").hidden = !st.enabled;
+    $("tf-enable").hidden = true;
   }
 
   async function passkeys() {
@@ -246,11 +307,71 @@ import Base from "../../layouts/Base.astro";
     }
   }
 
+  // With two-factor sign-in on, the password answers a challenge and a code
+  // from the authenticator app finishes the sign-in.
+  let challenge = "";
   form($("signin"), async (v) => {
-    const r = await api<{ token: string }>("POST", "/sessions", { email: v.email, password: v.password, device: "Website" });
-    setToken(r.token);
+    const r = await api<{ token?: string; twoFactor?: boolean; challenge?: string }>("POST", "/sessions", { email: v.email, password: v.password, device: "Website" });
+    if (r.twoFactor && r.challenge) {
+      challenge = r.challenge;
+      $("signin").hidden = true;
+      $("signin-2fa").hidden = false;
+      $<HTMLInputElement>("signin-2fa").querySelector("input")?.focus();
+      return;
+    }
+    setToken(r.token!);
     await load();
   });
+  form($("signin-2fa") as HTMLFormElement, async (v) => {
+    try {
+      const r = await api<{ token: string }>("POST", "/sessions/2fa", { challenge, code: v.code });
+      setToken(r.token);
+      $("signin-2fa").hidden = true;
+      $("signin").hidden = false;
+      await load();
+    } catch (e) {
+      if (/expired/.test((e as Error).message)) {
+        $("signin-2fa").hidden = true;
+        $("signin").hidden = false;
+      }
+      throw e;
+    }
+  });
+  form($("tf-start") as HTMLFormElement, async (v) => {
+    const r = await api<{ secret: string; uri: string }>("POST", "/me/2fa/setup", { password: v.password });
+    ($("tf-start") as HTMLFormElement).reset();
+    $("tf-start").hidden = true;
+    $("tf-secret").textContent = r.secret.replace(/(.{4})/g, "$1 ").trim();
+    $<HTMLAnchorElement>("tf-uri").href = r.uri;
+    $("tf-enable").hidden = false;
+  });
+  form($("tf-enable") as HTMLFormElement, async (v) => {
+    const r = await api<{ recoveryCodes: string[] }>("POST", "/me/2fa/enable", { code: v.code });
+    ($("tf-enable") as HTMLFormElement).reset();
+    showRecovery(r.recoveryCodes);
+    await twoFactor();
+  });
+  {
+    const mf = $("tf-manage") as HTMLFormElement;
+    let action = "codes";
+    mf.querySelectorAll<HTMLButtonElement>("button[name=action]").forEach((b) => (b.onclick = () => (action = b.value)));
+    form(mf, async (v) => {
+      if (action === "off") {
+        await api("POST", "/me/2fa/disable", { password: v.password, code: v.code });
+        $("recovery").hidden = true;
+      } else {
+        const r = await api<{ recoveryCodes: string[] }>("POST", "/me/2fa/recovery-codes", { password: v.password, code: v.code });
+        showRecovery(r.recoveryCodes);
+      }
+      mf.reset();
+      await twoFactor();
+    });
+  }
+  $("back-2fa").onclick = (e) => {
+    e.preventDefault();
+    $("signin-2fa").hidden = true;
+    $("signin").hidden = false;
+  };
   if (passkeysSupported()) {
     $("passkey-signin").hidden = false;
     $("passkey-go").onclick = async () => {

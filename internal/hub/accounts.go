@@ -24,6 +24,8 @@ type Account struct {
 	Verified  bool      `json:"verified"`
 	Admin     bool      `json:"admin"`
 	CreatedAt time.Time `json:"createdAt"`
+	// Disabled accounts can't sign in or use their devices and keys.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // caller is the authenticated subject of a request.
@@ -101,7 +103,7 @@ func (s *Server) authenticate(ctx context.Context, tok string) (caller, error) {
 		return c, errors.New("unauthenticated")
 	}
 	a, err := s.account(ctx, accountID)
-	if err != nil {
+	if err != nil || a.Disabled {
 		return c, errors.New("unauthenticated")
 	}
 	c.Account, c.token = a, tok
@@ -121,10 +123,10 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) account(ctx context.Context, id string) (Account, error) {
 	var a Account
-	var v, adm int
+	var v, adm, dis int
 	var cr string
-	err := s.db.Row(ctx, `SELECT id, email, name, verified, is_admin, created_at FROM accounts WHERE id = ?`, id).Scan(&a.ID, &a.Email, &a.Name, &v, &adm, &cr)
-	a.Verified, a.Admin, a.CreatedAt = v == 1, adm == 1, parseTS(cr)
+	err := s.db.Row(ctx, `SELECT id, email, name, verified, is_admin, created_at, disabled FROM accounts WHERE id = ?`, id).Scan(&a.ID, &a.Email, &a.Name, &v, &adm, &cr, &dis)
+	a.Verified, a.Admin, a.CreatedAt, a.Disabled = v == 1, adm == 1, parseTS(cr), dis == 1
 	return a, err
 }
 
@@ -312,6 +314,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "wrong email or password")
 		return
 	}
+	if s.twoFactorOn(ctx, id) {
+		// A second step; the account's failure count is reset after it.
+		ch := s.twoFactor.Put(id, req.Device)
+		if ch == "" {
+			writeErr(w, http.StatusTooManyRequests, "too many sign-ins in progress; try again in a minute")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"twoFactor": true, "challenge": ch})
+		return
+	}
 	s.logins.Reset(email)
 	s.issueSession(w, r, id, req.Device)
 }
@@ -320,6 +332,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 // password sign-in ({token, account}) and sends the new-sign-in email.
 func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id, device string) {
 	ctx := r.Context()
+	if a, err := s.account(ctx, id); err != nil || a.Disabled {
+		writeErr(w, http.StatusForbidden, "this account is switched off; contact the hub's operator")
+		return
+	}
 	tok := sessionPrefix + token(20)
 	if device == "" {
 		device = r.UserAgent()
@@ -329,6 +345,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id, device
 		writeErr(w, http.StatusInternalServerError, "could not sign in")
 		return
 	}
+	_, _ = s.db.Exec(ctx, `UPDATE accounts SET last_sign_in_at = ? WHERE id = ?`, ts(s.now()), id)
 	a, _ := s.account(ctx, id)
 	go func() {
 		_ = s.mail.Send(context.Background(), a.Email, "New sign-in to "+s.cfg.Name,

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/ratelimit"
+	"github.com/elchi-dev/conduit/internal/totp"
 	"github.com/elchi-dev/conduit/internal/version"
 )
 
@@ -91,6 +92,7 @@ type Server struct {
 	now   func() time.Time
 
 	logins        *ratelimit.Window // failed sign-ins per account
+	twoFactor     *totp.Challenges  // password sign-ins waiting for a code
 	relayConnects *ratelimit.Window // new relay client connections per address
 }
 
@@ -107,6 +109,7 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Server, error) {
 	}
 	return &Server{cfg: cfg, db: db, mail: m, log: log, relay: newRelayHub(), now: time.Now,
 		logins:        ratelimit.New(10, 15*time.Minute, 50000),
+		twoFactor:     totp.NewChallenges(),
 		relayConnects: ratelimit.New(120, 10*time.Minute, 50000)}, nil
 }
 
@@ -189,6 +192,12 @@ func (s *Server) routes() []route {
 		{"POST /v1/accounts/password-reset", s.limited("reset", 5, s.requestReset)},
 		{"POST /v1/accounts/password-reset/confirm", s.confirmReset},
 		{"POST /v1/sessions", s.limited("login", 20, s.login)},
+		{"POST /v1/sessions/2fa", s.limited("login-2fa", 30, s.sessionTwoFactor)},
+		{"GET /v1/me/2fa", s.auth(s.twoFactorStatus)},
+		{"POST /v1/me/2fa/setup", s.auth(s.twoFactorSetup)},
+		{"POST /v1/me/2fa/enable", s.auth(s.twoFactorEnable)},
+		{"POST /v1/me/2fa/disable", s.auth(s.twoFactorDisable)},
+		{"POST /v1/me/2fa/recovery-codes", s.auth(s.twoFactorRecoveryCodes)},
 		{"POST /v1/sessions/passkey/begin", s.limited("passkey-login", 30, s.beginPasskeyLogin)},
 		{"POST /v1/sessions/passkey/finish", s.limited("passkey-finish", 30, s.finishPasskeyLogin)},
 		{"GET /v1/passkeys", s.auth(s.listPasskeys)},
@@ -229,6 +238,12 @@ func (s *Server) routes() []route {
 		{"GET /v1/registry/authors/{handle}", s.getAuthor},
 		{"POST /v1/registry/packages/{name}/versions", s.auth(s.publishVersion)},
 		{"POST /v1/registry/packages/{name}/versions/{version}/yank", s.auth(s.yankVersion)},
+
+		{"GET /v1/admin/stats", s.auth(s.adminStats)},
+		{"GET /v1/admin/accounts", s.auth(s.adminAccounts)},
+		{"POST /v1/admin/accounts/{id}/disable", s.auth(s.adminDisable)},
+		{"POST /v1/admin/accounts/{id}/enable", s.auth(s.adminEnable)},
+		{"DELETE /v1/admin/accounts/{id}", s.auth(s.adminDelete)},
 
 		{"GET /v1/updates/{component}/{channel}/{platform}", s.latestRelease},
 		{"POST /v1/releases", s.auth(s.publishRelease)},

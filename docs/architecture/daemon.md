@@ -39,6 +39,34 @@ addresses as a relying party, so daemon passkeys would need the app to move
 to a host name such as `localhost` first; the phone's relay client has no
 stable origin of its own either.
 
+### Two-factor sign-in
+
+People can turn on two-factor sign-in with an authenticator app (Settings,
+Two-factor sign-in): TOTP (RFC 6238, SHA-1, 6 digits, 30-second steps),
+implemented in `internal/totp`.
+
+- **Setup** needs the password, shows a QR code and the key, and takes
+  effect only once a code from the app is confirmed. Ten recovery codes are
+  shown once; each works once instead of a code.
+- **Sign-in:** a correct password answers `{twoFactor: true, challenge}`
+  instead of a session; `POST /api/v1/auth/login/2fa` with the challenge and
+  a code (or a recovery code) starts the session. A challenge lasts 5
+  minutes and takes 5 wrong codes; wrong codes count toward the sign-in
+  limits.
+- **Replay:** codes are accepted one step either side of now, and a step
+  that was used (or any older one) is refused, so a code can't be used twice.
+- **At rest:** secrets are encrypted with XChaCha20-Poly1305 under a random
+  key in settings (`auth.totp_key`), bound to the account id; recovery codes
+  are stored hashed.
+- **Turning it off** or making new recovery codes needs the password and a
+  code. For a lost phone without recovery codes, an owner or admin resets it
+  (`POST /api/v1/users/{id}/2fa/reset`, same rules as setting someone's
+  password: not yourself, never the owner, only the owner for admins); that
+  also ends the person's sessions.
+- Single sign-on leaves the second factor to the identity provider. API
+  keys and agents don't sign in, so two-factor sign-in doesn't apply to
+  them.
+
 ### Single sign-on
 
 Teams can sign in with any OpenID Connect provider (Google Workspace,

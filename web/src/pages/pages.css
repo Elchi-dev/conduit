@@ -718,3 +718,14 @@ pre.log {
   padding: 2px 8px;
   font-size: var(--t-sm);
 }
+
+/* Two-factor sign-in */
+.recovery-codes {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  columns: 2;
+  font-size: var(--t-sm);
+}

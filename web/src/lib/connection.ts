@@ -150,7 +150,7 @@ export async function apiFetch(input: Request): Promise<Response> {
   const c = await connect();
   const res = await c.request(input.method, path, headers, body);
   // Sessions are bearer tokens here: keep the one login hands out.
-  if (res.ok && (path.endsWith("/auth/login") || path.endsWith("/setup"))) {
+  if (res.ok && (path.endsWith("/auth/login") || path.endsWith("/auth/login/2fa") || path.endsWith("/setup"))) {
     try {
       const data = (await res.clone().json()) as { token?: string };
       if (data.token) setToken(data.token);

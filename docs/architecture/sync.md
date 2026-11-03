@@ -65,7 +65,11 @@ Each collection goes over every transport that's set up:
   such as `http://192.168.1.20:7600`. A round POSTs the encrypted document to
   `<peer>/sync/exchange`; the peer merges, applies, and answers with the
   merged document, encrypted. The peer must listen beyond loopback
-  (`-listen 0.0.0.0:7600`).
+  (`-listen 0.0.0.0:7600`). **Find computers on this network** in the Sync
+  settings fills the peers in from mDNS discovery
+  (`GET /api/v1/remote/discover`, see
+  [protocol/hub.md](../protocol/hub.md#discovery-mdns)); check the key
+  fingerprint it shows against the one the other computer shows.
 
 ## Encryption
 

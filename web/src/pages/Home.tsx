@@ -2,6 +2,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { api, ok } from "../api/client";
 import { actorLabel, ago, featureInstances } from "../lib/format";
+import { TileBoard } from "../components/Tiles";
 import { ApprovalCard } from "./Approvals";
 import { presetNames } from "./Modules";
 import "./pages.css";
@@ -9,6 +10,12 @@ import "./pages.css";
 function greeting() {
   const h = new Date().getHours();
   return h < 5 ? "Working late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+
+/** "remote_pairing_created" reads as "Remote pairing created". */
+function humanAction(a: string) {
+  const s = a.replace(/[_.]+/g, " ").trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function Home() {
@@ -69,6 +76,8 @@ export function Home() {
         </div>
       )}
 
+      <TileBoard />
+
       {down.length > 0 && (
         <section className="stack" style={{ gap: 8 }}>
           <h2 className="section-title">Needs attention</h2>
@@ -115,7 +124,7 @@ export function Home() {
             {recent.data!.map((e) => (
               <div className="row recent-row" key={e.seq}>
                 <span className="small">
-                  <span className="data">{e.action}</span> <span className="muted">on {e.module}</span>
+                  <span>{humanAction(e.action)}</span> <span className="muted">on {e.module}</span>
                 </span>
                 <span className="xs muted">{actorLabel(e.actor)}</span>
                 <span className={`tag st-${e.status}`}>{e.status}</span>

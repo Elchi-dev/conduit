@@ -91,6 +91,31 @@ people add their passkeys again; their passwords keep working.
    code, and choose Link to hub.
 4. Choose Pair a device and scan the code with your phone.
 
+## Operating a hub
+
+Accounts with admin rights (the address in `CONDUIT_HUB_ADMIN_EMAIL`, once
+confirmed) see **Hub admin** on their account page (`/account/admin/`):
+
+- **Overview:** accounts (confirmed, admins, switched off), paired devices
+  and daemons, daemons connected to the relay right now, organisations,
+  sync blobs and their size, registry packages and releases.
+- **Accounts:** search by email or name, see devices and the last sign-in,
+  and:
+  - **Switch off:** ends the account's sessions, revokes its devices and API
+    keys, drops its daemons' relay connections and refuses sign-in. Switching
+    it back on allows sign-in again; devices and keys stay revoked, so the
+    person pairs again.
+  - **Delete:** removes everything the hub keeps for the account (sessions,
+    devices, keys, sync blobs, passkeys, its registry author handle and
+    organisation memberships, and organisations left without members).
+    Published registry packages stay, since others may depend on them.
+
+The affected person is told by email each time, and every action is written
+to the hub's log with the admin's address. Admins can't switch off or delete
+their own account, so a hub always keeps at least one admin who can sign in.
+The same actions are in the API under `/v1/admin` (signed-in admins only, no
+API keys).
+
 ## Back up and upgrade
 
 - Back up the database (`pg_dump`, or copy the SQLite file while the hub is

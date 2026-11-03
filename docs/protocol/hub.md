@@ -37,6 +37,24 @@ are rate-limited per client address.
 - With `CONDUIT_HUB_OPEN_REGISTRATION=false`, only the admin address and
   invited people can sign up.
 
+### Two-factor sign-in
+
+People can turn on two-factor sign-in with an authenticator app (TOTP, the
+same as the daemon's, `internal/totp`) on the account page:
+`POST /v1/me/2fa/setup` (needs the password) answers the key and an
+`otpauth://` link, `POST /v1/me/2fa/enable` confirms a code and answers ten
+one-time recovery codes. A password sign-in (`POST /v1/sessions`) then
+answers `{twoFactor: true, challenge}`, and `POST /v1/sessions/2fa` with a
+code or recovery code finishes it (a challenge lasts 5 minutes and takes 5
+wrong codes; each code works once). Turning it off or replacing the
+recovery codes needs the password and a code, and sends an email. Passkey
+sign-in needs no second step: a passkey already proves two factors. A
+password reset by email leaves two-factor sign-in on, so access to the
+mailbox alone isn't enough to take an account; without the phone and the
+recovery codes, the hub operator has to remove it (delete the account's row
+in `account_totp`). Secrets are encrypted at rest under a key in
+`hub_settings`.
+
 ### Passkeys
 
 People can add passkeys (WebAuthn) to their account and sign in with one
@@ -198,9 +216,32 @@ with no hub at all. Clients try the LAN address first (2.5 s) and fall back to
 the hub. At most 16 direct connections at a time.
 
 Daemons also sync directly on the local network, without a hub: see
-[architecture/sync.md](../architecture/sync.md). LAN discovery (mDNS) isn't
-built; pairing and sync peers carry addresses, so discovery isn't needed to
-connect.
+[architecture/sync.md](../architecture/sync.md).
+
+### Discovery (mDNS)
+
+A daemon that listens beyond loopback announces itself with multicast DNS
+service discovery (RFC 6762 and 6763, `internal/mdns`, no dependencies):
+
+```
+_conduit._tcp.local.             PTR  <name> (<id>)._conduit._tcp.local.
+<name> (<id>)._conduit._tcp...   SRV  0 0 <port> conduit-<id>.local.
+<name> (<id>)._conduit._tcp...   TXT  id=<id> name=<name> fp=<fingerprint> v=<version> path=/relay
+conduit-<id>.local.              A    <each LAN address>
+```
+
+`id` is the first ten characters of the relay key fingerprint `fp`. The
+announcement holds nothing secret: anyone on the network can learn that a
+Conduit daemon runs there, its name and its version, as with any mDNS
+service. Discovery only finds addresses; trust still comes from the
+fingerprint, which pairing pins and people compare. The daemon answers
+queries for `_conduit._tcp.local.` (and the DNS-SD service list), sends
+answers by multicast or, for one-shot queries from ordinary sockets,
+straight back, and says goodbye (TTL 0) when it stops.
+`GET /api/v1/remote/discover` (admin) browses for about 1.5 seconds and
+lists the other daemons with `http://` and `ws://…/relay` addresses; the Sync
+settings use it to fill in peers. Networks that block multicast (some
+office and guest Wi-Fi) simply find nothing; addresses can still be typed.
 
 ## Sync
 

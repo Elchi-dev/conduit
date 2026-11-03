@@ -1,0 +1,56 @@
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+.tile-label {
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.tile-label:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.tile-value {
+  font-size: var(--t-2xl);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-small {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-error {
+  border-color: color-mix(in srgb, var(--fault) 45%, var(--line));
+}
+.tile-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: auto;
+}
+.pin-form {
+  flex-wrap: wrap;
+  align-items: end;
+}
+.pin-form .field {
+  min-width: 140px;
+}

@@ -5,6 +5,7 @@ import { api, ok, type ActionSpec, type Outcome } from "../api/client";
 import { PlanView } from "../components/PlanView";
 import { defaults, SchemaForm, type JSONSchema } from "../components/SchemaForm";
 import { ResultView } from "../components/ResultView";
+import { PinButton } from "../components/Tiles";
 import { VaultGate } from "../modules/vault/VaultGate";
 import { ago } from "../lib/format";
 import "./pages.css";
@@ -165,6 +166,9 @@ function ActionRunner({ instance, action }: { instance: string; action: ActionSp
       {run.error && <div className="error">{run.error.message}</div>}
       {result?.result.plan && <PlanView plan={result.result.plan} />}
       {result && !result.result.plan && result.result.output !== undefined && <ResultView value={result.result.output} />}
+      {result && action.risk === "read" && !action.sensitive && result.result.output !== undefined && (
+        <PinButton instance={instance} action={action.name} title={action.title || action.name} input={input} output={result.result.output} />
+      )}
       {result?.audit.undo && !result.result.plan && (
         <p className="xs muted">Done. You can undo this from the timeline ({result.audit.undo.description}).</p>
       )}

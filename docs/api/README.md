@@ -31,3 +31,4 @@ what differs (bearer tokens instead of cookies; the event stream arrives as stre
 - `sdk/external`: starter kits for writing modules in Python, TypeScript and
   Go.
 - [Single sign-on](sso.md): sign in to a daemon with Google Workspace, Microsoft Entra ID, Okta, Keycloak, Authentik or another OpenID Connect provider.
+- Two-factor sign-in: when an account has it on, `POST /auth/login` (daemon) and `POST /v1/sessions` (hub) answer `{twoFactor: true, challenge}`; finish with `POST /auth/login/2fa` or `POST /v1/sessions/2fa` and a code. Clients that sign in with a password must handle this; API keys are unaffected. See [architecture/daemon.md](../architecture/daemon.md#two-factor-sign-in).

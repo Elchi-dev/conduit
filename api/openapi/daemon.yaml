@@ -96,8 +96,37 @@ paths:
                 password: { type: string }
                 device: { type: string, description: Shown in the session list, e.g. "Pixel 9" }
       responses:
+        "200":
+          description: Signed in, or (for accounts with two-factor sign-in) a challenge for POST /auth/login/2fa
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/SessionResponse" }
+                  - { $ref: "#/components/schemas/TwoFactorChallenge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Too many failed sign-ins; see Retry-After }
+  /auth/login/2fa:
+    post:
+      operationId: loginTwoFactor
+      tags: [auth]
+      summary: Finish signing in with a code from the authenticator app or a recovery code
+      description: The challenge lasts 5 minutes and takes 5 wrong codes. A code works once; a recovery code works once and then is used up. Wrong codes count toward the sign-in limits.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge, code]
+              properties:
+                challenge: { type: string }
+                code: { type: string, description: "Six digits from the app, or a recovery code like abcd-efgh-ijkl-mnop-qrst" }
+      responses:
         "200": { description: Signed in, content: { application/json: { schema: { $ref: "#/components/schemas/SessionResponse" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Too many failed sign-ins; see Retry-After }
 
   /auth/logout:
     post:
@@ -1191,6 +1220,161 @@ paths:
         - { name: state, in: query, schema: { type: string } }
       responses:
         "302": { description: To / with a session cookie, or to /?signin_error=<code> }
+  /me/2fa:
+    get:
+      operationId: twoFactorStatus
+      tags: [auth]
+      summary: Whether your account uses two-factor sign-in (signed-in people only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, required: [enabled, recoveryCodesLeft], properties: { enabled: { type: boolean }, recoveryCodesLeft: { type: integer } } }
+  /me/2fa/setup:
+    post:
+      operationId: twoFactorSetup
+      tags: [auth]
+      summary: Start setting up two-factor sign-in; answers the secret and an otpauth:// link for a QR code
+      description: Needs your password. Nothing changes until POST /me/2fa/enable confirms a code from the app.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string } } } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, required: [secret, uri], properties: { secret: { type: string, description: Base32, to type into the app }, uri: { type: string, description: "otpauth://totp/…" } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Two-factor sign-in is already on }
+  /me/2fa/enable:
+    post:
+      operationId: twoFactorEnable
+      tags: [auth]
+      summary: Turn two-factor sign-in on with a code from the app; answers the recovery codes, shown once
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        "200": { description: "On", content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryCodes" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Not set up yet, or already on }
+  /me/2fa/disable:
+    post:
+      operationId: twoFactorDisable
+      tags: [auth]
+      summary: Turn two-factor sign-in off (needs your password and a code or recovery code)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TwoFactorConfirm" } } }
+      responses:
+        "204": { description: "Off" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /me/2fa/recovery-codes:
+    post:
+      operationId: twoFactorRecoveryCodes
+      tags: [auth]
+      summary: Replace your recovery codes (needs your password and a code); the old ones stop working
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TwoFactorConfirm" } } }
+      responses:
+        "200": { description: New codes, content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryCodes" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /users/{id}/2fa/reset:
+    post:
+      operationId: resetUserTwoFactor
+      tags: [auth]
+      summary: Turn off someone else's two-factor sign-in, for a lost phone (signed-in people only; ends their sessions)
+      description: Not your own, never the owner's, and only the owner resets an admin's.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Reset }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /remote/discover:
+    get:
+      operationId: discoverDaemons
+      tags: [remote]
+      summary: Other Conduit daemons announcing themselves on the local network (mDNS, about 1.5 seconds)
+      description: Daemons that listen beyond loopback announce themselves as _conduit._tcp.local. This lists the others, for sync peers. Compare the fingerprint with the one the other daemon shows before trusting it.
+      responses:
+        "200":
+          description: Daemons found (this one excluded)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [name, id, fingerprint, version, addresses, port, url, relay]
+                  properties:
+                    name: { type: string }
+                    id: { type: string }
+                    fingerprint: { type: string, description: Fingerprint of the daemon's relay key }
+                    version: { type: string }
+                    addresses: { type: array, items: { type: string } }
+                    port: { type: integer }
+                    url: { type: string, description: "http://<address>:<port>, usable as a sync peer" }
+                    relay: { type: string, description: "ws://<address>:<port>/relay" }
+        "503": { $ref: "#/components/responses/BadRequest" }
+  /backup:
+    post:
+      operationId: downloadBackup
+      tags: [system]
+      summary: Download an encrypted backup of this daemon (signed-in people only)
+      description: One file with the database snapshot and the data folder, encrypted with a key derived from the passphrase (Argon2id, XChaCha20-Poly1305 in chunks). Restore with `conduitd restore`. See docs/backup.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [passphrase], properties: { passphrase: { type: string, minLength: 12 } } }
+      responses:
+        "200": { description: The backup file, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: A backup is already running }
+  /backup/schedule:
+    get:
+      operationId: getBackupSchedule
+      tags: [system]
+      summary: The daily backup setting and how the last one went
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BackupSchedule" } } } }
+    put:
+      operationId: setBackupSchedule
+      tags: [system]
+      summary: Write a backup every day to a folder (signed-in people only)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BackupSchedule" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BackupSchedule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /backup/run:
+    post:
+      operationId: runBackup
+      tags: [system]
+      summary: Write a scheduled backup now (signed-in people only)
+      responses:
+        "200": { description: Written, content: { application/json: { schema: { type: object, required: [file], properties: { file: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /me/tiles:
+    get:
+      operationId: getTiles
+      tags: [auth]
+      summary: Your home board's tiles
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Tile" } } } } }
+    put:
+      operationId: setTiles
+      tags: [auth]
+      summary: Replace your home board's tiles (read actions only, at most 24)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Tile" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Tile" } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
 components:
   securitySchemes:
     bearer:
@@ -1205,6 +1389,46 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    BackupSchedule:
+      type: object
+      required: [enabled, folder, passphrase, keep, hour]
+      properties:
+        enabled: { type: boolean }
+        folder: { type: string, description: Full path; default <data>/backups }
+        passphrase: { type: string, description: "secret:// reference to the backup passphrase in the vault" }
+        keep: { type: integer, minimum: 1, maximum: 365 }
+        hour: { type: integer, minimum: 0, maximum: 23 }
+        lastRun: { type: string }
+        lastFile: { type: string }
+        lastError: { type: string }
+    Tile:
+      type: object
+      required: [id, instance, action, label, refresh]
+      properties:
+        id: { type: string }
+        instance: { type: string }
+        action: { type: string }
+        input: {}
+        label: { type: string }
+        field: { type: string, description: Dot path into the result to show, e.g. cpu.percent }
+        refresh: { type: integer, description: Seconds between updates, 15 to 3600 }
+    TwoFactorChallenge:
+      type: object
+      required: [twoFactor, challenge]
+      properties:
+        twoFactor: { type: boolean, enum: [true] }
+        challenge: { type: string, description: For POST /auth/login/2fa; lasts 5 minutes }
+    TwoFactorConfirm:
+      type: object
+      required: [password, code]
+      properties:
+        password: { type: string }
+        code: { type: string, description: A code from the app or a recovery code }
+    RecoveryCodes:
+      type: object
+      required: [recoveryCodes]
+      properties:
+        recoveryCodes: { type: array, items: { type: string }, description: Ten one-time codes; shown only now }
     OIDCSettings:
       type: object
       properties:
@@ -1381,6 +1605,7 @@ components:
         role: { $ref: "#/components/schemas/Role" }
         createdAt: { type: string, format: date-time }
         disabled: { type: boolean }
+        twoFactor: { type: boolean, description: Signs in with an authenticator code after the password }
     Session:
       type: object
       required: [id, userId, device, createdAt, lastSeenAt, expiresAt]

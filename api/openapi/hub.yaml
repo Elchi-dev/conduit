@@ -30,6 +30,7 @@ tags:
   - name: keys
   - name: registry
   - name: updates
+  - name: admin
 paths:
   /version:
     get:
@@ -135,10 +136,13 @@ paths:
                 device: { type: string, description: A label for this sign-in }
       responses:
         "200":
-          description: Signed in; sessions last 30 days
+          description: Signed in (sessions last 30 days), or, for accounts with two-factor sign-in, `{twoFactor:true, challenge}` for POST /sessions/2fa
           content:
             application/json:
-              schema: { type: object, required: [token, account], properties: { token: { type: string }, account: { $ref: "#/components/schemas/Account" } } }
+              schema:
+                oneOf:
+                  - { type: object, required: [token, account], properties: { token: { type: string }, account: { $ref: "#/components/schemas/Account" } } }
+                  - { $ref: "#/components/schemas/TwoFactorChallenge" }
         "401": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
     delete:
@@ -567,6 +571,138 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
+  /admin/stats:
+    get:
+      tags: [admin]
+      summary: Hub overview for the operator console (signed-in hub admins only)
+      responses:
+        "200": { description: Counts, content: { application/json: { schema: { $ref: "#/components/schemas/AdminStats" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/accounts:
+    get:
+      tags: [admin]
+      summary: Accounts on this hub, newest first, optionally searched by email or name (hub admins only)
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: A page of accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, items]
+                properties:
+                  total: { type: integer }
+                  items: { type: array, items: { $ref: "#/components/schemas/AdminAccount" } }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/accounts/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      tags: [admin]
+      summary: Delete an account and everything the hub keeps for it (hub admins only; not your own)
+      description: Removes sessions, devices, API keys, sync blobs, passkeys, the registry author handle and organisation memberships, and organisations left without members. Published registry packages stay. The account is told by email.
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/accounts/{id}/disable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [admin]
+      summary: Switch an account off (hub admins only; not your own)
+      description: Ends its sessions, revokes its devices and API keys, drops its daemons' relay connections and refuses sign-in until it is switched on again. The account is told by email.
+      responses:
+        "200": { description: Switched off, content: { application/json: { schema: { $ref: "#/components/schemas/Account" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/accounts/{id}/enable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [admin]
+      summary: Switch an account back on (devices and keys stay revoked)
+      responses:
+        "200": { description: Switched on, content: { application/json: { schema: { $ref: "#/components/schemas/Account" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /sessions/2fa:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Finish a password sign-in with a code from the authenticator app or a recovery code
+      description: The challenge lasts 5 minutes and takes 5 wrong codes; each code works once. Passkey sign-in needs no second step.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [challenge, code], properties: { challenge: { type: string }, code: { type: string } } }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema: { type: object, required: [token, account], properties: { token: { type: string }, account: { $ref: "#/components/schemas/Account" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /me/2fa:
+    get:
+      tags: [accounts]
+      summary: Whether two-factor sign-in is on (signed-in person)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, required: [enabled, recoveryCodesLeft], properties: { enabled: { type: boolean }, recoveryCodesLeft: { type: integer } } }
+  /me/2fa/setup:
+    post:
+      tags: [accounts]
+      summary: Start setting up two-factor sign-in (needs the password); answers the secret and an otpauth:// link
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string } } } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, required: [secret, uri], properties: { secret: { type: string }, uri: { type: string } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /me/2fa/enable:
+    post:
+      tags: [accounts]
+      summary: Turn two-factor sign-in on with a code from the app; answers ten recovery codes, shown once
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        "200": { description: "On", content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryCodes" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+  /me/2fa/disable:
+    post:
+      tags: [accounts]
+      summary: Turn two-factor sign-in off (needs the password and a code or recovery code)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [password, code], properties: { password: { type: string }, code: { type: string } } } } }
+      responses:
+        "204": { description: "Off" }
+        "403": { $ref: "#/components/responses/Error" }
+  /me/2fa/recovery-codes:
+    post:
+      tags: [accounts]
+      summary: Replace the recovery codes (needs the password and a code)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [password, code], properties: { password: { type: string }, code: { type: string } } } } }
+      responses:
+        "200": { description: New codes, content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryCodes" } } } }
+        "403": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer }
@@ -595,6 +731,17 @@ components:
       description: OK
       content: { application/json: { schema: { type: object, additionalProperties: true } } }
   schemas:
+    TwoFactorChallenge:
+      type: object
+      required: [twoFactor, challenge]
+      properties:
+        twoFactor: { type: boolean, enum: [true] }
+        challenge: { type: string }
+    RecoveryCodes:
+      type: object
+      required: [recoveryCodes]
+      properties:
+        recoveryCodes: { type: array, items: { type: string } }
     Passkey:
       type: object
       required: [id, name, createdAt]
@@ -618,6 +765,29 @@ components:
         verified: { type: boolean }
         admin: { type: boolean }
         createdAt: { type: string, format: date-time }
+        disabled: { type: boolean, description: Switched off by an operator }
+    AdminAccount:
+      allOf:
+        - $ref: "#/components/schemas/Account"
+        - type: object
+          properties:
+            devices: { type: integer, description: Paired devices that aren't revoked }
+            lastSignInAt: { type: string, description: "RFC 3339; empty when never recorded" }
+    AdminStats:
+      type: object
+      properties:
+        accounts: { type: integer }
+        verified: { type: integer }
+        admins: { type: integer }
+        disabled: { type: integer }
+        devices: { type: integer }
+        daemons: { type: integer }
+        daemonsOnline: { type: integer, description: Daemons connected to the relay right now }
+        orgs: { type: integer }
+        syncBlobs: { type: integer }
+        syncBytes: { type: integer }
+        packages: { type: integer }
+        releases: { type: integer }
     Org:
       type: object
       properties:

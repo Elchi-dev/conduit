@@ -41,6 +41,37 @@ export function SyncSection({ admin }: { admin: boolean }) {
     onSuccess: refresh,
   });
   const leave = useMutation({ mutationFn: () => ok(api.DELETE("/sync/group")), onSuccess: refresh });
+  // Other Conduit daemons announcing themselves on this network (mDNS).
+  const find = useMutation({ mutationFn: () => ok(api.GET("/remote/discover")) });
+  const addFound = (current: string[], found: { url: string }[]) => {
+    const all = [...current];
+    for (const f of found) if (f.url && !all.includes(f.url)) all.push(f.url);
+    return all;
+  };
+  const finder = (onFound: (urls: string[]) => void, current: string[]) => (
+    <div className="stack" style={{ gap: 4 }}>
+      <div>
+        <button
+          type="button"
+          className="btn sm"
+          disabled={find.isPending}
+          onClick={() => find.mutate(undefined, { onSuccess: (found) => onFound(addFound(current, found)) })}
+        >
+          {find.isPending ? "Looking…" : "Find computers on this network"}
+        </button>
+      </div>
+      {find.data && find.data.length === 0 && (
+        <small className="muted">None found. The other computer has to run Conduit listening on your network.</small>
+      )}
+      {find.data?.map((f) => (
+        <small className="muted" key={f.url}>
+          Found {f.name} at <span className="data">{f.url}</span>, key fingerprint <span className="data">{f.fingerprint}</span>. Check it
+          matches the one that computer shows under Remote access.
+        </small>
+      ))}
+      {find.error && <div className="error">{find.error.message}</div>}
+    </div>
+  );
   if (!admin || !st.data) return null;
   const s = st.data;
 
@@ -124,6 +155,7 @@ export function SyncSection({ admin }: { admin: boolean }) {
             <input className="data" value={peers} onChange={(e) => setPeers(e.target.value)} placeholder="http://192.168.1.20:7600" />
             <small>To sync without a hub. The other computer has to listen on your network.</small>
           </label>
+          {finder((urls) => setPeers(urls.join(" ")), peerList())}
           {(start.error || join.error) && <div className="error">{(start.error || join.error)!.message}</div>}
           <div className="inline">
             <button type="button" className="btn quiet" onClick={() => setMode("idle")}>
@@ -164,8 +196,10 @@ export function SyncSection({ admin }: { admin: boolean }) {
                 if (v.join(" ") !== s.peers.join(" ")) save.mutate({ peers: v });
               }}
               placeholder="http://192.168.1.20:7600"
+              key={s.peers.join(" ")}
             />
           </label>
+          {finder((urls) => save.mutate({ peers: urls }), s.peers)}
           {save.error && <div className="error">{save.error.message}</div>}
           {s.lastRun && (
             <div className="stack" style={{ gap: 4 }}>

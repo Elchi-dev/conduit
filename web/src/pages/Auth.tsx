@@ -92,11 +92,77 @@ export function Login() {
   // Single sign-on is a browser redirect, so it works only on the daemon's own address.
   const sso = useQuery({ queryKey: ["auth", "oidc"], queryFn: () => ok(api.GET("/auth/oidc")), enabled: !relay, retry: false });
   const ssoError = new URLSearchParams(window.location.search).get("signin_error");
-  if (elsewhere) return <Connect onBack={() => setElsewhere(false)} />;
+  // With two-factor sign-in on, the password answers a challenge and a code
+  // from the authenticator app (or a recovery code) finishes the sign-in.
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const m = useMutation({
     mutationFn: () => ok(api.POST("/auth/login", { body: { ...f, device: "Browser" } })),
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: (r) => {
+      if ("challenge" in r) {
+        setChallenge(r.challenge);
+        return;
+      }
+      qc.invalidateQueries();
+    },
   });
+  const second = useMutation({
+    mutationFn: () => ok(api.POST("/auth/login/2fa", { body: { challenge: challenge ?? "", code } })),
+    onSuccess: () => qc.invalidateQueries(),
+    onError: (e) => {
+      if (/expired/.test(e.message)) {
+        setChallenge(null);
+        setCode("");
+      }
+    },
+  });
+  if (elsewhere) return <Connect onBack={() => setElsewhere(false)} />;
+  if (challenge) {
+    return (
+      <div className="gate">
+        <div className="gate-box stack" style={{ gap: 24 }}>
+          <Brand />
+          <div className="stack" style={{ gap: 8 }}>
+            <h1>Enter your code</h1>
+            <p className="muted">Open your authenticator app and enter the six-digit code for Conduit. Lost your phone? Enter one of your recovery codes.</p>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              second.mutate();
+            }}
+          >
+            <label className="field">
+              <span>Code</span>
+              <input
+                className="data"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                autoFocus
+                autoComplete="one-time-code"
+                inputMode={code.length > 6 || /[a-z-]/i.test(code) ? "text" : "numeric"}
+                placeholder="123456"
+              />
+            </label>
+            {second.error && <div className="error">{second.error.message}</div>}
+            <button className="btn primary" disabled={second.isPending}>
+              Sign in
+            </button>
+          </form>
+          <button
+            className="btn quiet"
+            onClick={() => {
+              setChallenge(null);
+              setCode("");
+            }}
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="gate">
       <div className="gate-box stack" style={{ gap: 24 }}>

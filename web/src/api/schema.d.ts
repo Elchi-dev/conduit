@@ -59,6 +59,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login/2fa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish signing in with a code from the authenticator app or a recovery code
+         * @description The challenge lasts 5 minutes and takes 5 wrong codes. A code works once; a recovery code works once and then is used up. Wrong codes count toward the sign-in limits.
+         */
+        post: operations["loginTwoFactor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/logout": {
         parameters: {
             query?: never;
@@ -1441,10 +1461,249 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/2fa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether your account uses two-factor sign-in (signed-in people only) */
+        get: operations["twoFactorStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/2fa/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start setting up two-factor sign-in; answers the secret and an otpauth:// link for a QR code
+         * @description Needs your password. Nothing changes until POST /me/2fa/enable confirms a code from the app.
+         */
+        post: operations["twoFactorSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/2fa/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn two-factor sign-in on with a code from the app; answers the recovery codes, shown once */
+        post: operations["twoFactorEnable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/2fa/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn two-factor sign-in off (needs your password and a code or recovery code) */
+        post: operations["twoFactorDisable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/2fa/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace your recovery codes (needs your password and a code); the old ones stop working */
+        post: operations["twoFactorRecoveryCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/2fa/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn off someone else's two-factor sign-in, for a lost phone (signed-in people only; ends their sessions)
+         * @description Not your own, never the owner's, and only the owner resets an admin's.
+         */
+        post: operations["resetUserTwoFactor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/remote/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Other Conduit daemons announcing themselves on the local network (mDNS, about 1.5 seconds)
+         * @description Daemons that listen beyond loopback announce themselves as _conduit._tcp.local. This lists the others, for sync peers. Compare the fingerprint with the one the other daemon shows before trusting it.
+         */
+        get: operations["discoverDaemons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download an encrypted backup of this daemon (signed-in people only)
+         * @description One file with the database snapshot and the data folder, encrypted with a key derived from the passphrase (Argon2id, XChaCha20-Poly1305 in chunks). Restore with `conduitd restore`. See docs/backup.md.
+         */
+        post: operations["downloadBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The daily backup setting and how the last one went */
+        get: operations["getBackupSchedule"];
+        /** Write a backup every day to a folder (signed-in people only) */
+        put: operations["setBackupSchedule"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Write a scheduled backup now (signed-in people only) */
+        post: operations["runBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/tiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your home board's tiles */
+        get: operations["getTiles"];
+        /** Replace your home board's tiles (read actions only, at most 24) */
+        put: operations["setTiles"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        BackupSchedule: {
+            enabled: boolean;
+            /** @description Full path; default <data>/backups */
+            folder: string;
+            /** @description secret:// reference to the backup passphrase in the vault */
+            passphrase: string;
+            keep: number;
+            hour: number;
+            lastRun?: string;
+            lastFile?: string;
+            lastError?: string;
+        };
+        Tile: {
+            id: string;
+            instance: string;
+            action: string;
+            input?: unknown;
+            label: string;
+            /** @description Dot path into the result to show */
+            field?: string;
+            /** @description Seconds between updates */
+            refresh: number;
+        };
+        TwoFactorChallenge: {
+            /** @enum {boolean} */
+            twoFactor: true;
+            /** @description For POST /auth/login/2fa; lasts 5 minutes */
+            challenge: string;
+        };
+        TwoFactorConfirm: {
+            password: string;
+            /** @description A code from the app or a recovery code */
+            code: string;
+        };
+        RecoveryCodes: {
+            /** @description Ten one-time codes; shown only now */
+            recoveryCodes: string[];
+        };
         OIDCSettings: {
             enabled?: boolean;
             /** @description The provider's issuer URL, e.g. https://accounts.google.com */
@@ -1627,6 +1886,8 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             disabled: boolean;
+            /** @description Signs in with an authenticator code after the password */
+            twoFactor?: boolean;
         };
         Session: {
             id: string;
@@ -2185,6 +2446,42 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Signed in, or (for accounts with two-factor sign-in) a challenge for POST /auth/login/2fa */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"] | components["schemas"]["TwoFactorChallenge"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Too many failed sign-ins; see Retry-After */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    loginTwoFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    challenge: string;
+                    /** @description Six digits from the app, or a recovery code like abcd-efgh-ijkl-mnop-qrst */
+                    code: string;
+                };
+            };
+        };
+        responses: {
             /** @description Signed in */
             200: {
                 headers: {
@@ -2195,6 +2492,13 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description Too many failed sign-ins; see Retry-After */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     logout: {
@@ -4588,6 +4892,351 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    twoFactorStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        recoveryCodesLeft: number;
+                    };
+                };
+            };
+        };
+    };
+    twoFactorSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Base32 */
+                        secret: string;
+                        /** @description otpauth://totp/… */
+                        uri: string;
+                    };
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description Two-factor sign-in is already on */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    twoFactorEnable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description On */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodes"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Not set up yet */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    twoFactorDisable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorConfirm"];
+            };
+        };
+        responses: {
+            /** @description Off */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    twoFactorRecoveryCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorConfirm"];
+            };
+        };
+        responses: {
+            /** @description New codes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodes"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    resetUserTwoFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reset */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    discoverDaemons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daemons found (this one excluded) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        name: string;
+                        id: string;
+                        /** @description Fingerprint of the daemon's relay key */
+                        fingerprint: string;
+                        version: string;
+                        addresses: string[];
+                        port: number;
+                        /** @description http://<address>:<port>, usable as a sync peer */
+                        url: string;
+                        /** @description ws://<address>:<port>/relay */
+                        relay: string;
+                    }[];
+                };
+            };
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    downloadBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    passphrase: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The backup file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description A backup is already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getBackupSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSchedule"];
+                };
+            };
+        };
+    };
+    setBackupSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupSchedule"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSchedule"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    runBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        file: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getTiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tile"][];
+                };
+            };
+        };
+    };
+    setTiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Tile"][];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tile"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
         };
     };
 }

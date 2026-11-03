@@ -5,7 +5,9 @@ import { ago } from "../lib/format";
 import { AppSection, DaemonUpdates } from "./AppSection";
 import { RemoteAccess } from "./RemoteAccess";
 import { SsoSection } from "./Sso";
+import { BackupSection } from "./Backup";
 import { SyncSection } from "./Sync";
+import { TwoFactorSection } from "./TwoFactor";
 import { Webhooks } from "./Webhooks";
 import "./pages.css";
 
@@ -67,6 +69,8 @@ export function Settings() {
       <DaemonUpdates admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
       <RemoteAccess admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
+
+      <BackupSection admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
       <SyncSection admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
@@ -133,6 +137,8 @@ export function Settings() {
           </div>
         </form>
       </section>
+
+      <TwoFactorSection />
 
       <section className="spread">
         <span className="xs muted">

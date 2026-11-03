@@ -50,6 +50,10 @@ func (s *Server) Handler() http.Handler {
 	routes = append(routes, s.oidcRoutes()...)
 	routes = append(routes, s.ambientRoutes()...)
 	routes = append(routes, s.phoneRoutes()...)
+	routes = append(routes, s.twoFactorRoutes()...)
+	routes = append(routes, s.backupRoutes()...)
+	routes = append(routes, s.tileRoutes()...)
+	routes = append(routes, s.discoverRoutes()...)
 	if s.Remote != nil {
 		// Direct, end-to-end encrypted connections from paired devices on
 		// the local network (the handshake authenticates them).
@@ -296,6 +300,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		loginFailsBySource.Add(src)
 		loginFailsByAccount.Add(acct)
 		writeErr(w, http.StatusUnauthorized, auth.ErrInvalidCredentials.Error())
+		return
+	}
+	if s.Auth.TwoFactorEnabled(r.Context(), u.ID) {
+		// The account counter is reset only after the second step.
+		s.startTwoFactor(w, u, req.Device)
 		return
 	}
 	loginFailsByAccount.Reset(acct)

@@ -50,6 +50,9 @@ type User struct {
 	Role      Role      `json:"role"`
 	CreatedAt time.Time `json:"createdAt"`
 	Disabled  bool      `json:"disabled"`
+	// TwoFactor is true when the account signs in with an authenticator
+	// code after its password.
+	TwoFactor bool `json:"twoFactor"`
 }
 
 // Session is a signed-in client.
@@ -209,8 +212,8 @@ func (s *Service) Setup(ctx context.Context, name, email, password string) (User
 func (s *Service) GetUser(ctx context.Context, id string) (User, error) {
 	var u User
 	var created string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, email, role, created_at, disabled FROM users WHERE id = ?`, id).
-		Scan(&u.ID, &u.Name, &u.Email, &u.Role, &created, &u.Disabled)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, email, role, created_at, disabled, `+twoFactorCol+` FROM users WHERE id = ?`, id).
+		Scan(&u.ID, &u.Name, &u.Email, &u.Role, &created, &u.Disabled, &u.TwoFactor)
 	u.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	return u, err
 }
@@ -279,7 +282,7 @@ func (s *Service) ResetPassword(ctx context.Context, id, password string) error 
 
 // ListUsers returns all accounts.
 func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, email, role, created_at, disabled FROM users ORDER BY created_at`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, email, role, created_at, disabled, `+twoFactorCol+` FROM users ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +291,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	for rows.Next() {
 		var u User
 		var created string
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &created, &u.Disabled); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &created, &u.Disabled, &u.TwoFactor); err != nil {
 			return nil, err
 		}
 		u.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)

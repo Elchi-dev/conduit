@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/auth"
+	"github.com/elchi-dev/conduit/internal/backup"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -397,7 +399,7 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 	served := map[string]bool{}
 	srv := &Server{}
 	all := srv.routes()
-	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes(), srv.ambientRoutes(), srv.webhookRoutes(), srv.syncRoutes(), srv.phoneRoutes(), srv.oidcRoutes()} {
+	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes(), srv.ambientRoutes(), srv.webhookRoutes(), srv.syncRoutes(), srv.phoneRoutes(), srv.twoFactorRoutes(), srv.oidcRoutes(), srv.backupRoutes(), srv.tileRoutes(), srv.discoverRoutes()} {
 		all = append(all, extra...)
 	}
 	for _, r := range all {
@@ -667,5 +669,49 @@ func TestPeopleManagement(t *testing.T) {
 	}
 	if code := sam.do("POST", "/api/v1/users/"+member.ID+"/password", map[string]string{"password": "a fresh long password"}, nil); code != 204 {
 		t.Fatalf("reset = %d", code)
+	}
+}
+
+func TestBackupAndTilesAPI(t *testing.T) {
+	_, c, _, id := setup(t)
+	// Tiles: read actions only.
+	if code := c.do("PUT", "/api/v1/me/tiles", []map[string]any{{"instance": id, "action": "toggle", "label": "x", "refresh": 60}}, nil); code != 400 {
+		t.Fatalf("write action pinned: %d", code)
+	}
+	var tiles []Tile
+	if code := c.do("PUT", "/api/v1/me/tiles", []map[string]any{{"instance": id, "action": "status", "label": "Lamp", "refresh": 1}}, &tiles); code != 200 || len(tiles) != 1 || tiles[0].Refresh != 60 || tiles[0].ID == "" {
+		t.Fatalf("pin: %d %+v", code, tiles)
+	}
+	c.do("GET", "/api/v1/me/tiles", nil, &tiles)
+	if len(tiles) != 1 {
+		t.Fatal("tiles not saved")
+	}
+
+	// Backups: people only, a passphrase is required, and the file restores.
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "ops", "kind": "live", "scopes": []string{"admin:*:*"}}, &k)
+	key := client{t: t, base: c.base, token: k.Secret}
+	if code := key.do("POST", "/api/v1/backup", map[string]string{"passphrase": "a long backup passphrase"}, nil); code != 403 {
+		t.Fatalf("key took a backup: %d", code)
+	}
+	if code := c.do("POST", "/api/v1/backup", map[string]string{"passphrase": "short"}, nil); code != 400 {
+		t.Fatalf("short passphrase: %d", code)
+	}
+	b, _ := json.Marshal(map[string]string{"passphrase": "a long backup passphrase"})
+	req, _ := http.NewRequest("POST", c.base+"/api/v1/backup", bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil || res.StatusCode != 200 {
+		t.Fatalf("backup: %v %v", err, res)
+	}
+	file, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	out := filepath.Join(t.TempDir(), "restored")
+	if _, err := backup.Restore(bytes.NewReader(file), out, "a long backup passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(out, backup.DBName)); err != nil {
+		t.Fatal("restored backup has no database")
 	}
 }

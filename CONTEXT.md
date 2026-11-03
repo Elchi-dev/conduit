@@ -12,20 +12,24 @@ owner and a company equally; never tailor it to one setup.
 
 ## Current state
 
-- **Released:** v0.1.0 on 2026-11-03 (~03:55 CET).
-  https://github.com/Elchi-dev/conduit/releases/tag/v0.1.0
-- **Since v0.1.0 (phases 17–20, see BUILD_LOG.md):** 7 more modules (27 in
-  all), signed outgoing webhooks, password-manager CSV import, one-line
-  installers, changelog and API reference pages, hub passkeys, daemon OIDC
-  single sign-on, a People page, sync between daemons (hub or peers), phone
-  notifications through ntfy, an F-Droid repository with signed releases.
-- **Next:** phase 21: a second independent security review of everything
-  since v0.1.0 (running), fixes; phase 22: release v0.2.0, docs, handover.
-  The build window ends Thu 2026-11-05 00:00 CET.
+- **Released:** v0.1.0 (~03:55 CET) and v0.2.0 (~20:00 CET) on
+  2026-11-03. https://github.com/Elchi-dev/conduit/releases
+- **v0.2.0 (phases 17–21, see BUILD_LOG.md):** 7 more modules (27 in all),
+  signed outgoing webhooks, password-manager CSV import, one-line
+  installers that check a signed SHA256SUMS, changelog and API reference
+  pages, hub passkeys, daemon OIDC single sign-on (accounts follow the
+  provider's `sub`; owners and admins link explicitly), a People page, sync
+  between daemons (hub or peers), phone notifications through ntfy, an
+  F-Droid repository with signed releases, and the fixes from a second
+  independent security review.
+- **Next:** whatever the owner prioritises; the open decisions below come
+  first. The build window ends Thu 2026-11-05 00:00 CET.
 - **Releasing:** push a `v*` tag, or run the release workflow by hand with
   a tag name (it creates the tag on the commit it runs on; the build
   environment can't push tags). Notes come from `docs/releases/<tag>.md`.
-- **Known gaps:** releases are unsigned until the signing secrets are set
+- **Known gaps:** macOS CI jobs stopped getting runners on the afternoon
+  of 3 Nov (queued 15 minutes, then cancelled), probably the private
+  repository's Actions minutes; Linux and Windows run. Releases are unsigned until the signing secrets are set
   (the APK won't install, installs don't see updates, no F-Droid repo); the
   APK hasn't been tried on a device; the repository is private, so the
   Android update check (GitHub API) can't see releases until it's public;

@@ -4,9 +4,9 @@ One control plane for everything you run: mail, secrets, servers, containers,
 dashboards, local processes, games and anything else a module can reach. AI
 agents can drive all of it, under rules you set.
 
-> **Status:** pre-release, under active development toward v0.1.0.
-> See [BUILD_LOG.md](BUILD_LOG.md) for progress and [CONTEXT.md](CONTEXT.md)
-> for the current state.
+> **Status:** v0.1.0, the first release ([notes](docs/releases/v0.1.0.md)).
+> See [BUILD_LOG.md](BUILD_LOG.md) for how it was built and
+> [CONTEXT.md](CONTEXT.md) for the current state.
 
 ## What's in it
 

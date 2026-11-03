@@ -832,6 +832,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ambient": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The boiled-down state for lights, Stream Deck keys and status bars
+         * @description ok, attention (approvals waiting or a connection degraded), down (a connection down) or stopped (emergency stop), with a colour and a summary. Any key with modules:*:read can poll it.
+         */
+        get: operations["ambientStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update": {
         parameters: {
             query?: never;
@@ -1053,6 +1073,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Ambient: {
+            /** @enum {string} */
+            state: "ok" | "attention" | "down" | "stopped";
+            /** @enum {string} */
+            color: "green" | "amber" | "red" | "purple";
+            summary: string;
+            approvalsWaiting: number;
+            down: string[];
+            /** Format: date-time */
+            since: string;
+        };
         UpdateRelease: {
             component: string;
             channel: string;
@@ -3086,6 +3117,27 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    ambientStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ambient"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     updateStatus: {

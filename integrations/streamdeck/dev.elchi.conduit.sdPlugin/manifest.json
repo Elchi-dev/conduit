@@ -1,0 +1,21 @@
+{
+  "Name": "Conduit",
+  "Version": "0.1.0",
+  "Author": "Conduit",
+  "Description": "Shows Conduit's status on a key: green, amber, red or purple. Press to open Conduit.",
+  "Category": "Conduit",
+  "CodePath": "plugin.html",
+  "PropertyInspectorPath": "settings.html",
+  "SDKVersion": 2,
+  "OS": [{ "Platform": "windows", "MinimumVersion": "10" }, { "Platform": "mac", "MinimumVersion": "12" }],
+  "Software": { "MinimumVersion": "6.0" },
+  "Actions": [
+    {
+      "UUID": "dev.elchi.conduit.status",
+      "Name": "Status",
+      "Tooltip": "Conduit's status; press to open it",
+      "States": [{ "Title": "" }],
+      "SupportedInMultiActions": false
+    }
+  ]
+}

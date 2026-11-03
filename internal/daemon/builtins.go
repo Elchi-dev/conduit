@@ -56,6 +56,7 @@ func builtins(app *App) []sdk.Module {
 		notes.New(notesDir),
 		&automation.Module{S: app.Automations},
 		&briefModule{app: app},
+		app.ambient(),
 	}
 }
 
@@ -67,4 +68,13 @@ var singletons = map[string]string{
 	automation.InstanceID: "Automations",
 	briefID:               "Daily brief",
 	notes.InstanceID:      "Notes",
+	ambientID:             "Ambient status",
+}
+
+// ambient returns the app's ambient status module, creating it once.
+func (a *App) ambient() *ambientModule {
+	if a.Server.Ambient == nil {
+		a.Server.Ambient = &ambientModule{app: a}
+	}
+	return a.Server.Ambient
 }

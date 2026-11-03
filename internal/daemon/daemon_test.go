@@ -381,7 +381,7 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 	served := map[string]bool{}
 	srv := &Server{}
 	all := srv.routes()
-	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes()} {
+	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes(), srv.ambientRoutes()} {
 		all = append(all, extra...)
 	}
 	for _, r := range all {

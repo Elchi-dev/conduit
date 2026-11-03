@@ -161,6 +161,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	app.Remote.Start(ctx)
 	go housekeeping(ctx, app)
 	go app.Games.Watch(ctx) // idle until the games module is set up
+	go app.ambient().Watch(ctx)
 	go forwardAlerts(ctx, app)
 
 	srv := &http.Server{

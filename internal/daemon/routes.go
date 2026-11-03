@@ -34,6 +34,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Updates != nil {
 		routes = append(routes, s.updateRoutes()...)
 	}
+	routes = append(routes, s.ambientRoutes()...)
 	for _, rt := range routes {
 		mux.HandleFunc(rt.pattern, rt.h)
 	}

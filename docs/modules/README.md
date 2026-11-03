@@ -23,6 +23,7 @@ recommended policies.
 | Files and backups | [files.md](files.md) | homelab, team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
+| Ambient status | [status.md](status.md) | all |
 | Automations | [../architecture/automations.md](../architecture/automations.md) | all |
 
 To write your own module, start with `docs/architecture/modules.md`.

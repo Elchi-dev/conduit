@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  body { font: 13px sans-serif; color: #ddd; background: #2d2d2d; }
+  label { display: block; margin: 8px 0 2px; }
+  input { width: 100%; box-sizing: border-box; }
+</style>
+<label>Conduit address <input id="url" placeholder="http://127.0.0.1:7600" /></label>
+<label>API key (read-only is enough) <input id="key" type="password" /></label>
+<script>
+  let ws, ctx;
+  function save() {
+    ws.send(JSON.stringify({ event: "setSettings", context: ctx, payload: { url: url.value.trim(), key: key.value.trim() } }));
+  }
+  function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+    ctx = uuid;
+    const s = JSON.parse(actionInfo).payload.settings || {};
+    url.value = s.url || "http://127.0.0.1:7600";
+    key.value = s.key || "";
+    ws = new WebSocket("ws://127.0.0.1:" + port);
+    ws.onopen = () => ws.send(JSON.stringify({ event: registerEvent, uuid }));
+    url.onchange = key.onchange = save;
+  }
+</script>

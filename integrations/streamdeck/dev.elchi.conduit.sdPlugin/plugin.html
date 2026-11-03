@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8" />
+<script>
+  // Polls GET /api/v1/ambient every 10 seconds with an API key (scope
+  // modules:*:read is enough) and paints the key. Settings: daemon URL, key.
+  const colors = { ok: "#2fb565", attention: "#f2a93b", down: "#e5484d", stopped: "#8e4ec6" };
+  const contexts = {};
+  let ws;
+
+  function paint(ctx, state, label) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 144;
+    const g = c.getContext("2d");
+    g.fillStyle = "#1f2226";
+    g.fillRect(0, 0, 144, 144);
+    g.fillStyle = colors[state] || "#555";
+    g.beginPath();
+    g.arc(72, 60, 34, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#e8e4dc";
+    g.font = "600 20px sans-serif";
+    g.textAlign = "center";
+    g.fillText(label, 72, 124);
+    ws.send(JSON.stringify({ event: "setImage", context: ctx, payload: { image: c.toDataURL(), target: 0 } }));
+  }
+
+  async function poll(ctx) {
+    const s = contexts[ctx];
+    if (!s || !s.url || !s.key) return paint(ctx, "", "Set up");
+    try {
+      const r = await fetch(s.url.replace(/\/$/, "") + "/api/v1/ambient", { headers: { Authorization: "Bearer " + s.key } });
+      if (!r.ok) return paint(ctx, "", r.status === 401 ? "Key?" : "Error");
+      const a = await r.json();
+      const label = a.state === "attention" && a.approvalsWaiting ? a.approvalsWaiting + " wait" : { ok: "OK", attention: "Look", down: "Down", stopped: "Stopped" }[a.state];
+      paint(ctx, a.state, label);
+    } catch {
+      paint(ctx, "", "Offline");
+    }
+  }
+
+  function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
+    ws = new WebSocket("ws://127.0.0.1:" + port);
+    ws.onopen = () => ws.send(JSON.stringify({ event: registerEvent, uuid }));
+    ws.onmessage = (m) => {
+      const e = JSON.parse(m.data);
+      if (e.event === "willAppear" || e.event === "didReceiveSettings") {
+        contexts[e.context] = e.payload.settings || {};
+        poll(e.context);
+      } else if (e.event === "willDisappear") {
+        delete contexts[e.context];
+      } else if (e.event === "keyUp") {
+        const s = contexts[e.context] || {};
+        if (s.url) ws.send(JSON.stringify({ event: "openUrl", payload: { url: s.url } }));
+      }
+    };
+    setInterval(() => Object.keys(contexts).forEach(poll), 10000);
+  }
+</script>

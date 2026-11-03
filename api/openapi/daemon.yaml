@@ -745,6 +745,15 @@ paths:
       responses:
         "204": { description: Removed }
 
+  /ambient:
+    get:
+      operationId: ambientStatus
+      tags: [system]
+      summary: The boiled-down state for lights, Stream Deck keys and status bars
+      description: ok, attention (approvals waiting or a connection degraded), down (a connection down) or stopped (emergency stop), with a colour and a summary. Any key with modules:*:read can poll it.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ambient" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
   /system/update:
     get:
       operationId: updateStatus
@@ -919,6 +928,16 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    Ambient:
+      type: object
+      required: [state, color, summary, approvalsWaiting, down, since]
+      properties:
+        state: { type: string, enum: [ok, attention, down, stopped] }
+        color: { type: string, enum: [green, amber, red, purple] }
+        summary: { type: string }
+        approvalsWaiting: { type: integer }
+        down: { type: array, items: { type: string } }
+        since: { type: string, format: date-time }
     UpdateRelease:
       type: object
       required: [component, channel, platform, version, url, sha256]

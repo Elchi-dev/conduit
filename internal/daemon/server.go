@@ -31,6 +31,8 @@ type Server struct {
 	Bridge      *ai.Bridge
 	// Remote may be nil in tests that don't use remote access.
 	Remote *remote.Service
+	// Ambient may be nil in tests.
+	Ambient *ambientModule
 	// Updates may be nil in tests.
 	Updates *update.Updater
 	Log     *slog.Logger

@@ -74,6 +74,9 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	engine := core.NewEngine(store, log)
+	if n, _ := engine.Approvals.ExpireOrphaned(ctx); n > 0 {
+		log.Info("expired approvals left pending before the restart", "count", n)
+	}
 	authSvc := auth.New(store)
 	sum := sha256.Sum256([]byte(dataDir))
 	v := vault.New(store, vault.OSKeychain{Account: hex.EncodeToString(sum[:8])})

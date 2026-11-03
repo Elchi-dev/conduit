@@ -25,7 +25,12 @@ the daemon, the MCP server and automations all call into it.
 4. **Ask** (and not a dry run) → if the action supports dry runs, a plan is
    computed first and attached to the approval, so the person approves an
    exact diff. Then the call blocks until the approval is decided or expires,
-   or returns `ErrPending` immediately with `NoWait`.
+   or returns `ErrPending` immediately with `NoWait`. A `NoWait` call still
+   runs once approved: the engine waits in the background, checks the policy
+   again (so a freeze or a new deny rule in the meantime wins), runs it,
+   audits it and records the entry on the approval as `resultSeq`. Approvals
+   still pending when the daemon starts are expired, since nothing is
+   waiting on them any more.
 5. The module runs the call.
 6. The result is audited (`ok`, `error` or `planned` for dry runs) with any
    undo token, and an `action.<status>` event is published.

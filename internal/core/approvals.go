@@ -27,6 +27,8 @@ type Approval struct {
 	DecidedBy string          `json:"decidedBy,omitempty"`
 	DecidedAt *time.Time      `json:"decidedAt,omitempty"`
 	ExpiresAt time.Time       `json:"expiresAt"`
+	// ResultSeq is the audit entry of the approved call, once it ran.
+	ResultSeq *int64 `json:"resultSeq,omitempty"`
 }
 
 // ErrDenied is returned when an approval is denied or expires.
@@ -140,6 +142,26 @@ func (q *Approvals) decide(ctx context.Context, id, status, by string) error {
 	return nil
 }
 
+// SetResult records the audit entry of the call an approval let through.
+func (q *Approvals) SetResult(ctx context.Context, id string, seq int64) error {
+	_, err := q.store.DB.ExecContext(ctx, `UPDATE approvals SET result_seq = ? WHERE id = ?`, seq, id)
+	return err
+}
+
+// ExpireOrphaned expires every pending approval. Called at start: nothing
+// from before a restart is waiting on them any more, so approving one would
+// silently do nothing.
+func (q *Approvals) ExpireOrphaned(ctx context.Context) (int, error) {
+	list, err := q.List(ctx, "pending")
+	if err != nil {
+		return 0, err
+	}
+	for _, a := range list {
+		_ = q.decide(ctx, a.ID, "expired", "system (restarted)")
+	}
+	return len(list), nil
+}
+
 // DenyAllPending denies every pending approval (used by panic mode).
 func (q *Approvals) DenyAllPending(ctx context.Context, by string) (int, error) {
 	list, err := q.List(ctx, "pending")
@@ -154,7 +176,7 @@ func (q *Approvals) DenyAllPending(ctx context.Context, by string) (int, error) 
 
 // Get returns one approval.
 func (q *Approvals) Get(ctx context.Context, id string) (Approval, error) {
-	return scanApproval(q.store.DB.QueryRowContext(ctx, `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at FROM approvals WHERE id = ?`, id))
+	return scanApproval(q.store.DB.QueryRowContext(ctx, `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at, result_seq FROM approvals WHERE id = ?`, id))
 }
 
 // ExpireStale marks pending approvals past their expiry as expired. Waiters
@@ -182,7 +204,7 @@ func (q *Approvals) ExpireStale(ctx context.Context) {
 // List returns approvals with the given status ("" for all), newest first.
 func (q *Approvals) List(ctx context.Context, status string) ([]Approval, error) {
 	q.ExpireStale(ctx)
-	query := `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at FROM approvals`
+	query := `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at, result_seq FROM approvals`
 	var args []any
 	if status != "" {
 		query += ` WHERE status = ?`
@@ -209,8 +231,12 @@ func scanApproval(s scanner) (Approval, error) {
 	var a Approval
 	var created, actor, input, expires string
 	var plan, by, decided sql.NullString
-	if err := s.Scan(&a.ID, &created, &actor, &a.Module, &a.Instance, &a.Action, &a.Risk, &input, &plan, &a.Status, &by, &decided, &expires); err != nil {
+	var result sql.NullInt64
+	if err := s.Scan(&a.ID, &created, &actor, &a.Module, &a.Instance, &a.Action, &a.Risk, &input, &plan, &a.Status, &by, &decided, &expires, &result); err != nil {
 		return a, err
+	}
+	if result.Valid {
+		a.ResultSeq = &result.Int64
 	}
 	a.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	a.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expires)

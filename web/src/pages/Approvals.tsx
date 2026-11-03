@@ -99,6 +99,7 @@ export function ApprovalCard({ a, onDecided }: { a: Approval; onDecided?: (appro
           <span className="xs muted">
             {status === "approved" ? "Approved" : status === "denied" ? "Denied" : "Expired"}
             {a.decidedAt ? ` ${ago(a.decidedAt)}` : ""}
+            {a.resultSeq != null && <>, ran as timeline entry {a.resultSeq}</>}
           </span>
         )}
       </footer>

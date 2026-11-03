@@ -265,7 +265,9 @@ func (e *Engine) Health(ctx context.Context, id string) sdk.Health {
 
 // InvokeOptions tunes one call.
 type InvokeOptions struct {
-	// NoWait returns ErrPending with the approval instead of blocking.
+	// NoWait returns ErrPending with the approval instead of blocking. The
+	// call then runs in the background as soon as a person approves it; its
+	// audit entry is recorded on the approval (ResultSeq).
 	NoWait bool
 	// undoes links this call to the audit entry it reverses.
 	undoes *int64
@@ -334,6 +336,7 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 		}
 		out.Approval = &appr
 		if opt.NoWait {
+			go e.runWhenApproved(actor, m, spec, in, call, base, appr)
 			return out, ErrPending
 		}
 		if err := e.Approvals.Wait(ctx, appr.ID); err != nil {
@@ -341,8 +344,48 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 			out.Audit, _ = e.Audit.Append(ctx, base)
 			return out, err
 		}
+		return e.run(ctx, m, spec, in, call, base, out, appr.ID)
 	}
+	return e.run(ctx, m, spec, in, call, base, out, "")
+}
 
+// runWhenApproved waits for a person's decision on a call whose caller
+// didn't wait, then runs it (or audits the refusal). The policy is checked
+// again first, so a freeze or a rule change in the meantime still applies.
+func (e *Engine) runWhenApproved(actor Actor, m sdk.Module, spec sdk.ActionSpec, in Instance, call sdk.Call, base Entry, appr Approval) {
+	ctx := context.Background()
+	if err := e.Approvals.Wait(ctx, appr.ID); err != nil {
+		base.Status, base.Error = "denied", err.Error()
+		_, _ = e.Audit.Append(ctx, base)
+		return
+	}
+	d, err := e.Policy.Decide(ctx, actor, in.Module, in.ID, spec.Name, spec.Risk)
+	if err != nil || d.Effect == Deny {
+		reason := "the rules changed before it ran"
+		if err == nil {
+			reason = d.Reason
+		}
+		base.Status, base.Error, base.Decision = "denied", reason, Deny
+		if entry, err := e.Audit.Append(ctx, base); err == nil {
+			_ = e.Approvals.SetResult(ctx, appr.ID, entry.Seq)
+		}
+		return
+	}
+	cur, ok := e.Instance(in.ID)
+	if !ok || !cur.Enabled {
+		base.Status, base.Error = "error", "the instance was removed or disabled before it ran"
+		if entry, err := e.Audit.Append(ctx, base); err == nil {
+			_ = e.Approvals.SetResult(ctx, appr.ID, entry.Seq)
+		}
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	_, _ = e.run(cctx, m, spec, cur, call, base, Outcome{Decision: d}, appr.ID)
+}
+
+// run calls the module and audits the result.
+func (e *Engine) run(ctx context.Context, m sdk.Module, spec sdk.ActionSpec, in Instance, call sdk.Call, base Entry, out Outcome, approval string) (Outcome, error) {
 	res, err := m.Invoke(ctx, call)
 	if res.Plan != nil && res.Plan.Changes == nil {
 		res.Plan.Changes = []sdk.Change{}
@@ -367,6 +410,8 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 	out.Audit = entry
 	if aerr != nil {
 		e.Log.Error("audit append failed", "err", aerr)
+	} else if approval != "" {
+		_ = e.Approvals.SetResult(context.WithoutCancel(ctx), approval, entry.Seq)
 	}
 	data, _ := json.Marshal(entry)
 	e.Bus.Publish(sdk.Event{Type: "action." + base.Status, Module: in.Module, Instance: in.ID, Data: data})

@@ -1348,6 +1348,11 @@ export interface components {
             decidedAt?: string;
             /** Format: date-time */
             expiresAt: string;
+            /**
+             * Format: int64
+             * @description Audit entry of the call once it ran after approval (callers that did not wait get it run in the background)
+             */
+            resultSeq?: number;
         };
         Outcome: {
             result: components["schemas"]["Result"];

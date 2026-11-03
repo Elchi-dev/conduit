@@ -222,16 +222,31 @@ func TestAgentKeyApprovalFlow(t *testing.T) {
 	if code := c.do("POST", "/api/v1/approvals/"+pending.Approval.ID+"/approve", nil, nil); code != 200 {
 		t.Fatalf("owner approve = %d", code)
 	}
-	// Non-waiting calls don't execute after approval; the agent retries.
-	// (Waiting calls are covered in core tests.) Allow agent writes by rule:
+	// A call that didn't wait runs once approved, and the approval says
+	// where its result is.
+	var done core.Approval
+	for i := 0; i < 200 && done.ResultSeq == nil; i++ {
+		time.Sleep(5 * time.Millisecond)
+		c.do("GET", "/api/v1/approvals/"+pending.Approval.ID, nil, &done)
+	}
+	l.mu.Lock()
+	on := l.on
+	l.mu.Unlock()
+	if done.ResultSeq == nil || !on {
+		t.Fatalf("approved call didn't run: on=%v approval=%+v", on, done)
+	}
+	// With an allow rule the agent's writes run directly.
 	if code := c.do("POST", "/api/v1/policy/rules", map[string]any{"subject": "agent:" + k.Key.ID, "module": "lamp", "effect": "allow"}, nil); code != 200 {
 		t.Fatalf("put rule = %d", code)
 	}
 	if code := agent.do("POST", "/api/v1/instances/"+id+"/actions/toggle", map[string]any{}, nil); code != 200 {
 		t.Fatalf("agent write with rule = %d", code)
 	}
-	if !l.on {
-		t.Fatal("lamp should be on")
+	l.mu.Lock()
+	on = l.on
+	l.mu.Unlock()
+	if on {
+		t.Fatal("lamp should be off again")
 	}
 	// Agents cannot change policy.
 	if code := agent.do("PUT", "/api/v1/policy/preset", map[string]string{"preset": "full-autonomy"}, nil); code != 403 {

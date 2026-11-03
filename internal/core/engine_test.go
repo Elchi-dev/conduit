@@ -282,3 +282,62 @@ func TestBusPrefix(t *testing.T) {
 		t.Fatal("no event")
 	}
 }
+
+// A caller that doesn't wait (an agent over MCP, an automation) still gets
+// its call run once a person approves, and the approval points at the result.
+func TestApprovedNoWaitCallRuns(t *testing.T) {
+	e, c, id := newTestEngine(t)
+	ctx := context.Background()
+	out, err := e.Invoke(ctx, agent, sdk.Call{Instance: id, Action: "add", Input: add(7)}, InvokeOptions{NoWait: true})
+	if !errors.Is(err, ErrPending) {
+		t.Fatal(err)
+	}
+	if err := e.Approvals.Decide(ctx, out.Approval.ID, true, user.Subject()); err != nil {
+		t.Fatal(err)
+	}
+	var a Approval
+	for i := 0; i < 200; i++ {
+		a, _ = e.Approvals.Get(ctx, out.Approval.ID)
+		if a.ResultSeq != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if a.ResultSeq == nil || c.value(id) != 7 {
+		t.Fatalf("approved call didn't run: value %d, approval %+v", c.value(id), a)
+	}
+	entry, err := e.Audit.Get(ctx, *a.ResultSeq)
+	if err != nil || entry.Status != "ok" || entry.Actor.ID != agent.ID {
+		t.Fatalf("result entry %+v %v", entry, err)
+	}
+
+	// Panic after approval but before it runs: the freeze wins.
+	out, _ = e.Invoke(ctx, agent, sdk.Call{Instance: id, Action: "add", Input: add(1)}, InvokeOptions{NoWait: true})
+	_ = e.Policy.SetFrozen(ctx, true)
+	_ = e.Approvals.Decide(ctx, out.Approval.ID, true, user.Subject())
+	for i := 0; i < 200; i++ {
+		a, _ = e.Approvals.Get(ctx, out.Approval.ID)
+		if a.ResultSeq != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if c.value(id) != 7 {
+		t.Fatalf("a frozen agent's approved call ran: value %d", c.value(id))
+	}
+	if a.ResultSeq == nil {
+		t.Fatal("the refusal should be recorded on the approval")
+	}
+}
+
+func TestExpireOrphaned(t *testing.T) {
+	e, _, id := newTestEngine(t)
+	ctx := context.Background()
+	_, _ = e.Invoke(ctx, agent, sdk.Call{Instance: id, Action: "add", Input: add(1)}, InvokeOptions{NoWait: true})
+	if n, err := e.Approvals.ExpireOrphaned(ctx); err != nil || n != 1 {
+		t.Fatalf("expired %d %v", n, err)
+	}
+	if p, _ := e.Approvals.List(ctx, "pending"); len(p) != 0 {
+		t.Fatal("still pending")
+	}
+}

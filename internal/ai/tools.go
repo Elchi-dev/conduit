@@ -118,7 +118,7 @@ func (t *Toolbox) metaTools() []Tool {
 			Description: "Dry-run a tool that supports previews and get the exact list of changes it would make, without making them. Show this to the user before risky changes.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["tool"],"properties":{"tool":{"type":"string"},"arguments":{"type":"object"}}}`)},
 		{Name: "conduit_approval_status", Title: "Check an approval", Annotations: ro,
-			Description: "Whether the owner approved or denied a request. When approved, call the original tool again with the same arguments.",
+			Description: "Whether the owner approved or denied a request. An approved request runs by itself; this reports how it went.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}`)},
 	}
 	if t.Allows("audit:*:read") {
@@ -197,7 +197,17 @@ func (t *Toolbox) Call(ctx context.Context, name string, args json.RawMessage) R
 		if a.Actor.Subject() != t.Actor.Subject() {
 			return errResult("that approval belongs to someone else")
 		}
-		msg := map[string]string{"pending": "Still waiting for the owner.", "approved": "Approved. Call the original tool again with the same arguments.", "denied": "Denied by the owner. Don't retry; ask what they'd like instead.", "expired": "Expired without a decision."}[a.Status]
+		msg := map[string]string{"pending": "Still waiting for the owner.", "approved": "Approved; it is running.", "denied": "Denied by the owner. Don't retry; ask what they'd like instead.", "expired": "Expired without a decision."}[a.Status]
+		if a.Status == "approved" && a.ResultSeq != nil {
+			if e, err := t.Engine.Audit.Get(ctx, *a.ResultSeq); err == nil {
+				msg = fmt.Sprintf("Approved and ran: %s (timeline entry %d).", e.Status, e.Seq)
+				if e.Error != "" {
+					msg += " Error: " + e.Error
+				} else if len(e.Output) > 0 {
+					msg += "\nOutput:\n" + textJSON(e.Output)
+				}
+			}
+		}
 		return Result{Text: fmt.Sprintf("%s (%s %s on %s)", msg, a.Action, a.Instance, a.Module)}
 	case "conduit_what_changed":
 		if !t.Allows("audit:*:read") {
@@ -271,7 +281,7 @@ func (t *Toolbox) outcome(out core.Outcome, err error) Result {
 	switch {
 	case errors.Is(err, core.ErrPending):
 		a := out.Approval
-		text := fmt.Sprintf("Waiting for the owner's approval (id %s). They have been notified. Tell the user what you asked to do and why; check later with conduit_approval_status.", a.ID)
+		text := fmt.Sprintf("Waiting for the owner's approval (id %s). They have been notified. If they approve, it runs by itself; don't call the tool again. Tell the user what you asked to do and why; check the outcome later with conduit_approval_status.", a.ID)
 		if a.Plan != nil {
 			text += "\nPlanned changes:\n" + textJSON(a.Plan)
 		}

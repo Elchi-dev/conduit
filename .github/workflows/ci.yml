@@ -151,3 +151,71 @@ jobs:
         run: shellcheck scripts/install.sh scripts/install_test.sh
       - name: install.sh against a fake release
         run: sh scripts/install_test.sh
+
+  databases:
+    # The database module against real PostgreSQL and MySQL.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: conduit
+          POSTGRES_PASSWORD: conduit
+          POSTGRES_DB: conduit
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U conduit" --health-interval 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_USER: conduit
+          MYSQL_PASSWORD: conduit
+          MYSQL_DATABASE: conduit
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot" --health-interval 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: database module against real servers
+        env:
+          CONDUIT_TEST_PG: 127.0.0.1:5432
+          CONDUIT_TEST_MYSQL: 127.0.0.1:3306
+        run: go test -tags dbintegration -v ./modules/database
+
+  e2e:
+    # The web app in a real browser against a real daemon, plus automated
+    # accessibility checks (web/e2e, docs/architecture/web.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: daemon with the web app
+        run: make daemon
+      - name: browser
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: tests
+        working-directory: web
+        env:
+          CI: "1"
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7

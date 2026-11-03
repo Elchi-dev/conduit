@@ -78,3 +78,39 @@ Modules that need richer views can add a custom panel under `web/modules/`
 | `/policy` | Agent rules: preset, rules with expiry, emergency stop status |
 | `/keys` | API keys: create (shown once), rotate, revoke, usage |
 | `/settings` | Theme, devices, password, version |
+
+## Testing
+
+`web/e2e` holds browser tests that drive the real app against a real daemon
+with [Playwright](https://playwright.dev). A global setup starts a fresh
+daemon (`bin/conduitd`, built with the app inside) on a free port with an
+empty data folder, and the first test goes through the real first run with
+the setup code from that folder.
+
+```sh
+make daemon                 # from the repository root: builds the app and bin/conduitd
+cd web && pnpm test:e2e     # CONDUIT_E2E_BIN=… to test another binary, CONDUIT_E2E_LOG=1 for its log
+```
+
+Covered, at 1280 px and at 412 px (phone):
+
+- first run: setup code, owner account, overview
+- the command bar (Ctrl+K) finds and opens a page
+- Modules lists modules; This computer shows its overview by itself
+- the vault: create or unlock it, save a secret through the Vault module,
+  the value never shown
+- a new API key's secret is shown once
+- Agent rules: change the default autonomy, and it sticks
+- People: add a member
+- Settings shows Remote access, Sync, Webhooks, Appearance and Password
+- sign out, a wrong password is refused, sign back in
+- the emergency stop, pulled and lifted by the person (it runs last: it
+  ends other sessions and locks the vault)
+
+Tests use roles and labels (`getByRole`, `getByLabel`), not CSS classes, so
+a control without an accessible name fails them. On top, `a11y.spec.ts` runs
+[axe](https://github.com/dequelabs/axe-core) on Overview, Modules, an
+instance page, Approvals, Timeline and Settings in the dark and the light
+scheme, and fails on serious or critical WCAG 2.1 A/AA problems. Tests run
+one at a time against one daemon. CI runs them in the `e2e` job and keeps
+the Playwright report when they fail.

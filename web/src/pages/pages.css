@@ -466,14 +466,15 @@ pre.log {
   position: absolute;
   inset: 0 auto 0 0;
 }
+/* The label sits on the fill, so fills stay light enough for 4.5:1 text. */
 .meter-fill.ok {
-  background: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 32%, transparent);
 }
 .meter-fill.signal {
-  background: color-mix(in srgb, var(--signal) 55%, transparent);
+  background: color-mix(in srgb, var(--signal) 32%, transparent);
 }
 .meter-fill.fault {
-  background: color-mix(in srgb, var(--fault) 55%, transparent);
+  background: color-mix(in srgb, var(--fault) 32%, transparent);
 }
 .meter-label {
   position: relative;

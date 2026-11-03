@@ -35,11 +35,11 @@ function isPlainObject(v: unknown): v is Row {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
-function Meter({ value }: { value: number }) {
+function Meter({ value, name }: { value: number; name: string }) {
   const pct = Math.max(0, Math.min(100, value));
   const tone = pct >= 90 ? "fault" : pct >= 75 ? "signal" : "ok";
   return (
-    <span className="meter" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+    <span className="meter" role="meter" aria-label={name} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
       <span className={`meter-fill ${tone}`} style={{ width: `${pct}%` }} />
       <span className="meter-label">{pct}%</span>
     </span>
@@ -59,7 +59,7 @@ function ObjectView({ value, depth }: { value: Row; depth: number }) {
             <div key={k} className="readout">
               <dt>{label(k)}</dt>
               <dd className={typeof v === "number" ? "num" : undefined}>
-                {k.toLowerCase().includes("percent") && typeof v === "number" ? <Meter value={v} /> : cell(v)}
+                {k.toLowerCase().includes("percent") && typeof v === "number" ? <Meter value={v} name={label(k)} /> : cell(v)}
               </dd>
             </div>
           ))}
@@ -99,7 +99,7 @@ export function ResultView({ value, depth = 0 }: { value: unknown; depth?: numbe
                 {cols.map((c) => (
                   <td key={c} className={typeof r[c] === "number" ? "num" : undefined}>
                     {c.toLowerCase().includes("percent") && typeof r[c] === "number" ? (
-                      <Meter value={r[c] as number} />
+                      <Meter value={r[c] as number} name={label(c)} />
                     ) : typeof r[c] === "string" && /^https?:\/\//.test(r[c] as string) ? (
                       <a href={r[c] as string} target="_blank" rel="noreferrer noopener">
                         Open

@@ -27,6 +27,16 @@ recommended policies.
 | Spotify | [spotify.md](spotify.md) | gamer |
 | AWS | [aws.md](aws.md) | developer, team |
 | OBS Studio | [obs.md](obs.md) | gamer |
+| Game servers (Minecraft, Source) | [gameservers.md](gameservers.md) | gamer, homelab |
+| Twitch | [twitch.md](twitch.md) | gamer |
+| Jellyfin | [jellyfin.md](jellyfin.md) | homelab, gamer |
+| Pi-hole | [pihole.md](pihole.md) | homelab |
+| AdGuard Home | [adguard.md](adguard.md) | homelab |
+| TrueNAS | [truenas.md](truenas.md) | homelab |
+| Linear | [linear.md](linear.md) | developer, team |
+| PagerDuty | [pagerduty.md](pagerduty.md) | team, developer |
+| Sentry | [sentry.md](sentry.md) | developer, team |
+| Tailscale | [tailscale.md](tailscale.md) | homelab, developer, team |
 | Files and backups | [files.md](files.md) | homelab, team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |

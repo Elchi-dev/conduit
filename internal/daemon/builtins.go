@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/elchi-dev/conduit/internal/automation"
+	"github.com/elchi-dev/conduit/modules/adguard"
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
@@ -11,21 +12,30 @@ import (
 	"github.com/elchi-dev/conduit/modules/docker"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/games"
+	"github.com/elchi-dev/conduit/modules/gameservers"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
+	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jira"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
+	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/obs"
+	"github.com/elchi-dev/conduit/modules/pagerduty"
+	"github.com/elchi-dev/conduit/modules/pihole"
 	"github.com/elchi-dev/conduit/modules/proxmox"
+	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/system"
+	"github.com/elchi-dev/conduit/modules/tailscale"
+	"github.com/elchi-dev/conduit/modules/truenas"
+	"github.com/elchi-dev/conduit/modules/twitch"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -65,6 +75,16 @@ func builtins(app *App) []sdk.Module {
 		slack.New(),
 		jira.New(),
 		spotify.New(),
+		gameservers.New(),
+		twitch.New(),
+		jellyfin.New(),
+		pihole.New(),
+		adguard.New(),
+		truenas.New(),
+		linear.New(),
+		pagerduty.New(),
+		sentry.New(),
+		tailscale.New(),
 		files.New(),
 		app.Games,
 		notes.New(notesDir),

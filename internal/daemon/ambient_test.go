@@ -21,8 +21,8 @@ func (f *flaky) Manifest() sdk.Manifest {
 	return sdk.Manifest{ID: "flaky", Name: "Flaky", Version: "1.0.0", Actions: []sdk.ActionSpec{{Name: "x", Risk: sdk.RiskRead}}}
 }
 func (f *flaky) Configure(context.Context, sdk.Host, string, json.RawMessage) error { return nil }
-func (f *flaky) Invoke(context.Context, sdk.Call) (sdk.Result, error)                { return sdk.Result{}, nil }
-func (f *flaky) Close(string) error                                                  { return nil }
+func (f *flaky) Invoke(context.Context, sdk.Call) (sdk.Result, error)               { return sdk.Result{}, nil }
+func (f *flaky) Close(string) error                                                 { return nil }
 func (f *flaky) Health(context.Context, string) sdk.Health {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -301,7 +301,6 @@ func LoadDir(ctx context.Context, e *core.Engine, dir string, log *slog.Logger) 
 	return out
 }
 
-
 type cryptoRand struct{}
 
 func (cryptoRand) Read(p []byte) (int, error) { return randRead(p) }

@@ -73,12 +73,12 @@ type Status struct {
 
 // Pairing is what the daemon's QR code carries.
 type Pairing struct {
-	V         int       `json:"v"`
-	Hub       string    `json:"hub"`
-	Daemon    string    `json:"daemon"`
-	Key       string    `json:"key"`
-	Secret    string    `json:"secret"`
-	Name      string    `json:"name"`
+	V      int    `json:"v"`
+	Hub    string `json:"hub"`
+	Daemon string `json:"daemon"`
+	Key    string `json:"key"`
+	Secret string `json:"secret"`
+	Name   string `json:"name"`
 	// LAN is a direct ws:// address on the local network, tried before the
 	// hub (feature 11). Empty when the daemon only listens on loopback.
 	LAN       string    `json:"lan,omitempty"`
@@ -96,7 +96,7 @@ type Service struct {
 	// LANAddrs are ws:// URLs of the daemon's /relay endpoint on the local
 	// network; set when the daemon listens beyond loopback.
 	LANAddrs []string
-	HTTP    *http.Client
+	HTTP     *http.Client
 
 	key relay.KeyPair
 

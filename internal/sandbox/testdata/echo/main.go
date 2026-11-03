@@ -24,8 +24,10 @@ func (e *echo) Configure(_ context.Context, h sdk.Host, _ string, _ json.RawMess
 	e.h = h
 	return nil
 }
-func (e *echo) Health(context.Context, string) sdk.Health { return sdk.Health{Status: "ok", Message: "sandboxed"} }
-func (e *echo) Close(string) error                        { return nil }
+func (e *echo) Health(context.Context, string) sdk.Health {
+	return sdk.Health{Status: "ok", Message: "sandboxed"}
+}
+func (e *echo) Close(string) error { return nil }
 func (e *echo) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 	var in struct {
 		URL string `json:"url"`

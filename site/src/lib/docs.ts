@@ -11,6 +11,8 @@ export type Doc = { slug: string; file: string; title: string; section: string; 
 const REPO = "https://github.com/Elchi-dev/conduit/blob/main/";
 
 export const sections: [string, string][] = [
+  ["start", "Getting started"],
+  ["guides", "Guides"],
   ["architecture", "Architecture"],
   ["protocol", "Protocol"],
   ["api", "Developer API"],
@@ -53,7 +55,8 @@ export const docs: Doc[] = Object.entries(files).map(([key, mod]) => {
     slug: slugOf(file),
     file,
     title: titleOf(mod.rawContent(), file),
-    section: file.split("/")[0],
+    // Top-level pages (install, backups, the CLI) form "Getting started".
+    section: file.includes("/") ? file.split("/")[0] : "start",
     html: async () => rewrite(await mod.compiledContent(), file),
   };
 });

@@ -100,13 +100,33 @@ Each direction has its own key and counter starting at 0.
   opens, the client holds the private half of `static` and pinned the right
   daemon key, and the secret never crossed the hub in the clear. A failed
   proof closes the stream without an answer.
-- The daemon's frame 0 is a welcome: `{"ok":true,"client":<id>,"daemon":<name>}`
-  or `{"ok":false,"error":…}`.
+- The daemon's frame 0 is a welcome, still under the handshake keys:
+  `{"ok":true,"client":<id>,"daemon":<name>,"ephemeral":E_d}` or
+  `{"ok":false,"error":…}`. `E_d` is a fresh daemon key for this session.
+  After an accepting welcome both sides switch keys and reset both counters
+  to 0:
+
+  ```
+  ikm'  = ikm || X25519(e_c, E_d) || X25519(s_c, E_d)
+  c2d'  = HKDF-SHA256(ikm', salt, "conduit-relay-v1 session c2d")
+  d2c'  = HKDF-SHA256(ikm', salt, "conduit-relay-v1 session d2c")
+  ```
+
+  A client refuses an accepting welcome without `ephemeral`. Because the
+  daemon adds fresh randomness, a hub that replays a recorded hello gets a
+  session with different keys, so recorded requests can't be replayed; and
+  since both ephemeral keys are thrown away, stealing a long-term key later
+  doesn't decrypt recorded sessions (only the proof and the welcome were
+  under the handshake keys).
 - Then each client frame is a request
   `{"id","method","path","headers","body"(base64)}` and each daemon frame a
   response `{"id","status","headers","body"(base64)}`. Requests may overlap;
   responses are matched by id and sealed in the order they finish.
 - Replayed, reordered or altered frames fail to open and end the stream.
+- Relayed requests are checked before they reach the API: only `GET`,
+  `POST`, `PUT`, `PATCH` and `DELETE` on paths under `/api/`, with no `..`,
+  control characters, scheme or host. A handler that fails answers 500
+  instead of stopping the daemon.
 
 `pkg/relay/testdata/vectors.json` pins the format; Go and TypeScript tests
 both check against it.

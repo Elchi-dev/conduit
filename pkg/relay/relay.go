@@ -15,13 +15,26 @@
 //	ikm = X25519(e_c, S_d) || X25519(s_c, S_d)
 //	k   = HKDF-SHA256(ikm, salt, "conduit-relay-v1 " + direction)
 //
-// giving one AES-256-GCM key per direction. The first DH gives forward
-// secrecy against later theft of the client's static key; the second
+// giving one AES-256-GCM key per direction for the handshake. The second DH
 // authenticates the client to the daemon. The hello also carries the
 // client's first encrypted frame (an Intro with its name and, when pairing,
 // the one-time secret), so the daemon admits a key only after the client
-// proved it holds it, and the hub never sees the pairing secret. The daemon
-// proves itself by being able to decrypt and answer.
+// proved it holds it, and the hub never sees the pairing secret.
+//
+// The daemon answers with a Welcome sealed under the handshake keys. When it
+// admits the client, the Welcome carries a fresh daemon ephemeral key E_d,
+// and both sides switch to session keys:
+//
+//	ikm' = ikm || X25519(e_c, E_d) || X25519(s_c, E_d)
+//	k'   = HKDF-SHA256(ikm', salt, "conduit-relay-v1 session " + direction)
+//
+// with both counters back at 0. Because the daemon contributes fresh
+// randomness, a hello replayed by the hub yields different keys, so recorded
+// requests can't be replayed into a new session; and because both sides'
+// ephemeral keys are discarded, a later theft of either long-term key doesn't
+// decrypt recorded sessions. Only the hello's proof (the Intro) and the
+// Welcome are protected by the handshake keys alone. The daemon proves
+// itself by being able to open the proof and answer.
 //
 // Frames. Each message is sealed with AES-256-GCM using a 96-bit nonce made of
 // four zero bytes and a 64-bit big-endian counter that starts at 0 and
@@ -113,6 +126,14 @@ type Intro struct {
 type Session struct {
 	send, recv       cipher.AEAD
 	sendSeq, recvSeq uint64
+
+	// Handshake material, kept only until the switch to session keys.
+	ikm, salt []byte
+	client    bool
+	eph       *ecdh.PrivateKey // client: e_c
+	static    *ecdh.PrivateKey // client: s_c
+	peerEph   *ecdh.PublicKey  // daemon: E_c
+	peerStat  *ecdh.PublicKey  // daemon: S_c
 }
 
 func derive(ikm, salt []byte, info string) (cipher.AEAD, error) {
@@ -128,18 +149,110 @@ func derive(ikm, salt []byte, info string) (cipher.AEAD, error) {
 }
 
 func newSession(ikm, salt []byte, client bool) (*Session, error) {
-	c2d, err := derive(ikm, salt, "conduit-relay-v1 c2d")
+	s := &Session{ikm: ikm, salt: salt, client: client}
+	return s, s.setKeys(ikm, "conduit-relay-v1 ")
+}
+
+func (s *Session) setKeys(ikm []byte, prefix string) error {
+	c2d, err := derive(ikm, s.salt, prefix+"c2d")
+	if err != nil {
+		return err
+	}
+	d2c, err := derive(ikm, s.salt, prefix+"d2c")
+	if err != nil {
+		return err
+	}
+	if s.client {
+		s.send, s.recv = c2d, d2c
+	} else {
+		s.send, s.recv = d2c, c2d
+	}
+	s.sendSeq, s.recvSeq = 0, 0
+	return nil
+}
+
+// rekey switches to session keys from the extra DH outputs and forgets the
+// handshake material.
+func (s *Session) rekey(dh3, dh4 []byte) error {
+	if s.ikm == nil {
+		return errors.New("relay session already rekeyed")
+	}
+	ikm := make([]byte, 0, len(s.ikm)+len(dh3)+len(dh4))
+	ikm = append(append(append(ikm, s.ikm...), dh3...), dh4...)
+	if err := s.setKeys(ikm, "conduit-relay-v1 session "); err != nil {
+		return err
+	}
+	clear(s.ikm)
+	clear(ikm)
+	s.ikm, s.eph, s.static, s.peerEph, s.peerStat = nil, nil, nil, nil, nil
+	return nil
+}
+
+// SealWelcome seals the daemon's answer to a hello. An accepting Welcome
+// gets a fresh daemon ephemeral key, and the session switches to session
+// keys right after sealing it; a refusal leaves the session as it was (the
+// connection is closed anyway).
+func (s *Session) SealWelcome(w Welcome) ([]byte, error) {
+	if !w.OK {
+		return s.SealJSON(w)
+	}
+	eph, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-	d2c, err := derive(ikm, salt, "conduit-relay-v1 d2c")
+	return s.sealWelcome(w, eph)
+}
+
+func (s *Session) sealWelcome(w Welcome, eph *ecdh.PrivateKey) ([]byte, error) {
+	if s.client || s.peerEph == nil {
+		return nil, errors.New("only a daemon session can seal a welcome")
+	}
+	w.Ephemeral = Enc(eph.PublicKey().Bytes())
+	frame, err := s.SealJSON(w)
 	if err != nil {
 		return nil, err
 	}
-	if client {
-		return &Session{send: c2d, recv: d2c}, nil
+	dh3, err := eph.ECDH(s.peerEph)
+	if err != nil {
+		return nil, err
 	}
-	return &Session{send: d2c, recv: c2d}, nil
+	dh4, err := eph.ECDH(s.peerStat)
+	if err != nil {
+		return nil, err
+	}
+	return frame, s.rekey(dh3, dh4)
+}
+
+// OpenWelcome opens the daemon's answer on the client side and, when the
+// daemon accepted, switches to session keys.
+func (s *Session) OpenWelcome(frame []byte) (Welcome, error) {
+	var w Welcome
+	if err := s.OpenJSON(frame, &w); err != nil {
+		return w, err
+	}
+	if !w.OK {
+		return w, nil
+	}
+	if !s.client || s.eph == nil {
+		return w, errors.New("only a client session can open a welcome")
+	}
+	b, err := Dec(w.Ephemeral)
+	if err != nil {
+		return w, errors.New("the daemon sent no session key")
+	}
+	pub, err := ecdh.X25519().NewPublicKey(b)
+	if err != nil {
+		return w, errors.New("the daemon sent a bad session key")
+	}
+	dh3, err := s.eph.ECDH(pub)
+	if err != nil {
+		return w, err
+	}
+	dh4, err := s.static.ECDH(pub)
+	if err != nil {
+		return w, err
+	}
+	return w, s.rekey(dh3, dh4)
 }
 
 // ClientHandshake builds the Hello for a daemon whose public key the client
@@ -179,6 +292,7 @@ func clientHandshake(me KeyPair, daemonPub string, eph *ecdh.PrivateKey, salt []
 	if err != nil {
 		return Hello{}, nil, err
 	}
+	s.eph, s.static = eph, me.Private
 	proof, err := s.SealJSON(intro)
 	if err != nil {
 		return Hello{}, nil, err
@@ -235,7 +349,12 @@ func daemonSession(me KeyPair, h Hello) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newSession(append(dh1, dh2...), salt, false)
+	s, err := newSession(append(dh1, dh2...), salt, false)
+	if err != nil {
+		return nil, err
+	}
+	s.peerEph, s.peerStat = eph, stat
+	return s, nil
 }
 
 func nonce(seq uint64) []byte {

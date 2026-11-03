@@ -71,9 +71,13 @@ Threat notes:
 
 - The relay key and hub device token sit in the daemon database, like the
   rest of its local state; anyone with the data folder can impersonate the
-  daemon to the hub. They still can't decrypt past sessions without the
-  clients' ephemeral keys, and the daemon session or API key is still needed
-  to do anything through the API.
+  daemon to the hub. They still can't decrypt past sessions: every session's
+  keys also depend on two ephemeral keys (the client's and the daemon's) that
+  are discarded when the session ends. And the daemon session or API key is
+  still needed to do anything through the API.
+- A dishonest hub can drop, delay or replay frames. A replayed hello gets a
+  fresh daemon ephemeral key and therefore different session keys, so
+  recorded requests don't open in it.
 - A leaked pairing secret lets one device enroll within 10 minutes. Both sides
   show the key fingerprint, and the new device appears in the list at once.
 

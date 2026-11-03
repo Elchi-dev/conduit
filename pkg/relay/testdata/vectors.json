@@ -15,6 +15,8 @@
     "proof": "Y-tukxdce9pk2-0RS2D26sCBtnP938C6FGBk9xzGVBydLN6C6JCSwQ6Idv7yFBVZ5BSFraBbQaon"
   },
   "daemonFingerprint": "GpLyOFLckI2XMWo7E1eCgQ",
-  "clientFrame": "kqOzs04X-stFFvZpIU81uEsNs-s",
-  "daemonFrame": "ABae6mQXevXcgKFIJlTmo2qAlMolYeChxhHf"
+  "daemonEphemeralPrivate": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU",
+  "welcomeFrame": "ABae6mQXevXcgPC02d8HxX2xN1d-OdcnWJkjqPT6NdsN9PaPqjNy_74AMS5zwieHhoCWls0Q_9wSQDsmYSaeel3h9AE-AuYXu83N0kp4BLkN0NW1IU0Fooga2sCdfvHeevn5Pa2R_xmLP7QJ3u2JsxJ76Q",
+  "clientFrame": "wiLADbWYobj-lVIC293_2o8O7ng",
+  "daemonFrame": "lFM9FUFS0kR7jVoj4Y6xr3YwStOsCm1ugdRn"
 }

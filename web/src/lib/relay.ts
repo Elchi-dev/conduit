@@ -82,9 +82,37 @@ export class Session {
   private recvSeq = 0;
   private send: CryptoKey;
   private recv: CryptoKey;
-  constructor(send: CryptoKey, recv: CryptoKey) {
+  // Handshake material, kept only until the switch to session keys.
+  private hs?: { ikm: Uint8Array; salt: Uint8Array; eph: Uint8Array; stat: Uint8Array };
+  constructor(send: CryptoKey, recv: CryptoKey, hs?: { ikm: Uint8Array; salt: Uint8Array; eph: Uint8Array; stat: Uint8Array }) {
     this.send = send;
     this.recv = recv;
+    this.hs = hs;
+  }
+
+  /**
+   * Open the daemon's Welcome and, when it accepted, switch to session keys
+   * mixed with the daemon's fresh ephemeral key (see pkg/relay/relay.go).
+   */
+  async openWelcome(frame: Uint8Array): Promise<Welcome> {
+    const w = await this.openJSON<Welcome>(frame);
+    if (!w.ok) return w;
+    if (!this.hs) throw new Error("this session was already rekeyed");
+    if (!w.ephemeral) throw new Error("the daemon sent no session key");
+    const de = unb64url(w.ephemeral);
+    const { ikm, salt, eph, stat } = this.hs;
+    const next = new Uint8Array(ikm.length + 64);
+    next.set(ikm, 0);
+    next.set(x25519.getSharedSecret(eph, de), ikm.length);
+    next.set(x25519.getSharedSecret(stat, de), ikm.length + 32);
+    this.send = await derive(next, salt, "conduit-relay-v1 session c2d");
+    this.recv = await derive(next, salt, "conduit-relay-v1 session d2c");
+    this.sendSeq = 0;
+    this.recvSeq = 0;
+    ikm.fill(0);
+    next.fill(0);
+    this.hs = undefined;
+    return w;
   }
 
   async seal(plain: Uint8Array): Promise<Uint8Array> {
@@ -127,7 +155,12 @@ export async function clientHandshake(
   const ikm = new Uint8Array(64);
   ikm.set(dh1, 0);
   ikm.set(dh2, 32);
-  const session = new Session(await derive(ikm, salt, "conduit-relay-v1 c2d"), await derive(ikm, salt, "conduit-relay-v1 d2c"));
+  const session = new Session(await derive(ikm, salt, "conduit-relay-v1 c2d"), await derive(ikm, salt, "conduit-relay-v1 d2c"), {
+    ikm,
+    salt,
+    eph,
+    stat: me.privateKey,
+  });
   // Match Go's field order and omitempty so the proof is byte-identical.
   const body: Intro = {};
   if (intro.name) body.name = intro.name;
@@ -140,7 +173,7 @@ export async function clientHandshake(
 }
 
 /** The daemon's first frame on a stream. */
-export type Welcome = { ok: boolean; error?: string; client?: string; daemon?: string };
+export type Welcome = { ok: boolean; error?: string; client?: string; daemon?: string; ephemeral?: string };
 
 type WireResponse = { id: number; status: number; headers?: Record<string, string>; body?: string; stream?: boolean };
 
@@ -206,7 +239,7 @@ export class RelayClient {
     ws.send(enc.encode(JSON.stringify(hello)));
     let welcome: Welcome;
     try {
-      welcome = await session.openJSON<Welcome>(await first);
+      welcome = await session.openWelcome(await first);
     } catch {
       ws.close();
       throw new Error("The daemon's answer didn't decrypt: its key doesn't match the one you paired with.");

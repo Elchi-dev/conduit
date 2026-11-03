@@ -114,8 +114,12 @@ type vectors struct {
 	Intro         Intro  `json:"intro"`
 	Hello         Hello  `json:"hello"`
 	Fingerprint   string `json:"daemonFingerprint"`
-	// Frames after the proof: client→daemon "ping" (counter 1),
-	// daemon→client {"ok":true} (counter 0).
+	// The daemon's ephemeral private key and the Welcome it seals under the
+	// handshake keys (daemon→client counter 0).
+	DaemonEphPrivate string `json:"daemonEphemeralPrivate"`
+	Welcome          string `json:"welcomeFrame"`
+	// Frames under the session keys, both counters at 0 again:
+	// client→daemon "ping", daemon→client {"ok":true}.
 	ClientFrame string `json:"clientFrame"`
 	DaemonFrame string `json:"daemonFrame"`
 }
@@ -135,8 +139,17 @@ func TestVectors(t *testing.T) {
 	if err != nil || got != intro {
 		t.Fatalf("%v %+v", err, got)
 	}
+	deph, _ := ecdh.X25519().NewPrivateKey(seed(5))
+	welcome, err := ds.sealWelcome(Welcome{OK: true, Client: "c1", Daemon: "Desk"}, deph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w, err := cs.OpenWelcome(welcome); err != nil || !w.OK || w.Client != "c1" {
+		t.Fatalf("welcome: %+v %v", w, err)
+	}
 	v := vectors{DaemonPrivate: Enc(seed(1)), ClientPrivate: Enc(seed(2)), EphPrivate: Enc(seed(3)), Salt: Enc(salt), Intro: intro, Hello: hello,
-		Fingerprint: Fingerprint(daemon.Public()), ClientFrame: Enc(cs.Seal([]byte("ping"))), DaemonFrame: Enc(ds.Seal([]byte(`{"ok":true}`)))}
+		Fingerprint: Fingerprint(daemon.Public()), DaemonEphPrivate: Enc(seed(5)), Welcome: Enc(welcome),
+		ClientFrame: Enc(cs.Seal([]byte("ping"))), DaemonFrame: Enc(ds.Seal([]byte(`{"ok":true}`)))}
 	b, _ := json.MarshalIndent(v, "", "  ")
 	path := filepath.Join("testdata", "vectors.json")
 	if *update {
@@ -151,5 +164,52 @@ func TestVectors(t *testing.T) {
 	}
 	if string(bytes.TrimSpace(bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n")))) != string(b) {
 		t.Fatal("wire format changed; if intended, run with -update and update the TypeScript side")
+	}
+}
+
+// A hub that records a session and replays the client's hello and frames
+// into a new connection gets nothing: the daemon's fresh ephemeral key gives
+// the new session different keys.
+func TestReplayedHelloGetsFreshKeys(t *testing.T) {
+	daemon, _ := NewKeyPair()
+	client, _ := NewKeyPair()
+	hello, cs, err := ClientHandshake(client, daemon.Public(), "", "Phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds, _, err := DaemonHandshake(daemon, hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, _ := ds.SealWelcome(Welcome{OK: true})
+	if _, err := cs.OpenWelcome(w); err != nil {
+		t.Fatal(err)
+	}
+	recorded := cs.Seal([]byte(`{"id":1,"method":"POST","path":"/api/v1/panic"}`))
+	if _, err := ds.Open(recorded); err != nil {
+		t.Fatal("the original session must open its own frame:", err)
+	}
+
+	// Replay: same hello, then the recorded frame.
+	ds2, _, err := DaemonHandshake(daemon, hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds2.SealWelcome(Welcome{OK: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds2.Open(recorded); err == nil {
+		t.Fatal("a replayed frame opened in a new session")
+	}
+}
+
+func TestWelcomeWithoutEphemeralRefused(t *testing.T) {
+	daemon, _ := NewKeyPair()
+	client, _ := NewKeyPair()
+	hello, cs, _ := ClientHandshake(client, daemon.Public(), "", "")
+	ds, _, _ := DaemonHandshake(daemon, hello)
+	frame, _ := ds.SealJSON(Welcome{OK: true}) // an old daemon, or a forged downgrade
+	if _, err := cs.OpenWelcome(frame); err == nil {
+		t.Fatal("a welcome without a session key must be refused")
 	}
 }

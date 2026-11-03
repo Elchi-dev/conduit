@@ -17,6 +17,9 @@ type Welcome struct {
 	Error  string `json:"error,omitempty"`
 	Client string `json:"client,omitempty"` // the id the daemon knows this client by
 	Daemon string `json:"daemon,omitempty"` // the daemon's display name
+	// Ephemeral is the daemon's fresh public key for this session, present
+	// when OK; both sides then switch to session keys (see the package doc).
+	Ephemeral string `json:"ephemeral,omitempty"`
 }
 
 // Client is a Go relay client: it reaches a daemon through a hub and sends
@@ -76,8 +79,8 @@ func DialURL(ctx context.Context, wsURL, daemonPub string, me KeyPair, pairingSe
 		ws.CloseNow()
 		return nil, fmt.Errorf("the daemon didn't answer: %w", err)
 	}
-	var w Welcome
-	if err := sess.OpenJSON(frame, &w); err != nil {
+	w, err := sess.OpenWelcome(frame)
+	if err != nil {
 		ws.CloseNow()
 		return nil, errors.New("the daemon's answer didn't decrypt: its key doesn't match the one you paired with")
 	}

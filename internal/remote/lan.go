@@ -60,7 +60,10 @@ func (s *Service) ServeLAN(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		welcome.Error = err.Error()
 	}
-	out, _ := sess.SealJSON(welcome)
+	out, serr := sess.SealWelcome(welcome)
+	if serr != nil && err == nil {
+		err = serr
+	}
 	var wmu sync.Mutex
 	write := func(b []byte) error {
 		wmu.Lock()

@@ -540,7 +540,10 @@ func (t *tunnel) handshake(ctx context.Context, id uint32, frame []byte) {
 	if err != nil {
 		w.Error = err.Error()
 	}
-	out, _ := sess.SealJSON(w)
+	out, serr := sess.SealWelcome(w)
+	if serr != nil && err == nil {
+		err = serr
+	}
 	_ = t.send(ctx, id, out)
 	if err != nil {
 		t.closeStream(ctx, id)

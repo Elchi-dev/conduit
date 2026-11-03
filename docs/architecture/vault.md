@@ -54,10 +54,22 @@ folders; `PUT /api/v1/vault/folders`): secrets whose names start with
 `finance/`, say, can then only be revealed, changed, deleted, imported into
 or used in settings (module instances, AI providers, MCP servers, single
 sign-on, the backup passphrase) by the roles and people the folder lists.
-Agents and API keys get exactly what their owner gets; automations only
-when the folder allows them; the owner always keeps access, and only the
-owner changes restrictions, since they bind admins too. The most specific
-folder wins. Names stay visible to everyone who can see the vault.
+Agents and API keys get exactly what their owner gets. Automations only
+when the folder allows them, and only if the person who last saved the
+automation may use the folder too (so allowing automations doesn't let
+everyone who can write one read the folder). The owner always keeps
+access, and only the owner changes restrictions, since they bind admins
+too. The most specific folder wins. Names stay visible to everyone who can
+see the vault.
+
+A few things go through every secret at once, so they need access to every
+restricted folder: checking text or a folder for leaked values (a match
+would confirm a guess), and syncing the vault to other daemons. While any
+folder is restricted, only the owner can create, join or add the vault to
+a sync group, or see its join code. Imports check each name they would
+write; a `.env` key can't choose a folder (`FINANCE/BANK` without a prefix
+becomes `imported/finance-bank`). Settings are checked after decoding, so
+escaped forms such as `secret:\/\/finance\/bank` are caught.
 
 Enforcement is an engine guard (`core.Engine.Guard`) that runs before the
 policy for every call, so it holds for the app, the API, MCP, automations

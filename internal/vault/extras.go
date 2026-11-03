@@ -131,12 +131,15 @@ func ParseEnv(r io.Reader) (map[string]string, error) {
 
 // EnvName turns an environment variable name into a secret name:
 // "DATABASE_URL" with prefix "app" becomes "app/database-url".
+// Without a prefix the secrets go to imported/. A key can't pick a folder
+// itself ("FINANCE/BANK" becomes "imported/finance-bank").
 func EnvName(prefix, key string) string {
-	n := strings.ToLower(strings.ReplaceAll(key, "_", "-"))
-	if prefix != "" {
-		n = strings.Trim(strings.ToLower(prefix), "/") + "/" + n
+	n := strings.ToLower(strings.NewReplacer("_", "-", "/", "-").Replace(key))
+	prefix = strings.Trim(strings.ToLower(prefix), "/")
+	if prefix == "" {
+		prefix = "imported"
 	}
-	return n
+	return prefix + "/" + n
 }
 
 // --- leak watch -------------------------------------------------------------------

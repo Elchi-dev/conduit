@@ -8,6 +8,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
+	"github.com/elchi-dev/conduit/modules/containerregistry"
 	"github.com/elchi-dev/conduit/modules/database"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
@@ -16,6 +17,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/fly"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
+	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
 	"github.com/elchi-dev/conduit/modules/hetzner"
@@ -25,6 +27,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/mail"
+	"github.com/elchi-dev/conduit/modules/mastodon"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/notes"
@@ -33,8 +36,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/pihole"
+	"github.com/elchi-dev/conduit/modules/plex"
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/redis"
+	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/slack"
@@ -46,6 +51,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/unifi"
 	"github.com/elchi-dev/conduit/modules/uptimekuma"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
+	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -105,6 +111,12 @@ func builtins(app *App) []sdk.Module {
 		unifi.New(),
 		nextcloud.New(),
 		ollama.New(),
+		s3.New(),
+		plex.New(),
+		gitea.New(),
+		mastodon.New(),
+		vaultwarden.New(),
+		containerregistry.New(),
 		files.New(),
 		app.Games,
 		notes.New(notesDir),

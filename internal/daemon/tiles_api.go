@@ -49,6 +49,11 @@ func (s *Server) getTiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putTiles(w http.ResponseWriter, r *http.Request) {
+	// Tiles run in the person's browser as the person, so only the person
+	// may choose them (not an agent or key acting for them).
+	if !s.humanOnly(w, r) {
+		return
+	}
 	p, _ := principal(r)
 	var tiles []Tile
 	if err := readJSON(r, &tiles); err != nil {

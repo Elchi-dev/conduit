@@ -538,14 +538,15 @@ func (h *host) Secret(ctx context.Context, ref string) (string, error) {
 	if r == nil {
 		return "", errors.New("vault is not available")
 	}
-	if !ok || !configRefs(in.Config)[ref] {
+	if !ok || !ConfigRefs(in.Config)[ref] {
 		return "", fmt.Errorf("%s is not referenced by this instance's settings", ref)
 	}
 	return r.Resolve(ctx, ref)
 }
 
 // configRefs collects every "secret://…" string in a JSON document.
-func configRefs(cfg json.RawMessage) map[string]bool {
+// ConfigRefs returns every secret:// reference in decoded module settings.
+func ConfigRefs(cfg json.RawMessage) map[string]bool {
 	out := map[string]bool{}
 	var v any
 	if json.Unmarshal(cfg, &v) != nil {

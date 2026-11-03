@@ -239,7 +239,9 @@ func (s *Server) adminDelete(w http.ResponseWriter, r *http.Request) {
 
 // deleteAccountData removes everything the hub stores for an account.
 // Published registry packages stay (others may depend on them, and their
-// signatures don't depend on the account); the author handle is released.
+// signatures don't depend on the account). The author handle is kept as a
+// tombstone, with its key, so nobody can take it over and publish newer
+// versions of those packages.
 func (s *Server) deleteAccountData(ctx context.Context, id string) error {
 	for _, q := range []string{
 		`DELETE FROM hub_sessions WHERE account_id = ?`,
@@ -251,7 +253,7 @@ func (s *Server) deleteAccountData(ctx context.Context, id string) error {
 		`DELETE FROM passkeys WHERE account_id = ?`,
 		`DELETE FROM account_totp WHERE account_id = ?`,
 		`DELETE FROM account_recovery_codes WHERE account_id = ?`,
-		`DELETE FROM registry_authors WHERE account_id = ?`,
+		`UPDATE registry_authors SET account_id = 'deleted:' || account_id WHERE account_id = ?`,
 		`DELETE FROM org_members WHERE account_id = ?`,
 	} {
 		if _, err := s.db.Exec(ctx, q, id); err != nil {

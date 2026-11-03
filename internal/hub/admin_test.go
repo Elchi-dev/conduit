@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,13 @@ func TestAdminConsole(t *testing.T) {
 	_, _ = h.srv.db.Exec(context.Background(), `UPDATE accounts SET is_admin = 0 WHERE id = ?`, id)
 
 	// Deleting removes everything the hub keeps for the account.
+	pub := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	h.do("POST", "/v1/registry/authors", alice, map[string]string{"handle": "alice", "publicKey": pub}, 201)
 	h.do("DELETE", "/v1/admin/accounts/"+id, root, nil, 204)
+	// Its author handle stays taken, so nobody publishes under it.
+	mallory := h.signup("mallory@example.com")
+	h.do("POST", "/v1/registry/authors", mallory, map[string]string{"handle": "alice", "publicKey": pub}, 409)
+	h.do("POST", "/v1/registry/authors", mallory, map[string]string{"handle": "mcp", "publicKey": pub}, 409)
 	for _, tbl := range []string{"hub_sessions", "devices", "sync_blobs", "hub_keys", "org_members", "passkeys"} {
 		var n int
 		_ = h.srv.db.Row(context.Background(), `SELECT COUNT(*) FROM `+tbl+` WHERE account_id = ?`, id).Scan(&n)

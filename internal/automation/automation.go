@@ -50,13 +50,16 @@ type Step struct {
 
 // Automation is a saved automation.
 type Automation struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Enabled   bool      `json:"enabled"`
-	Trigger   Trigger   `json:"trigger"`
-	Steps     []Step    `json:"steps"`
-	HookURL   string    `json:"hookPath,omitempty"` // for webhook triggers: /hooks/<token>
-	CreatedBy string    `json:"createdBy"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Enabled   bool    `json:"enabled"`
+	Trigger   Trigger `json:"trigger"`
+	Steps     []Step  `json:"steps"`
+	HookURL   string  `json:"hookPath,omitempty"` // for webhook triggers: /hooks/<token>
+	CreatedBy string  `json:"createdBy"`
+	// UpdatedBy is who saved it last (an actor subject, like CreatedBy).
+	// Restricted vault folders check this person too.
+	UpdatedBy string    `json:"updatedBy,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Trusted is true when a person saved or enabled it, which granted its
@@ -65,9 +68,10 @@ type Automation struct {
 }
 
 type spec struct {
-	Trigger Trigger `json:"trigger"`
-	Steps   []Step  `json:"steps"`
-	Trusted bool    `json:"trusted"`
+	Trigger   Trigger `json:"trigger"`
+	Steps     []Step  `json:"steps"`
+	Trusted   bool    `json:"trusted"`
+	UpdatedBy string  `json:"updatedBy,omitempty"`
 }
 
 // Run is one execution.
@@ -234,7 +238,7 @@ func (s *Service) Save(ctx context.Context, a Automation, by core.Actor) (Automa
 		a.Enabled = false
 	}
 	a.Trusted = trust
-	a.UpdatedAt = now
+	a.UpdatedAt, a.UpdatedBy = now, by.Subject()
 	if isNew {
 		a.CreatedAt, a.CreatedBy = now, by.Subject()
 	} else {
@@ -251,7 +255,7 @@ func (s *Service) Save(ctx context.Context, a Automation, by core.Actor) (Automa
 	} else {
 		a.HookURL = ""
 	}
-	sp, _ := json.Marshal(spec{Trigger: a.Trigger, Steps: a.Steps, Trusted: trust})
+	sp, _ := json.Marshal(spec{Trigger: a.Trigger, Steps: a.Steps, Trusted: trust, UpdatedBy: a.UpdatedBy})
 	_, err = s.db.ExecContext(ctx, `INSERT INTO automations (id, name, enabled, spec, hook_token, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, enabled = excluded.enabled, spec = excluded.spec, hook_token = excluded.hook_token, updated_at = excluded.updated_at`,
 		a.ID, a.Name, a.Enabled, string(sp), token, a.CreatedBy, a.CreatedAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
@@ -331,7 +335,10 @@ func scan(row interface{ Scan(...any) error }) (Automation, error) {
 	}
 	var x spec
 	_ = json.Unmarshal([]byte(sp), &x)
-	a.Trigger, a.Steps, a.Trusted = x.Trigger, x.Steps, x.Trusted
+	a.Trigger, a.Steps, a.Trusted, a.UpdatedBy = x.Trigger, x.Steps, x.Trusted, x.UpdatedBy
+	if a.UpdatedBy == "" {
+		a.UpdatedBy = a.CreatedBy
+	}
 	if tok.Valid {
 		a.HookURL = "/hooks/" + tok.String
 	}

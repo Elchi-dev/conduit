@@ -10,13 +10,13 @@ agents can drive all of it, under rules you set.
 
 ## What's in it
 
-- **47 modules**: vault, this computer, servers over SSH, Docker, mail,
+- **53 modules**: vault, this computer, servers over SSH, Docker, mail,
   calendar, notifications (ntfy, Telegram, Discord, Slack, Matrix, Gotify,
   email), Prometheus and Grafana, uptime checks, Uptime Kuma, GitHub,
-  GitLab, Cloudflare, Kubernetes, Proxmox VE, TrueNAS, AWS, Hetzner Cloud,
+  GitLab, Gitea and Forgejo, container registries, Cloudflare, Kubernetes, Proxmox VE, TrueNAS, AWS, S3 storage, Hetzner Cloud,
   DigitalOcean, Vercel, Fly.io, PostgreSQL and MySQL, Redis, Tailscale,
   UniFi, Sentry, PagerDuty, Slack, Jira, Linear, Nextcloud, Home Assistant,
-  Pi-hole, AdGuard Home, Jellyfin, Ollama, Discord, Twitch, OBS Studio,
+  Pi-hole, AdGuard Home, Vaultwarden, Jellyfin, Plex, Ollama, Discord, Mastodon, Twitch, OBS Studio,
   Spotify, game servers (Minecraft, Source), files and backups, games
   (Steam), notes, automations, the daily brief and ambient status. Any MCP
   server mounts as a module; write your own in any language

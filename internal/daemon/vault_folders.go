@@ -10,6 +10,7 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -93,10 +94,24 @@ func (s *Server) mayUse(ctx context.Context, a core.Actor, name string) error {
 		return nil
 	}
 	if a.Kind == core.ActorAutomation {
-		if f.Automations {
-			return nil
+		if !f.Automations {
+			return fmt.Errorf("the vault folder %s is restricted and doesn't allow automations", f.Prefix)
 		}
-		return fmt.Errorf("the vault folder %s is restricted and doesn't allow automations", f.Prefix)
+		// The folder allowing automations doesn't let anyone who can write one
+		// read it: whoever saved the automation last must be allowed too.
+		if s.Automations != nil {
+			if au, err := s.Automations.Get(ctx, a.ID); err == nil {
+				kind, id, _ := strings.Cut(au.UpdatedBy, ":")
+				by := core.Actor{Kind: core.ActorKind(kind), ID: id}
+				if by.Kind == core.ActorSystem {
+					return nil
+				}
+				if u, ok := s.personFor(ctx, by); f.allows(u, ok) {
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("the vault folder %s is restricted, and whoever last saved this automation may not use it", f.Prefix)
 	}
 	if u, ok := s.personFor(ctx, a); f.allows(u, ok) {
 		return nil
@@ -113,30 +128,55 @@ func (s *Server) vaultGuard(ctx context.Context, a core.Actor, in core.Instance,
 	var p struct {
 		Name   string `json:"name"`
 		Prefix string `json:"prefix"`
+		Text   string `json:"text"`
 	}
 	_ = json.Unmarshal(call.Input, &p)
 	switch call.Action {
 	case "reveal", "set", "delete", "totp", "rotate":
 		return s.mayUse(ctx, a, strings.ToLower(strings.TrimSpace(p.Name)))
-	case "import_env", "import_csv":
-		prefix := strings.Trim(strings.ToLower(p.Prefix), "/")
-		if prefix == "" {
-			prefix = "imported"
+	case "import_env":
+		// Check every name the import would write, exactly as the module
+		// builds them.
+		env, err := vault.ParseEnv(strings.NewReader(p.Text))
+		if err != nil {
+			return err
 		}
-		return s.mayUse(ctx, a, prefix+"/")
+		for k := range env {
+			if err := s.mayUse(ctx, a, vault.EnvName(p.Prefix, k)); err != nil {
+				return err
+			}
+		}
+	case "import_csv":
+		items, err := vault.ParseCSVExport(strings.NewReader(p.Text), p.Prefix)
+		if err != nil {
+			return nil // the module reports the bad file
+		}
+		for _, it := range items {
+			if err := s.mayUse(ctx, a, it.Name); err != nil {
+				return err
+			}
+		}
+	case "scan_text", "scan_path":
+		// A scan compares text with every secret's value, so it would tell
+		// whether a guess matches a restricted one.
+		for _, f := range s.vaultFolders(ctx) {
+			if err := s.mayUse(ctx, a, f.Prefix); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
-
-var secretRefRe = regexp.MustCompile(`secret://([a-z0-9._/-]+)`)
 
 // checkConfigRefs refuses module settings that use secrets from a folder
 // the person saving them may not use (a module could otherwise send the
 // secret anywhere).
 func (s *Server) checkConfigRefs(r *http.Request, cfg json.RawMessage) error {
 	p, _ := principal(r)
-	for _, m := range secretRefRe.FindAllStringSubmatch(string(cfg), -1) {
-		if err := s.mayUse(r.Context(), p.Actor, m[1]); err != nil {
+	// Walk the decoded settings, as the engine does when it resolves them:
+	// a regex over the raw JSON misses escaped forms like secret:\/\/x.
+	for ref := range core.ConfigRefs(cfg) {
+		if err := s.mayUse(r.Context(), p.Actor, strings.TrimPrefix(ref, "secret://")); err != nil {
 			return err
 		}
 	}

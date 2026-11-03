@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/ratelimit"
@@ -322,6 +324,20 @@ func (s *Server) syncRoutes() []route {
 	}
 }
 
+// vaultSyncOK: with restricted vault folders, only the owner may set up or
+// change a group that syncs the vault, or see its join code (a joined daemon
+// gets every secret, restricted folders included).
+func (s *Server) vaultSyncOK(w http.ResponseWriter, r *http.Request, collections []string) bool {
+	if len(s.vaultFolders(r.Context())) == 0 || !slices.Contains(collections, "vault") {
+		return true
+	}
+	if p, _ := principal(r); p.User.Role == auth.RoleOwner {
+		return true
+	}
+	writeErr(w, http.StatusForbidden, "the vault has restricted folders, so only the owner can sync it")
+	return false
+}
+
 func (s *Server) syncStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Sync.Status(r.Context()))
 }
@@ -339,6 +355,9 @@ func (s *Server) syncCreate(w http.ResponseWriter, r *http.Request) {
 	var req syncSetup
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !s.vaultSyncOK(w, r, req.Collections) {
 		return
 	}
 	code, err := s.Sync.Create(r.Context(), req.Collections)
@@ -362,6 +381,9 @@ func (s *Server) syncJoin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.vaultSyncOK(w, r, req.Collections) {
+		return
+	}
 	err := s.Sync.Join(r.Context(), req.Code, req.Collections)
 	if err == nil && req.Peers != nil {
 		err = s.Sync.SetPeers(r.Context(), req.Peers)
@@ -377,6 +399,9 @@ func (s *Server) syncJoin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) syncCode(w http.ResponseWriter, r *http.Request) {
 	if !s.humanOnly(w, r) {
+		return
+	}
+	if !s.vaultSyncOK(w, r, s.Sync.Status(r.Context()).Collections) {
 		return
 	}
 	code, err := s.Sync.JoinCode(r.Context())
@@ -398,6 +423,10 @@ func (s *Server) syncSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Collections != nil {
+		// Adding the vault needs the owner; keeping or removing it doesn't.
+		if !slices.Contains(s.Sync.Status(r.Context()).Collections, "vault") && !s.vaultSyncOK(w, r, req.Collections) {
+			return
+		}
 		if err := s.Sync.SetCollections(r.Context(), req.Collections); err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return

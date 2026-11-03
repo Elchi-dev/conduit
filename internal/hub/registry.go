@@ -17,6 +17,10 @@ import (
 // signature on publish and serves the payload byte-for-byte, so daemons
 // verify it again against the author's key and never have to trust the hub.
 
+// reservedHandles can't be registered: "mcp" because daemons give mounted
+// MCP servers mcp-… ids, the rest to avoid looking official.
+var reservedHandles = map[string]bool{"mcp": true, "conduit": true, "official": true, "admin": true, "system": true, "vault": true, "builtin": true}
+
 var (
 	handleRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,38}$`)
 	pkgNameRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]{1,38})/([a-z0-9][a-z0-9-]{0,62})$`)
@@ -72,6 +76,10 @@ func (s *Server) registerAuthor(w http.ResponseWriter, r *http.Request) {
 		PublicKey string `json:"publicKey"`
 	}
 	_ = readJSON(r, &req)
+	if reservedHandles[req.Handle] {
+		writeErr(w, 409, "that handle is reserved")
+		return
+	}
 	if !handleRe.MatchString(req.Handle) {
 		writeErr(w, 400, "handles are 2 to 39 lowercase letters, digits and dashes")
 		return

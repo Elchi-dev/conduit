@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/sandbox"
@@ -102,7 +103,20 @@ func (s *Server) registryBase(ctx context.Context) (string, error) {
 	return strings.TrimRight(u, "/"), nil
 }
 
-var regHTTP = &http.Client{Timeout: 60 * time.Second}
+// Downloads only follow redirects that stay on https, so a hub can't point
+// the daemon at plain-http or internal addresses through a redirect.
+var regHTTP = &http.Client{Timeout: 60 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	if len(via) >= 3 {
+		return errors.New("too many redirects")
+	}
+	if req.URL.Scheme != "https" {
+		return errors.New("refusing a redirect away from https")
+	}
+	return nil
+}}
+
+// registryMu keeps installs, updates and removals one at a time.
+var registryMu sync.Mutex
 
 func regGet(ctx context.Context, rawURL string, max int64, out any) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -272,6 +286,8 @@ func (s *Server) registryInstall(w http.ResponseWriter, r *http.Request) {
 	if !s.humanOnly(w, r) {
 		return
 	}
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	var req struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
@@ -332,12 +348,24 @@ func (s *Server) registryInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := m.Manifest().ID
+	if strings.HasPrefix(id, "mcp-") {
+		_ = m.Stop()
+		writeErr(w, http.StatusBadRequest, "ids starting with mcp- belong to mounted MCP servers")
+		return
+	}
 	if !strings.HasPrefix(id, handle+"-") {
 		_ = m.Stop()
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("the module calls itself %q; modules from %s must use ids starting with %q", id, handle, handle+"-"))
 		return
 	}
 	list := s.installedModules(ctx)
+	for _, x := range list {
+		if x.Name == vp.Name && semverLess(vp.Version, x.Version) {
+			_ = m.Stop()
+			writeErr(w, http.StatusConflict, fmt.Sprintf("%s %s is installed; remove it first to go back to %s", x.Name, x.Version, vp.Version))
+			return
+		}
+	}
 	for i, x := range list {
 		if x.Name == vp.Name {
 			// An update: stop the old one.
@@ -377,6 +405,8 @@ func (s *Server) registryRemove(w http.ResponseWriter, r *http.Request) {
 	if !s.humanOnly(w, r) {
 		return
 	}
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	name := r.URL.Query().Get("name")
 	list := s.installedModules(r.Context())
 	for i, x := range list {

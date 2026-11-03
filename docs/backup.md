@@ -5,6 +5,10 @@ settings, module instances, agent rules, keys, automations, the audit log,
 sync state, notes and sandboxed modules, and the vault. The vault inside
 stays locked with its own passphrase; the backup adds a second one.
 
+Everything else is readable to whoever has the file and its passphrase,
+including the key that encrypts two-factor secrets and the remote-access
+relay key, so treat the backup passphrase like the owner's password.
+
 ## Take a backup
 
 - **In the app:** Settings, Backups, choose a passphrase (at least 12

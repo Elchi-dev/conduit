@@ -775,4 +775,36 @@ func TestVaultFolders(t *testing.T) {
 	if code := reveal(c, "finance/bank"); code != 200 {
 		t.Fatalf("owner reveals: %d", code)
 	}
+	// A JSON-escaped reference is the same reference.
+	esc := []byte(`{"module":"lamp","name":"y","config":{"token":"secret:\/\/finance\/bank"}}`)
+	if code := kim.do("POST", "/api/v1/instances", json.RawMessage(esc), nil); code != 403 {
+		t.Fatalf("escaped restricted secret in settings: %d", code)
+	}
+	// An import can't pick a restricted folder through its keys.
+	imp := func(prefix, text string) int {
+		return kim.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/import_env", map[string]any{"input": map[string]string{"prefix": prefix, "text": text}}, nil)
+	}
+	if code := imp("", "FINANCE/BANK=attacker"); code != 200 {
+		t.Fatalf("import without prefix: %d", code)
+	}
+	if code := imp("finance", "BANK=attacker"); code != 403 {
+		t.Fatalf("import into restricted: %d", code)
+	}
+	var got json.RawMessage
+	c.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/reveal", map[string]any{"input": map[string]string{"name": "finance/bank"}}, &got)
+	if strings.Contains(string(got), "attacker") {
+		t.Fatal("import overwrote a restricted secret")
+	}
+	// Scanning would test guesses against restricted values.
+	if code := kim.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/scan_text", map[string]any{"input": map[string]string{"text": "v"}}, nil); code != 403 {
+		t.Fatalf("admin scans: %d", code)
+	}
+	// Only the owner may sync the vault while folders are restricted.
+	if code := kim.do("POST", "/api/v1/sync/group", map[string]any{"collections": []string{"vault"}}, nil); code != 403 {
+		t.Fatalf("admin syncs the vault: %d", code)
+	}
+	// Tiles are chosen by people, not keys.
+	if code := (client{t: t, base: c.base, token: k.Secret}).do("PUT", "/api/v1/me/tiles", []any{}, nil); code != 403 {
+		t.Fatalf("key sets tiles: %d", code)
+	}
 }

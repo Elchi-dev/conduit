@@ -47,6 +47,12 @@ recommended policies.
 | UniFi Network | [unifi.md](unifi.md) | homelab |
 | Nextcloud | [nextcloud.md](nextcloud.md) | homelab, team |
 | Ollama | [ollama.md](ollama.md) | developer, gamer, homelab |
+| S3 storage | [s3.md](s3.md) | homelab, developer |
+| Plex | [plex.md](plex.md) | homelab, gamer |
+| Gitea and Forgejo | [gitea.md](gitea.md) | developer, homelab |
+| Mastodon | [mastodon.md](mastodon.md) | team, gamer |
+| Vaultwarden | [vaultwarden.md](vaultwarden.md) | homelab |
+| Container registry | [containerregistry.md](containerregistry.md) | developer, homelab |
 | Files and backups | [files.md](files.md) | homelab, team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |

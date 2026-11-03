@@ -19,6 +19,8 @@ The daemon API is also reachable through a hub's encrypted relay; see
 [docs/protocol/hub.md](../protocol/hub.md#what-a-relayed-request-can-do) for
 what differs (bearer tokens instead of cookies; the event stream arrives as streamed frames).
 
+What stays stable, and how deprecations work: [stability.md](stability.md).
+
 ## Clients and kits
 
 - `conduit`, the command-line client: run actions, follow events, read the

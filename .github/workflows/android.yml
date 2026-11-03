@@ -6,6 +6,7 @@ on:
     paths:
       - "apps/desktop/**"
       - "web/**"
+      - "scripts/fdroid-repo.sh"
       - ".github/workflows/android.yml"
   pull_request:
     paths:
@@ -70,6 +71,18 @@ jobs:
           mkdir -p out
           find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
           ls -la out
+      - name: F-Droid repository builds (throwaway key)
+        run: |
+          pip install --quiet fdroidserver
+          export PATH="$PATH:$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/t.jks" -storepass testpass -keypass testpass -alias t \
+            -keyalg RSA -keysize 2048 -validity 1000 -dname CN=t >/dev/null
+          apk=$(ls out/*.apk | head -1)
+          cp "$apk" "$RUNNER_TEMP/conduit.apk"
+          apksigner sign --ks "$RUNNER_TEMP/t.jks" --ks-pass pass:testpass --ks-key-alias t "$RUNNER_TEMP/conduit.apk" 2>/dev/null \
+            || echo "already signed with the release key"
+          FDROID_KEYSTORE="$RUNNER_TEMP/t.jks" FDROID_KEYSTORE_PASS=testpass FDROID_KEY_ALIAS=t FDROID_KEY_PASS=testpass \
+            scripts/fdroid-repo.sh "$RUNNER_TEMP/fdroid" https://example.com/repo "$RUNNER_TEMP/conduit.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: conduit-android

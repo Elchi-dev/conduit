@@ -62,6 +62,21 @@ With options, for example to start the daemon at logon:
 The binary goes to `%LOCALAPPDATA%\Conduit\bin`, which is added to your user
 PATH.
 
+## Android
+
+Download `conduit-android-<version>.apk` from the release and open it (allow
+installs from your browser or file manager when asked), or add the F-Droid
+repository so F-Droid, Droid-ify or Neo Store install Conduit and keep it
+updated:
+
+```
+https://github.com/Elchi-dev/conduit/releases/latest/download
+```
+
+In F-Droid: Settings, Repositories, add, paste the address. The repository is
+signed with the same key as the APK and is published with each signed
+release; it appears once the release signing keys are set up.
+
 ## After installing
 
 Open http://127.0.0.1:7600. The first start writes a one-time setup token,

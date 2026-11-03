@@ -203,6 +203,21 @@ jobs:
           apk=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
           cp "$apk" "conduit-android-${TAG#v}.apk"
           gh release upload "$TAG" "conduit-android-${TAG#v}.apk" --clobber
+      - name: F-Droid repository
+        if: env.KS_BASE64 != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          pip install --quiet fdroidserver
+          export PATH="$PATH:$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          export FDROID_KEYSTORE="$RUNNER_TEMP/conduit-release.jks"
+          # The repository lives next to the APK in the latest release.
+          scripts/fdroid-repo.sh "$RUNNER_TEMP/fdroid" "https://github.com/${{ github.repository }}/releases/latest/download" "conduit-android-${TAG#v}.apk"
+          cd "$RUNNER_TEMP/fdroid/repo"
+          gh release upload "$TAG" -R "${{ github.repository }}" index-v1.jar index-v1.json index-v2.json entry.jar entry.json index.jar index.xml --clobber
 
   publish:
     needs: [binaries, desktop, android]

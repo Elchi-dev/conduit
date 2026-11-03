@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
+import { RemoteAccess } from "./RemoteAccess";
 import "./pages.css";
 
 function useTheme() {
@@ -82,6 +83,8 @@ export function Settings() {
           ))}
         </div>
       </section>
+
+      <RemoteAccess admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
       <section className="stack" style={{ gap: 8, maxWidth: 420 }}>
         <h2 className="section-title">Password</h2>

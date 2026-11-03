@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -64,6 +65,11 @@ type harness struct {
 func newHarness(t *testing.T, mutate func(*Config)) *harness {
 	t.Helper()
 	cfg := Config{DatabaseURL: filepath.Join(t.TempDir(), "hub.db"), PublicURL: "https://hub.test", Name: "Test hub", OpenRegistration: true, AdminEmail: "root@example.com"}
+	// CI also runs these tests against PostgreSQL.
+	if pg := os.Getenv("CONDUIT_HUB_TEST_POSTGRES"); pg != "" {
+		resetPostgres(t, pg)
+		cfg.DatabaseURL = pg
+	}
 	if mutate != nil {
 		mutate(&cfg)
 	}
@@ -76,6 +82,18 @@ func newHarness(t *testing.T, mutate func(*Config)) *harness {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(func() { ts.Close(); s.Close() })
 	return &harness{t: t, srv: s, ts: ts, mail: m}
+}
+
+func resetPostgres(t *testing.T, url string) {
+	t.Helper()
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (h *harness) do(method, path, tok string, body any, want int) map[string]any {

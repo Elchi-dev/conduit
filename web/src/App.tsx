@@ -8,7 +8,8 @@ import { Automations } from "./pages/Automations";
 import { Home } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { Keys } from "./pages/Keys";
-import { Login, Setup } from "./pages/Auth";
+import { Connect, Login, Setup } from "./pages/Auth";
+import { forgetRelay, relayProfile } from "./lib/connection";
 import { Modules } from "./pages/Modules";
 import { PolicyPage } from "./pages/Policy";
 import { Settings } from "./pages/Settings";
@@ -25,14 +26,35 @@ export default function App() {
 
   if (setup.isPending) return null;
   if (setup.error) {
-    return (
-      <div className="gate">
-        <div className="gate-box stack">
-          <h1>Conduit isn't reachable</h1>
-          <p className="muted">The daemon didn't answer. Check that conduitd is running, then reload.</p>
+    const relay = relayProfile();
+    if (relay) {
+      return (
+        <div className="gate">
+          <div className="gate-box stack">
+            <h1>{relay.name} isn't reachable</h1>
+            <p className="muted">
+              {setup.error.message} Check that the computer is on and that Conduit is linked to {new URL(relay.hub).host}, then
+              try again.
+            </p>
+            <div className="inline">
+              <button className="btn primary" onClick={() => setup.refetch()}>
+                Try again
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  forgetRelay();
+                  setup.refetch();
+                }}
+              >
+                Forget this pairing
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+    return <Connect reason="No Conduit daemon answered here. If it runs on another computer, pair with it." />;
   }
   if (setup.data.needsSetup) return <Setup />;
   if (me.isPending) return null;

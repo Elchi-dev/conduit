@@ -7,7 +7,6 @@ Specifications, versioned as they land:
 
 | Spec | File | Status |
 | --- | --- | --- |
-| External modules (JSON-RPC over stdio) | external-modules.md | phase 2 |
-| Daemon ↔ hub: pairing, relay, sync | hub.md | phase 10 |
-| Update feed and signatures | updates.md | phase 11 |
-| Registry packages | registry.md | phase 10 |
+| External modules (JSON-RPC over stdio) | [external-modules.md](external-modules.md) | v1 |
+| Hub: accounts, pairing, relay, sync, registry, update feed | [hub.md](hub.md) | v1 |
+| Update clients and self-update | updates.md | phase 11 |

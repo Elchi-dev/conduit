@@ -109,7 +109,9 @@ func statusErr(s string) error {
 }
 
 // Decide approves or denies a pending approval on behalf of decidedBy.
+// Approvals past their expiry can no longer be decided.
 func (q *Approvals) Decide(ctx context.Context, id string, approve bool, decidedBy string) error {
+	q.ExpireStale(ctx)
 	s := "denied"
 	if approve {
 		s = "approved"
@@ -155,8 +157,31 @@ func (q *Approvals) Get(ctx context.Context, id string) (Approval, error) {
 	return scanApproval(q.store.DB.QueryRowContext(ctx, `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at FROM approvals WHERE id = ?`, id))
 }
 
+// ExpireStale marks pending approvals past their expiry as expired. Waiters
+// expire their own approvals on time; this catches approvals whose waiter is
+// gone, for example after a restart.
+func (q *Approvals) ExpireStale(ctx context.Context) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	rows, err := q.store.DB.QueryContext(ctx, `SELECT id FROM approvals WHERE status = 'pending' AND expires_at < ?`, now)
+	if err != nil {
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		_ = q.decide(ctx, id, "expired", "system")
+	}
+}
+
 // List returns approvals with the given status ("" for all), newest first.
 func (q *Approvals) List(ctx context.Context, status string) ([]Approval, error) {
+	q.ExpireStale(ctx)
 	query := `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at FROM approvals`
 	var args []any
 	if status != "" {

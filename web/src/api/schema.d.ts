@@ -832,6 +832,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/remote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hub link, relay connection and paired remote devices */
+        get: operations["remoteStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/remote/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Link this daemon to a hub account with a pairing code from that account */
+        post: operations["linkHub"];
+        /** Unpair from the hub and stop the relay */
+        delete: operations["unlinkHub"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/remote/pairings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A one-time QR payload (valid 10 minutes) for a phone or browser to pair */
+        post: operations["createRemotePairing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/remote/clients/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stop a paired device from connecting */
+        delete: operations["removeRemoteClient"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/keys": {
         parameters: {
             query?: never;
@@ -927,6 +996,42 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        RemoteStatus: {
+            linked: boolean;
+            link?: {
+                hub?: string;
+                deviceId?: string;
+                account?: string;
+                /** Format: date-time */
+                linkedAt?: string;
+            };
+            connected: boolean;
+            lastError?: string;
+            publicKey: string;
+            fingerprint: string;
+            streams: number;
+            clients: {
+                id: string;
+                name: string;
+                fingerprint: string;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                lastSeenAt: string;
+            }[];
+        };
+        RemotePairing: {
+            v: number;
+            hub: string;
+            daemon: string;
+            key: string;
+            secret: string;
+            name: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description conduit://pair?d=<base64url JSON>, for the QR code */
+            uri: string;
+        };
         Error: {
             error: string;
         };
@@ -2895,6 +3000,130 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    remoteStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteStatus"];
+                };
+            };
+        };
+    };
+    linkHub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    hub: string;
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Linked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteStatus"];
+                };
+            };
+            /** @description The hub refused or couldn't be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    unlinkHub: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unlinked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createRemotePairing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemotePairing"];
+                };
+            };
+            /** @description Not linked to a hub */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    removeRemoteClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     listKeys: {

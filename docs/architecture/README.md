@@ -26,7 +26,7 @@ takes the same path:
 | Module contract | `pkg/sdk` | [modules.md](modules.md) |
 | Core (registry, events, policy, audit, storage) | `internal/core` | [core.md](core.md) |
 | Daemon HTTP API, events, MCP | `internal/daemon` | [daemon.md](daemon.md) |
-| Hub | `internal/hub` | [hub.md](hub.md) |
+| Hub and remote access | `internal/hub`, `internal/remote`, `pkg/relay` | [hub.md](hub.md) |
 | Vault | `internal/vault`, `modules/vault` | [vault.md](vault.md) |
 | Automations | `internal/automation` | [automations.md](automations.md) |
 | AI layer: tools, MCP, providers, assistant, bridge | `internal/ai` | [ai.md](ai.md) |

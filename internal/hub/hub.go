@@ -308,3 +308,6 @@ func (s *Server) limited(name string, n int, h http.HandlerFunc) http.HandlerFun
 		h(w, r)
 	}
 }
+
+// SetMailer replaces the mail driver (tests, embedding).
+func (s *Server) SetMailer(m Mailer) { s.mail = m }

@@ -1,4 +1,5 @@
 import createClient from "openapi-fetch";
+import { apiFetch } from "../lib/connection";
 import type { components, paths } from "./schema";
 
 // Generated from api/openapi/daemon.yaml (`pnpm gen:api`).
@@ -16,7 +17,7 @@ export type User = S["User"];
 export type Health = S["Health"];
 export type Plan = S["Plan"];
 
-export const api = createClient<paths>({ baseUrl: "/api/v1", credentials: "same-origin" });
+export const api = createClient<paths>({ baseUrl: "/api/v1", credentials: "same-origin", fetch: apiFetch });
 
 /** ApiError carries the daemon's error message and HTTP status. */
 export class ApiError extends Error {

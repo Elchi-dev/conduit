@@ -1,0 +1,33 @@
+# A hub with PostgreSQL. Copy .env.example to .env, fill it in, then:
+#   docker compose -f deploy/hub/compose.yaml up -d
+# Put a TLS-terminating proxy (Caddy, nginx, Traefik) in front of port 7700;
+# the relay needs WebSocket upgrades passed through.
+services:
+  hub:
+    build:
+      context: ../..
+      dockerfile: deploy/hub/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CONDUIT_HUB_DB: postgres://conduit:${POSTGRES_PASSWORD}@db:5432/conduit?sslmode=disable
+    ports:
+      - "127.0.0.1:7700:7700"
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: conduit
+      POSTGRES_DB: conduit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conduit"]
+      interval: 5s
+      retries: 10
+volumes:
+  db:

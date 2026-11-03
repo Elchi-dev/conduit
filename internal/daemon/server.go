@@ -14,6 +14,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/remote"
 	"github.com/elchi-dev/conduit/internal/vault"
 )
 
@@ -27,7 +28,9 @@ type Server struct {
 	Providers   *ai.Providers
 	Assistant   *ai.Agent
 	Bridge      *ai.Bridge
-	Log         *slog.Logger
+	// Remote may be nil in tests that don't use remote access.
+	Remote *remote.Service
+	Log    *slog.Logger
 	// SetupToken must be presented to create the owner account. It is printed
 	// to the log and written to <data>/setup-token on first start.
 	SetupToken string

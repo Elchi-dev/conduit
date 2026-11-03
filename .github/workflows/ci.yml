@@ -37,6 +37,27 @@ jobs:
           go build -o bin/ ./cmd/conduitd
           go build -o bin/ ./cmd/conduit-hub
 
+  hub-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: conduit
+          POSTGRES_PASSWORD: conduit
+          POSTGRES_DB: conduit
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U conduit" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./internal/hub/
+        env:
+          CONDUIT_HUB_TEST_POSTGRES: postgres://conduit:conduit@localhost:5432/conduit?sslmode=disable
+
   web:
     runs-on: ubuntu-latest
     steps:
@@ -52,6 +73,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: web
       - run: pnpm build
+        working-directory: web
+      - name: relay wire format matches Go
+        run: pnpm test:relay
         working-directory: web
 
   desktop:

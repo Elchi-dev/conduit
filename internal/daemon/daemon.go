@@ -19,6 +19,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/remote"
 	"github.com/elchi-dev/conduit/internal/ui"
 	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
@@ -50,6 +51,7 @@ type App struct {
 	Vault       *vault.Vault
 	Notify      *notify.Module
 	Automations *automation.Service
+	Remote      *remote.Service
 	Server      *Server
 }
 
@@ -73,6 +75,17 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	bridge := &ai.Bridge{DB: store.DB, Engine: engine, Secrets: v}
 	app := &App{Store: store, Engine: engine, Auth: authSvc, Vault: v, Automations: autos,
 		Server: &Server{Engine: engine, Auth: authSvc, Vault: v, Automations: autos, Providers: providers, Assistant: assistant, Bridge: bridge, Log: log, UI: ui.Handler()}}
+	host, _ := os.Hostname()
+	if host == "" {
+		host = "Conduit"
+	}
+	rem, err := remote.New(ctx, store.DB, log, host)
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	app.Remote, app.Server.Remote = rem, rem
+	rem.Handler = app.Server.Handler()
 	if v.UnlockFromKeychain(ctx) {
 		log.Info("vault unlocked from the system keychain")
 	}
@@ -128,6 +141,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	if err := app.Automations.Start(ctx); err != nil {
 		return err
 	}
+	app.Remote.Start(ctx)
 	go housekeeping(ctx, app)
 	go forwardAlerts(ctx, app)
 

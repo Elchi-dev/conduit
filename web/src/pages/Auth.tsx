@@ -1,9 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, ok } from "../api/client";
+import { forgetRelay, pairFromCode, relayProfile } from "../lib/connection";
+import { fingerprint } from "../lib/relay";
 import "../components/shell.css";
 
-function Brand() {
+export function Brand() {
   return (
     <div className="inline" style={{ gap: 10 }}>
       <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" style={{ color: "var(--signal)" }}>
@@ -80,6 +82,13 @@ export function Setup() {
 export function Login() {
   const qc = useQueryClient();
   const [f, setF] = useState({ email: "", password: "" });
+  const [elsewhere, setElsewhere] = useState(false);
+  const relay = relayProfile();
+  const [fp, setFp] = useState("");
+  useEffect(() => {
+    if (relay) fingerprint(relay.key).then(setFp);
+  }, [relay]);
+  if (elsewhere) return <Connect onBack={() => setElsewhere(false)} />;
   const m = useMutation({
     mutationFn: () => ok(api.POST("/auth/login", { body: { ...f, device: "Browser" } })),
     onSuccess: () => qc.invalidateQueries(),
@@ -88,7 +97,15 @@ export function Login() {
     <div className="gate">
       <div className="gate-box stack" style={{ gap: 24 }}>
         <Brand />
-        <h1>Sign in</h1>
+        <div className="stack" style={{ gap: 8 }}>
+          <h1>Sign in</h1>
+          {relay && (
+            <p className="muted">
+              To {relay.name}, through {new URL(relay.hub).host}. The connection is end-to-end encrypted to the key{" "}
+              <span className="data">{fp}</span>, which should match the fingerprint shown on that computer.
+            </p>
+          )}
+        </div>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -114,6 +131,80 @@ export function Login() {
             Sign in
           </button>
         </form>
+        {relay ? (
+          <button
+            className="btn quiet"
+            onClick={() => {
+              forgetRelay();
+              qc.invalidateQueries();
+            }}
+          >
+            Forget {relay.name} and disconnect
+          </button>
+        ) : (
+          <button className="btn quiet" onClick={() => setElsewhere(true)}>
+            Connect to a Conduit on another computer
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Pair this device with a daemon elsewhere by the code it shows under
+ * Settings, Remote access. Used when the page isn't served by a daemon
+ * (the Android app, a hub's website) or to reach another one.
+ */
+export function Connect({ onBack, reason }: { onBack?: () => void; reason?: string }) {
+  const qc = useQueryClient();
+  const [code, setCode] = useState("");
+  const m = useMutation({
+    mutationFn: () => pairFromCode(code),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+  return (
+    <div className="gate">
+      <div className="gate-box stack" style={{ gap: 24 }}>
+        <Brand />
+        <div className="stack" style={{ gap: 8 }}>
+          <h1>Connect to your Conduit</h1>
+          {reason && <p className="muted">{reason}</p>}
+          <p className="muted">
+            On the computer running Conduit, open Settings, then Remote access, and choose Pair a device. Scan the code
+            with your phone's camera, or copy the pairing link and paste it here.
+          </p>
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            m.mutate();
+          }}
+        >
+          <label className="field">
+            <span>Pairing link</span>
+            <textarea
+              className="data"
+              rows={3}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="conduit://pair?d=…"
+              required
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <small>Single use, valid for 10 minutes.</small>
+          </label>
+          {m.error && <div className="error">{m.error.message}</div>}
+          <button className="btn primary" disabled={m.isPending}>
+            {m.isPending ? "Connecting…" : "Connect"}
+          </button>
+        </form>
+        {onBack && (
+          <button className="btn quiet" onClick={onBack}>
+            Back to sign in
+          </button>
+        )}
       </div>
     </div>
   );

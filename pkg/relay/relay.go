@@ -17,8 +17,11 @@
 //
 // giving one AES-256-GCM key per direction. The first DH gives forward
 // secrecy against later theft of the client's static key; the second
-// authenticates the client to the daemon. The daemon proves itself by being
-// able to decrypt and answer.
+// authenticates the client to the daemon. The hello also carries the
+// client's first encrypted frame (an Intro with its name and, when pairing,
+// the one-time secret), so the daemon admits a key only after the client
+// proved it holds it, and the hub never sees the pairing secret. The daemon
+// proves itself by being able to decrypt and answer.
 //
 // Frames. Each message is sealed with AES-256-GCM using a 96-bit nonce made of
 // four zero bytes and a 64-bit big-endian counter that starts at 0 and
@@ -85,16 +88,25 @@ func Fingerprint(pub string) string {
 	return Enc(h[:16])
 }
 
-// Hello is the first message from client to daemon.
+// Hello is the first message from client to daemon. It is the only frame
+// the hub can read, and it carries nothing secret.
 type Hello struct {
 	V         int    `json:"v"`
 	Static    string `json:"static"`    // client's long-term public key
 	Ephemeral string `json:"ephemeral"` // fresh public key for this session
 	Salt      string `json:"salt"`      // 32 random bytes
+	// Proof is the client's first encrypted frame (an Intro). Opening it
+	// proves the client holds the private half of Static and pinned the
+	// right daemon key, and it keeps the pairing secret away from the hub.
+	Proof string `json:"proof"`
+}
+
+// Intro is sealed inside Hello.Proof.
+type Intro struct {
+	Name string `json:"name,omitempty"` // device name, e.g. "Pixel 9"
 	// PairingSecret is present only on the first connection after scanning
 	// the daemon's QR code.
 	PairingSecret string `json:"pairingSecret,omitempty"`
-	Name          string `json:"name,omitempty"` // device name, e.g. "Pixel 9"
 }
 
 // Session encrypts and decrypts one tunnel's frames.
@@ -133,20 +145,26 @@ func newSession(ikm, salt []byte, client bool) (*Session, error) {
 // ClientHandshake builds the Hello for a daemon whose public key the client
 // pinned at pairing, and the client's session.
 func ClientHandshake(me KeyPair, daemonPub string, pairingSecret, name string) (Hello, *Session, error) {
-	dpub, err := Dec(daemonPub)
-	if err != nil {
-		return Hello{}, nil, err
-	}
-	dkey, err := ecdh.X25519().NewPublicKey(dpub)
-	if err != nil {
-		return Hello{}, nil, err
-	}
 	eph, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		return Hello{}, nil, err
 	}
 	salt := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
+		return Hello{}, nil, err
+	}
+	return clientHandshake(me, daemonPub, eph, salt, Intro{Name: name, PairingSecret: pairingSecret})
+}
+
+// clientHandshake is ClientHandshake with the randomness supplied, for test
+// vectors shared with the TypeScript implementation.
+func clientHandshake(me KeyPair, daemonPub string, eph *ecdh.PrivateKey, salt []byte, intro Intro) (Hello, *Session, error) {
+	dpub, err := Dec(daemonPub)
+	if err != nil {
+		return Hello{}, nil, err
+	}
+	dkey, err := ecdh.X25519().NewPublicKey(dpub)
+	if err != nil {
 		return Hello{}, nil, err
 	}
 	dh1, err := eph.ECDH(dkey)
@@ -161,14 +179,35 @@ func ClientHandshake(me KeyPair, daemonPub string, pairingSecret, name string) (
 	if err != nil {
 		return Hello{}, nil, err
 	}
-	return Hello{V: Version, Static: me.Public(), Ephemeral: Enc(eph.PublicKey().Bytes()), Salt: Enc(salt), PairingSecret: pairingSecret, Name: name}, s, nil
+	proof, err := s.SealJSON(intro)
+	if err != nil {
+		return Hello{}, nil, err
+	}
+	return Hello{V: Version, Static: me.Public(), Ephemeral: Enc(eph.PublicKey().Bytes()), Salt: Enc(salt), Proof: Enc(proof)}, s, nil
 }
 
-// DaemonHandshake derives the daemon's session from a client's Hello.
-func DaemonHandshake(me KeyPair, h Hello) (*Session, error) {
+// DaemonHandshake derives the daemon's session from a client's Hello and
+// opens its proof. An error means the client must not be admitted.
+func DaemonHandshake(me KeyPair, h Hello) (*Session, Intro, error) {
+	var in Intro
 	if h.V != Version {
-		return nil, fmt.Errorf("unsupported relay version %d", h.V)
+		return nil, in, fmt.Errorf("unsupported relay version %d", h.V)
 	}
+	s, err := daemonSession(me, h)
+	if err != nil {
+		return nil, in, err
+	}
+	proof, err := Dec(h.Proof)
+	if err != nil {
+		return nil, in, errors.New("bad proof")
+	}
+	if err := s.OpenJSON(proof, &in); err != nil {
+		return nil, in, errors.New("the client's proof didn't open: wrong pinned daemon key or forged static key")
+	}
+	return s, in, nil
+}
+
+func daemonSession(me KeyPair, h Hello) (*Session, error) {
 	pub := func(s string) (*ecdh.PublicKey, error) {
 		b, err := Dec(s)
 		if err != nil {

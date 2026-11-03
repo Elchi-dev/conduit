@@ -1,0 +1,20 @@
+{
+  "daemonPrivate": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+  "clientPrivate": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+  "ephemeralPrivate": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+  "salt": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
+  "intro": {
+    "name": "Pixel",
+    "pairingSecret": "s3cret"
+  },
+  "hello": {
+    "v": 1,
+    "static": "zo060cy2M-x7cMF4FKXHbs0CloUFDTRHRboFhw5YfVk",
+    "ephemeral": "Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI",
+    "salt": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
+    "proof": "Y-tukxdce9pk2-0RS2D26sCBtnP938C6FGBk9xzGVBydLN6C6JCSwQ6Idv7yFBVZ5BSFraBbQaon"
+  },
+  "daemonFingerprint": "GpLyOFLckI2XMWo7E1eCgQ",
+  "clientFrame": "kqOzs04X-stFFvZpIU81uEsNs-s",
+  "daemonFrame": "ABae6mQXevXcgKFIJlTmo2qAlMolYeChxhHf"
+}

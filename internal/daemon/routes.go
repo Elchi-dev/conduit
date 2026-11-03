@@ -28,6 +28,9 @@ func (s *Server) Handler() http.Handler {
 	if s.Assistant != nil {
 		routes = append(routes, s.assistantRoutes()...)
 	}
+	if s.Remote != nil {
+		routes = append(routes, s.remoteRoutes()...)
+	}
 	for _, rt := range routes {
 		mux.HandleFunc(rt.pattern, rt.h)
 	}

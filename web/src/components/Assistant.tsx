@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { api, ok, type S } from "../api/client";
+import { apiFetchUrl } from "../lib/connection";
 import { ApprovalCard } from "../pages/Approvals";
 import "./assistant.css";
 
@@ -88,7 +89,7 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
     setInput("");
     setItems((it) => [...it, { kind: "user", text }]);
     try {
-      const res = await fetch("/api/v1/assistant/chat", {
+      const res = await apiFetchUrl("/api/v1/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversation: conv || undefined, message: text }),

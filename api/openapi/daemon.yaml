@@ -19,6 +19,7 @@ servers:
 security:
   - bearer: []
 tags:
+  - name: remote
   - name: system
   - name: auth
   - name: modules
@@ -744,6 +745,50 @@ paths:
       responses:
         "204": { description: Removed }
 
+  /remote:
+    get:
+      operationId: remoteStatus
+      tags: [remote]
+      summary: Hub link, relay connection and paired remote devices
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RemoteStatus" } } } }
+  /remote/link:
+    post:
+      operationId: linkHub
+      tags: [remote]
+      summary: Link this daemon to a hub account with a pairing code from that account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [hub, code], properties: { hub: { type: string }, code: { type: string } } }
+      responses:
+        "200": { description: Linked, content: { application/json: { schema: { $ref: "#/components/schemas/RemoteStatus" } } } }
+        "502": { description: The hub refused or couldn't be reached, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      operationId: unlinkHub
+      tags: [remote]
+      summary: Unpair from the hub and stop the relay
+      responses:
+        "204": { description: Unlinked }
+  /remote/pairings:
+    post:
+      operationId: createRemotePairing
+      tags: [remote]
+      summary: A one-time QR payload (valid 10 minutes) for a phone or browser to pair
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/RemotePairing" } } } }
+        "409": { description: Not linked to a hub, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /remote/clients/{id}:
+    delete:
+      operationId: removeRemoteClient
+      tags: [remote]
+      summary: Stop a paired device from connecting
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /keys:
     get:
       operationId: listKeys
@@ -845,6 +890,46 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    RemoteStatus:
+      type: object
+      required: [linked, connected, publicKey, fingerprint, clients, streams]
+      properties:
+        linked: { type: boolean }
+        link:
+          type: object
+          properties:
+            hub: { type: string }
+            deviceId: { type: string }
+            account: { type: string }
+            linkedAt: { type: string, format: date-time }
+        connected: { type: boolean }
+        lastError: { type: string }
+        publicKey: { type: string }
+        fingerprint: { type: string }
+        streams: { type: integer }
+        clients:
+          type: array
+          items:
+            type: object
+            required: [id, name, fingerprint, createdAt, lastSeenAt]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              fingerprint: { type: string }
+              createdAt: { type: string, format: date-time }
+              lastSeenAt: { type: string, format: date-time }
+    RemotePairing:
+      type: object
+      required: [v, hub, daemon, key, secret, name, expiresAt, uri]
+      properties:
+        v: { type: integer }
+        hub: { type: string }
+        daemon: { type: string }
+        key: { type: string }
+        secret: { type: string }
+        name: { type: string }
+        expiresAt: { type: string, format: date-time }
+        uri: { type: string, description: "conduit://pair?d=<base64url JSON>, for the QR code" }
     Error:
       type: object
       required: [error]

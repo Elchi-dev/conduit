@@ -13,14 +13,22 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 9 of 16 (AI layer) — done 2026-11-03.
+- **Phase:** 10 of 16 (hub and remote access) — done 2026-11-03 ~02:00 CET.
 - **Works today:** core engine; accounts, keys; daemon API and events; web
   app; 12 built-in modules; automations and the daily brief; MCP server and
   stdio bridge; AI providers and the built-in assistant; outside MCP servers
-  as modules; what-changed and record-to-automation.
-- **Next:** phase 10, the hub — accounts with a per-operator mail provider,
-  orgs, device pairing, end-to-end encrypted relay and sync, module
-  registry, update feed, Docker image.
+  as modules; what-changed and record-to-automation; `conduit-hub` (accounts
+  with per-operator mail, orgs, pairing, relay, sync, signed registry and
+  update feed; SQLite or Postgres; Docker/compose in `deploy/hub`); daemon
+  remote access (Settings → Remote access: link to a hub, pair phones by QR);
+  the web app works through the relay from any origin (verified in a browser).
+- **Next:** phase 11, desktop: Tauri updater (ed25519-signed, uses the hub
+  update feed), daemon self-update with rollback, tray, desktop
+  notifications. Then phase 12 Android; the web app needs a phone layout
+  (the top bar overflows at 412 px).
+- **Known gaps:** the hub has no web pages yet (sign-up, pairing codes are
+  API-only until the public site in phase 14); the relay doesn't carry the
+  event stream (relayed clients poll every 10 s).
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

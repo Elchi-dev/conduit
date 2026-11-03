@@ -3,6 +3,45 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 10 — Hub and remote access
+
+**Landed**
+
+- `conduit-hub`: accounts (Argon2id, verification, reset, sign-in notices,
+  no address enumeration, rate limits), mail through each operator's own
+  provider (console, Resend, SMTP), orgs with email invitations and roles,
+  pairing codes and device tokens, hub API keys with scopes, encrypted sync
+  blobs with optimistic versions, a module registry with ed25519-signed
+  versions, and a signed update feed.
+- One schema for SQLite and PostgreSQL; the hub test suite passes on both
+  (CI runs a Postgres job). Docker image and compose file in `deploy/hub`.
+- WebSocket relay: one daemon socket multiplexes up to 64 client sockets; the
+  hub sees only ciphertext.
+- Daemon side (`internal/remote`): link to a hub with a pairing code, keep
+  the tunnel up with backoff, enroll phones by QR code, run relayed requests
+  against the normal API (sessions, scopes and policy still apply), remove
+  paired devices. Settings → Remote access shows it all, with a QR code and
+  key fingerprint.
+- Web app relay mode: pair by link, sign in, use everything through the hub
+  from any origin. Verified end to end in headless Chrome (static page →
+  hub → daemon).
+- `api/openapi/hub.yaml` with a route parity test; docs: protocol/hub.md,
+  architecture/hub.md, self-hosting guide.
+
+**Changed from the plan**
+
+- The pairing secret no longer travels in the plaintext hello: the client
+  seals it, with its device name, into a proof frame. This closes a hole
+  where a malicious hub could read the secret and enroll its own key, and it
+  makes the daemon admit a key only after the client proves it holds it.
+- Go and TypeScript share pinned test vectors (`pkg/relay/testdata`), checked
+  in CI, so the two implementations can't drift.
+
+**Fixed**
+
+- Approvals whose waiter was gone (after a restart) stayed pending forever and
+  could still be approved. They now expire on read and can't be decided late.
+
 ## 2026-11-03 · Phase 9 — AI layer
 
 **Landed**

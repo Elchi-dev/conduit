@@ -1168,10 +1168,151 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this daemon syncs, what, with whom, and how the last round went */
+        get: operations["syncStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a sync group and get its join code (signed-in people only)
+         * @description The join code is the group key. Anyone with it can read and change what the group syncs, so treat it like a password.
+         */
+        post: operations["createSyncGroup"];
+        /** Stop syncing and forget the group key; local data stays */
+        delete: operations["leaveSyncGroup"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Join a group with a code from another daemon (signed-in people only) */
+        post: operations["joinSyncGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Show the join code again, to add another daemon (signed-in people only; audited) */
+        get: operations["syncJoinCode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change what syncs and the peers on the local network */
+        put: operations["updateSyncSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync now */
+        post: operations["runSync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SyncSetup: {
+            /** @description The join code (joinSyncGroup only) */
+            code?: string;
+            collections?: ("vault" | "policy" | "automations")[];
+            /** @description Other daemons to sync with directly, like http://192.168.1.20:7600 */
+            peers?: string[];
+        };
+        SyncRun: {
+            collection: string;
+            /** @description hub, or peer <address> */
+            transport: string;
+            ok: boolean;
+            skipped?: string;
+            error?: string;
+            /** @description Local changes sent */
+            sent: number;
+            /** @description Changes applied here */
+            received: number;
+        };
+        SyncStatus: {
+            enabled: boolean;
+            /** @description A short public name for the group; not secret */
+            groupId?: string;
+            collections: string[];
+            peers: string[];
+            /** @description True when this daemon is linked to a hub and syncs through it */
+            viaHub: boolean;
+            /** Format: date-time */
+            lastRun?: string;
+            results: components["schemas"]["SyncRun"][];
+            available: {
+                name: string;
+                description: string;
+            }[];
+        };
         Webhook: {
             id: string;
             name: string;
@@ -3840,6 +3981,162 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebhookDelivery"][];
+                };
+            };
+        };
+    };
+    syncStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncStatus"];
+                };
+            };
+        };
+    };
+    createSyncGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncSetup"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: string;
+                        status: components["schemas"]["SyncStatus"];
+                    };
+                };
+            };
+        };
+    };
+    leaveSyncGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Left */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    joinSyncGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncSetup"];
+            };
+        };
+        responses: {
+            /** @description Joined */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    syncJoinCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: string;
+                    };
+                };
+            };
+        };
+    };
+    updateSyncSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncSetup"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncStatus"];
+                };
+            };
+        };
+    };
+    runSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One result per collection and transport */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncRun"][];
                 };
             };
         };

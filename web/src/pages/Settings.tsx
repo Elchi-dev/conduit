@@ -4,6 +4,7 @@ import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
 import { AppSection, DaemonUpdates } from "./AppSection";
 import { RemoteAccess } from "./RemoteAccess";
+import { SyncSection } from "./Sync";
 import { Webhooks } from "./Webhooks";
 import "./pages.css";
 
@@ -65,6 +66,8 @@ export function Settings() {
       <DaemonUpdates admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
       <RemoteAccess admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
+
+      <SyncSection admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 
       <Webhooks admin={me.data?.user.role === "owner" || me.data?.user.role === "admin"} />
 

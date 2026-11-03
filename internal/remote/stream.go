@@ -3,8 +3,8 @@ package remote
 import (
 	"bytes"
 	"context"
-	"net/http"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 

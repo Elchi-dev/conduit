@@ -3,6 +3,57 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 15 — Hardening and security review
+
+**Landed**
+
+- Python, TypeScript and Go external-module kits (`sdk/external`), tested
+  against the engine, and API clients for both APIs (`sdk/clients`).
+- An independent security review by a separate agent that hadn't seen the
+  code being written, covering vault, keys, auth, relay, updater, sandbox
+  and hub. Every confirmed finding is fixed:
+  1. Agents and keys could add or change module instances (whose settings
+     hold credentials) and edit automations during an emergency stop. Now
+     only people manage instances and delete automations; while stopped,
+     only people save automations.
+  2. Relay sessions had no daemon contribution, so a hub could replay a
+     recorded hello and its requests. The daemon now sends a fresh ephemeral
+     key in its Welcome and both sides switch to session keys mixed with it
+     (forward secrecy for both long-term keys, no replays). Go and
+     TypeScript updated together; new test vectors and a replay test.
+  3. A malformed relayed request could panic the daemon. Relayed requests
+     are validated (methods, `/api/` paths, no control characters, scheme or
+     host) and a handler panic answers 500.
+  4. No sign-in limits on the daemon and per-proxy limits on the hub.
+     Failed sign-ins are limited per source and per account on both; the hub
+     takes client addresses from `X-Forwarded-For` behind a proxy
+     (`CONDUIT_HUB_TRUST_PROXY`); Argon2id runs are bounded. The daemon
+     checks the Host header against DNS rebinding (`CONDUIT_ALLOWED_HOSTS`).
+  5. On closed hubs any invite string passed registration, and the admin
+     address was admin before it was confirmed. Invitations are checked
+     (address, unused, unexpired); admin rights come with confirmation.
+  6. Sandbox modules could follow redirects anywhere and reach CGNAT
+     (Tailscale), NAT64 and other reserved ranges. Both are closed.
+  7. CSRF protection relied on bodies being non-empty. Cookie-authenticated
+     mutations now need a same-origin `Sec-Fetch-Site` or `Origin`.
+  8. A leaked key could pull the emergency stop repeatedly. The key that
+     pulls it is revoked.
+  9. Smaller: webhook and relay limit tables are bounded; one address can't
+     take all of a daemon's relay slots; no device tokens in relay URLs;
+     TOTP periods are bounded; the updater checks the release channel; MCP
+     servers' read-only hints are trusted only when the person says so;
+     `servers.read_file` follows the rules for changes and `logs` stays out
+     of the audit log.
+- A functional bug the review found: approvals for callers that don't wait
+  (agents over MCP, automations, the brief) never ran. Approved calls now run
+  in the background after a fresh policy check, and the approval records the
+  audit entry (`resultSeq`). Approvals left pending across a restart expire.
+
+**Changed from the plan**
+
+- The review found more than expected, so client SDK polish was kept to the
+  generated types; the kits and clients are complete but minimal.
+
 ## 2026-11-03 · Phase 14 — Website
 
 **Landed**

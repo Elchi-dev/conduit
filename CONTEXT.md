@@ -13,14 +13,17 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 14 of 16 (website) — done 2026-11-03 ~02:50 CET.
-- **Works today:** everything through phase 13, plus the public website in
-  `site/` (landing, downloads, hubs, docs rendered from `docs/`, hub account
-  pages), served by any hub and built into the hub image.
-- **Next:** phase 15: hardening, an independent security review by a
-  separate agent (vault, keys, auth, relay, updater, sandbox, hub), fixes,
-  Python and TypeScript external-module starter kits, client SDKs. Then 16
-  (release: tag v0.1.0, release workflow, handover).
+- **Phase:** 15 of 16 (hardening and security review) — done 2026-11-03
+  ~03:15 CET.
+- **Works today:** everything through phase 14, plus the module kits and
+  API clients, and every fix from the independent security review (see
+  BUILD_LOG.md, phase 15). Relay sessions now rekey with a daemon ephemeral
+  key; old clients from before this change can't connect (nothing was
+  released yet, so nothing is affected).
+- **Next:** phase 16: tag v0.1.0, watch the release workflow, final docs,
+  handover.
+- **Settings added in phase 15:** `CONDUIT_ALLOWED_HOSTS` (daemon, extra host
+  names), `CONDUIT_HUB_TRUST_PROXY` (hub behind a reverse proxy).
 - **Known gaps:** no release published yet; the APK has only been built in
   CI; the repository is private, so the Android update check (GitHub API)
   can't see releases until it's public.

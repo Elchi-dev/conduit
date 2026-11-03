@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -141,7 +142,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("/v1/", func(w http.ResponseWriter, _ *http.Request) { writeErr(w, http.StatusNotFound, "no such endpoint") })
 	if s.cfg.SiteDir != "" {
-		mux.Handle("/", http.FileServer(http.Dir(s.cfg.SiteDir)))
+		mux.Handle("/", siteHandler(s.cfg.SiteDir))
 	}
 	return headers(mux)
 }
@@ -311,3 +312,26 @@ func (s *Server) limited(name string, n int, h http.HandlerFunc) http.HandlerFun
 
 // SetMailer replaces the mail driver (tests, embedding).
 func (s *Server) SetMailer(m Mailer) { s.mail = m }
+
+// siteHandler serves the website build: files and directory index pages
+// only (no listings), with a strict content security policy. The account
+// pages talk to this hub's API on the same origin.
+func siteHandler(dir string) http.Handler {
+	fsrv := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasSuffix(p, "/") {
+			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p), "index.html")); err != nil {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		h := w.Header()
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+		h.Set("X-Frame-Options", "DENY")
+		if strings.HasPrefix(p, "/_astro/") {
+			h.Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		fsrv.ServeHTTP(w, r)
+	})
+}

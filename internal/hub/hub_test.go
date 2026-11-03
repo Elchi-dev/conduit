@@ -470,3 +470,33 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestSiteServing(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "docs"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "empty"), 0o755)
+	os.WriteFile(filepath.Join(dir, "index.html"), []byte("home"), 0o644)
+	os.WriteFile(filepath.Join(dir, "docs", "index.html"), []byte("docs"), 0o644)
+	h := newHarness(t, func(c *Config) { c.SiteDir = dir })
+	get := func(p string) (int, string, http.Header) {
+		res, err := http.Get(h.ts.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(b), res.Header
+	}
+	if code, body, hd := get("/"); code != 200 || body != "home" || hd.Get("Content-Security-Policy") == "" {
+		t.Fatalf("/ %d %q", code, body)
+	}
+	if code, body, _ := get("/docs/"); code != 200 || body != "docs" {
+		t.Fatalf("/docs/ %d %q", code, body)
+	}
+	if code, _, _ := get("/empty/"); code != 404 {
+		t.Fatalf("directory listing served: %d", code)
+	}
+	if code, _, _ := get("/v1/info"); code != 200 {
+		t.Fatalf("API shadowed by the site: %d", code)
+	}
+}

@@ -23,8 +23,24 @@ owner and a company equally; never tailor it to one setup.
   between daemons (hub or peers), phone notifications through ntfy, an
   F-Droid repository with signed releases, and the fixes from a second
   independent security review.
-- **Next:** whatever the owner prioritises; the open decisions below come
-  first. The build window ends Thu 2026-11-05 00:00 CET.
+- **Since v0.2.0 (phases 23–27, unreleased):** 10 more modules (37), encrypted
+  backups, two-factor sign-in, the `conduit` CLI, a hub operator console,
+  mDNS discovery, home tiles, guides.
+- **Now:** phase 28: browser tests and an accessibility pass in CI (a
+  helper is building them), then a third security review and v0.3.0.
+- **Backlog** (take the next item when a phase ends; the build runs until
+  Thu 2026-11-05 00:00 CET):
+  1. German translation of the app and site (i18n framework first).
+  2. Daemon container image (Docker/Podman) and a Helm chart for the hub.
+  3. Modules: PostgreSQL/MySQL (read-only queries), Redis, S3-compatible
+     storage (MinIO), Uptime Kuma, UniFi, Nextcloud, Hetzner Cloud,
+     DigitalOcean, Vercel, Fly.io, Ollama models, Matrix and Gotify
+     notification channels.
+  4. Per-role access to vault folders for teams.
+  5. Daemon passkeys (serve the desktop app on localhost, which WebAuthn
+     allows).
+  6. Install modules from a hub registry in the app, with signature checks.
+  7. A third independent security review; release v0.3.0.
 - **Releasing:** push a `v*` tag, or run the release workflow by hand with
   a tag name (it creates the tag on the commit it runs on; the build
   environment can't push tags). Notes come from `docs/releases/<tag>.md`.

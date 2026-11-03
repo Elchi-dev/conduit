@@ -3,6 +3,40 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03/04 · Phases 23–27 — Toward v0.3.0
+
+The build keeps going until Thu 5 Nov 00:00 CET; after each phase the next
+tasks come from the backlog in CONTEXT.md.
+
+- **Phase 23, modules (37 in all):** game servers (Minecraft server list
+  ping and RCON, Source A2S queries with the challenge handshake and RCON,
+  tested against fakes that speak the real wire formats), Twitch, Jellyfin,
+  Pi-hole v6, AdGuard Home, TrueNAS SCALE (certificate pinning), Linear
+  (GraphQL), PagerDuty (REST and Events v2), Sentry and Tailscale (API key
+  or OAuth client, key-expiry warnings).
+- **Phase 24, backups** (`docs/backup.md`): one encrypted file with a
+  consistent database snapshot and the data folder; Argon2id and
+  XChaCha20-Poly1305 in 64 KiB chunks whose nonces carry the chunk number
+  and a final flag, so changed, reordered or cut-off files don't restore.
+  Download from Settings, a daily schedule to a folder with the passphrase in
+  the vault, and `conduitd backup` / `conduitd restore`.
+- **Phase 25, two-factor sign-in** on daemon and hub: authenticator codes
+  (RFC 6238, each code works once) and single-use recovery codes; setup
+  needs the password; admins can reset it for others; SSO and passkeys
+  are exempt; a hub password reset keeps two-factor on.
+- **Phase 26, the `conduit` CLI** (`docs/cli.md`): login with an API key,
+  modules, run actions with `key=value` input, approvals, audit, undo, the
+  live event stream, vault names, emergency stop, automations, shell
+  completion; exit codes for scripts; installed with `install.sh --cli`.
+- **Phase 27, operators and discovery:** a hub operator console (stats,
+  accounts, switch off, delete) on the hub website; daemons announce
+  themselves with mDNS (`_conduit._tcp`), and Sync can find other computers
+  on the network.
+- **Also:** pinned live tiles on the home board (any read action of any
+  system; the plan's "configurable board of live tiles"), readable action
+  names in the activity list, and guides for developers, gamers, homelabs
+  and teams (`docs/guides/`).
+
 ## 2026-11-03 · Phase 22 — Release v0.2.0
 
 **Landed**

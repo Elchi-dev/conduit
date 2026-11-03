@@ -23,22 +23,23 @@ owner and a company equally; never tailor it to one setup.
   between daemons (hub or peers), phone notifications through ntfy, an
   F-Droid repository with signed releases, and the fixes from a second
   independent security review.
-- **Since v0.2.0 (phases 23–30, unreleased):** 20 more modules (47),
+- **Since v0.2.0 (phases 23–33, unreleased):** 26 more modules (53), the
+  app in German, fixes from a third security review,
   encrypted backups, two-factor sign-in, the `conduit` CLI, a hub operator
   console, mDNS discovery, home tiles, guides, browser tests and an
   accessibility pass in CI, installing signed modules from a hub,
   restricted vault folders for teams.
-- **Now:** a third independent security review (running), the German
-  translation (a helper), container images and a Helm chart (a helper);
-  then fixes and v0.3.0.
+- **Now (Wed 4 Nov, early):** v0.3.0. Helpers on daemon passkeys, the
+  website in German, and five more modules (Grafana, GitHub Actions,
+  Portainer, Immich, Paperless-ngx).
 - **Backlog** (take the next item when a phase ends; the build runs until
   Thu 2026-11-05 00:00 CET):
   1. Daemon passkeys (serve the desktop app on localhost, which WebAuthn
      allows).
   2. Translate the website (after the app).
-  3. More modules: S3-compatible storage (MinIO, R2), Plex, Grafana
-     alerting, GitHub Actions runs, Docker registry, Gitea/Forgejo,
-     Mastodon, Bitwarden/Vaultwarden status.
+  3. More modules (in progress: Grafana, GitHub Actions, Portainer,
+     Immich, Paperless-ngx); after that: Home Assistant automations,
+     Backblaze B2, Synology DSM, Mattermost.
   4. Mobile: home tiles as an Android widget; quick approve from the
      notification.
   5. A fourth review of whatever lands after v0.3.0; v0.4.0 before the end.

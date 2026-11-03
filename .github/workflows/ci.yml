@@ -187,6 +187,20 @@ jobs:
           CONDUIT_TEST_MYSQL: 127.0.0.1:3306
         run: go test -tags dbintegration -v ./modules/database
 
+  upgrade:
+    # Data folders made by every earlier release keep working with this
+    # daemon: sign-in, API keys, the vault and the audit chain.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: upgrade from every release
+        run: scripts/upgrade_test.sh
+
   e2e:
     # The web app in a real browser against a real daemon, plus automated
     # accessibility checks (web/e2e, docs/architecture/web.md).

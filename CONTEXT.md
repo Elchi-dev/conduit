@@ -43,6 +43,8 @@ owner and a company equally; never tailor it to one setup.
   4. Mobile: home tiles as an Android widget; quick approve from the
      notification.
   5. A fourth review of whatever lands after v0.3.0; v0.4.0 before the end.
+- **Upgrades:** `scripts/upgrade_test.sh` (CI job `upgrade`) builds every
+  earlier release, sets it up, then starts the current daemon on its data.
 - **Releasing:** push a `v*` tag, or run the release workflow by hand with
   a tag name (it creates the tag on the commit it runs on; the build
   environment can't push tags). Notes come from `docs/releases/<tag>.md`.

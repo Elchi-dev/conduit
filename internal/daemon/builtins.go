@@ -14,6 +14,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
+	"github.com/elchi-dev/conduit/modules/jira"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/metrics"
@@ -22,6 +23,8 @@ import (
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/servers"
+	"github.com/elchi-dev/conduit/modules/slack"
+	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/system"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/web"
@@ -59,6 +62,9 @@ func builtins(app *App) []sdk.Module {
 		proxmox.New(),
 		obs.New(),
 		aws.New(),
+		slack.New(),
+		jira.New(),
+		spotify.New(),
 		files.New(),
 		app.Games,
 		notes.New(notesDir),

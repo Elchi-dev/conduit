@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/elchi-dev/conduit/internal/automation"
+	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/discord"
@@ -13,10 +14,13 @@ import (
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
+	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
+	"github.com/elchi-dev/conduit/modules/obs"
+	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/system"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
@@ -51,6 +55,10 @@ func builtins(app *App) []sdk.Module {
 		cloudflare.New(),
 		homeassistant.New(),
 		discord.New(),
+		kubernetes.New(),
+		proxmox.New(),
+		obs.New(),
+		aws.New(),
 		files.New(),
 		app.Games,
 		notes.New(notesDir),

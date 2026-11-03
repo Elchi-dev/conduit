@@ -20,6 +20,10 @@ recommended policies.
 | Cloudflare | [cloudflare.md](cloudflare.md) | developer, homelab, team |
 | Home Assistant | [homeassistant.md](homeassistant.md) | homelab, gamer |
 | Discord | [discord.md](discord.md) | gamer, team |
+| Kubernetes | [kubernetes.md](kubernetes.md) | developer, team |
+| Proxmox VE | [proxmox.md](proxmox.md) | homelab, team |
+| AWS | [aws.md](aws.md) | developer, team |
+| OBS Studio | [obs.md](obs.md) | gamer |
 | Files and backups | [files.md](files.md) | homelab, team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |

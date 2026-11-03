@@ -167,7 +167,7 @@ paths:
     post:
       operationId: createUser
       tags: [auth]
-      summary: Add a local account (admin)
+      summary: Add a local account (admin; signed-in people only)
       requestBody:
         required: true
         content:
@@ -183,6 +183,41 @@ paths:
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /users/{id}:
+    patch:
+      operationId: updateUser
+      tags: [auth]
+      summary: Change someone's role or switch their account off (signed-in people only)
+      description: The owner can't be changed or switched off, nobody changes their own account here, and only the owner manages admins. Switching an account off ends its sessions; its keys stop working while it is off.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [admin, member, viewer] }
+                disabled: { type: boolean }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /users/{id}/password:
+    post:
+      operationId: resetUserPassword
+      tags: [auth]
+      summary: Set a new password for someone else and end their sessions (signed-in people only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [password], properties: { password: { type: string, minLength: 10 } } }
+      responses:
+        "204": { description: Changed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /modules:
     get:

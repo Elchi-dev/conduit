@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -617,5 +618,54 @@ func TestHostAndOriginChecks(t *testing.T) {
 	}
 	if code := raw("POST", "/api/v1/auth/logout", "", map[string]string{"Sec-Fetch-Site": "same-origin"}, true); code >= 300 {
 		t.Fatalf("same-origin cookie POST = %d", code)
+	}
+}
+
+func TestPeopleManagement(t *testing.T) {
+	_, c, _, _ := setup(t)
+	var admin auth.User
+	if code := c.do("POST", "/api/v1/users", map[string]string{"name": "Sam", "email": "sam@example.com", "password": "sam's long password", "role": "admin"}, &admin); code != 201 {
+		t.Fatalf("create admin = %d", code)
+	}
+	var member auth.User
+	c.do("POST", "/api/v1/users", map[string]string{"email": "kim@example.com", "password": "kim's long password", "role": "member"}, &member)
+
+	// API keys can't manage accounts, even with admin scope.
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "ops", "kind": "live", "scopes": []string{"admin:*:*"}}, &k)
+	key := client{t: t, base: c.base, token: k.Secret}
+	if code := key.do("POST", "/api/v1/users", map[string]string{"email": "evil@example.com", "password": "evil long password", "role": "admin"}, nil); code != 403 {
+		t.Fatalf("key creates account = %d", code)
+	}
+	if code := key.do("PATCH", "/api/v1/users/"+member.ID, map[string]string{"role": "admin"}, nil); code != 403 {
+		t.Fatalf("key changes role = %d", code)
+	}
+
+	// An admin manages members but not admins, and nobody changes themselves.
+	var sess sessionResp
+	c.do("POST", "/api/v1/auth/login", map[string]string{"email": "sam@example.com", "password": "sam's long password"}, &sess)
+	sam := client{t: t, base: c.base, token: sess.Token}
+	if code := sam.do("PATCH", "/api/v1/users/"+member.ID, map[string]string{"role": "viewer"}, nil); code != 200 {
+		t.Fatalf("admin demotes member = %d", code)
+	}
+	if code := sam.do("PATCH", "/api/v1/users/"+member.ID, map[string]string{"role": "admin"}, nil); code != 403 {
+		t.Fatalf("admin promotes to admin = %d", code)
+	}
+	if code := sam.do("PATCH", "/api/v1/users/"+admin.ID, map[string]any{"disabled": true}, nil); code != 400 {
+		t.Fatalf("admin switches self off = %d", code)
+	}
+
+	// Switching an account off ends its sessions.
+	var ks sessionResp
+	c.do("POST", "/api/v1/auth/login", map[string]string{"email": "kim@example.com", "password": "kim's long password"}, &ks)
+	kim := client{t: t, base: c.base, token: ks.Token}
+	if code := sam.do("PATCH", "/api/v1/users/"+member.ID, map[string]any{"disabled": true}, nil); code != 200 {
+		t.Fatalf("disable = %d", code)
+	}
+	if code := kim.do("GET", "/api/v1/me", nil, nil); code != 401 {
+		t.Fatalf("disabled account still signed in = %d", code)
+	}
+	if code := sam.do("POST", "/api/v1/users/"+member.ID+"/password", map[string]string{"password": "a fresh long password"}, nil); code != 204 {
+		t.Fatalf("reset = %d", code)
 	}
 }

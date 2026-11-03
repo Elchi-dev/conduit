@@ -225,6 +225,58 @@ func (s *Service) UserByEmail(ctx context.Context, email string) (User, error) {
 	return s.GetUser(ctx, id)
 }
 
+// SetRole changes an account's role. The owner's role can't change, and no
+// one else can become owner.
+func (s *Service) SetRole(ctx context.Context, id string, role Role) error {
+	switch role {
+	case RoleAdmin, RoleMember, RoleViewer:
+	default:
+		return fmt.Errorf("the role must be admin, member or viewer")
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET role = ? WHERE id = ? AND role != ?`, role, id, RoleOwner)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errors.New("no such account, or it's the owner")
+	}
+	return nil
+}
+
+// SetDisabled switches an account off or on. Switching it off ends its
+// sessions; its keys stop working while it is off. The owner can't be
+// switched off.
+func (s *Service) SetDisabled(ctx context.Context, id string, off bool) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET disabled = ? WHERE id = ? AND role != ?`, off, id, RoleOwner)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errors.New("no such account, or it's the owner")
+	}
+	if off {
+		_, err = s.RevokeSessions(ctx, id, "")
+	}
+	return err
+}
+
+// ResetPassword sets a new password for someone else and ends their
+// sessions. The owner's password can only be changed by the owner.
+func (s *Service) ResetPassword(ctx context.Context, id, password string) error {
+	if len(password) < 10 {
+		return errors.New("password must be at least 10 characters")
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND role != ?`, HashPassword(password), id, RoleOwner)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errors.New("no such account, or it's the owner")
+	}
+	_, err = s.RevokeSessions(ctx, id, "")
+	return err
+}
+
 // ListUsers returns all accounts.
 func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, email, role, created_at, disabled FROM users ORDER BY created_at`)

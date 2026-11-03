@@ -694,3 +694,27 @@ pre.log {
 .state-down {
   color: var(--fault);
 }
+
+/* People */
+.people-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .people-row {
+    grid-template-columns: 1fr;
+  }
+}
+.role-select {
+  width: auto;
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: var(--t-sm);
+}

@@ -23,6 +23,7 @@ const nav = [
 const navAdmin = [
   { href: "/policy", label: "Agent rules" },
   { href: "/assistant", label: "Assistant and agents" },
+  { href: "/people", label: "People" },
   { href: "/keys", label: "API keys" },
   { href: "/settings", label: "Settings" },
 ];

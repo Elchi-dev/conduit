@@ -8,6 +8,7 @@ import { AssistantSettings } from "./pages/AssistantSettings";
 import { Automations } from "./pages/Automations";
 import { Home } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
+import { People } from "./pages/People";
 import { Keys } from "./pages/Keys";
 import { Connect, Login, Setup } from "./pages/Auth";
 import { forgetRelay, pairFromCode, relayProfile, routeLabel } from "./lib/connection";
@@ -87,6 +88,7 @@ export default function App() {
         <Route path="/i/:id">{(p) => <InstancePage id={p.id} />}</Route>
         <Route path="/policy" component={PolicyPage} />
         <Route path="/assistant" component={AssistantSettings} />
+        <Route path="/people" component={People} />
         <Route path="/keys" component={Keys} />
         <Route path="/settings" component={Settings} />
         <Route>

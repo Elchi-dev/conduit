@@ -81,6 +81,13 @@ the daemon as if it were same-origin. Put your reverse proxy's name in
 `/hooks/…` are exempt; webhooks are authenticated by their token and limited
 to 10 calls a minute each.
 
+People are managed on the People page (`/api/v1/users`), by signed-in
+people only: an API key, even with `admin:*:*`, can't create, change or
+switch off accounts, because a key that could create an admin account could
+sign in as it. Nobody changes their own role or switches themselves off, the
+owner can't be changed, and only the owner manages admins. Switching an
+account off ends its sessions, and its keys stop working while it is off.
+
 Roles map to scopes: owner and admin get `admin:*:*`; members can act, undo
 and decide approvals; viewers can only read. A key's scopes are intersected
 with its owner's role. See [API keys](../api/keys.md).

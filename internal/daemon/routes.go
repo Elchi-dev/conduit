@@ -127,6 +127,8 @@ func (s *Server) routes() []route {
 		{"DELETE /api/v1/me/sessions/{id}", s.need("", s.revokeSession)},
 		{"GET /api/v1/users", s.need("admin:*:*", s.listUsers)},
 		{"POST /api/v1/users", s.need("admin:*:*", s.createUser)},
+		{"PATCH /api/v1/users/{id}", s.need("admin:*:*", s.updateUser)},
+		{"POST /api/v1/users/{id}/password", s.need("admin:*:*", s.resetUserPassword)},
 
 		// Modules and instances
 		{"GET /api/v1/modules", s.need("modules:*:read", s.listModules)},
@@ -388,7 +390,12 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, nonNil(list))
 }
 
+// Accounts are managed by signed-in people only: a key that could create an
+// admin account could sign in as it and get past every people-only rule.
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
 	var req struct {
 		Name     string    `json:"name"`
 		Email    string    `json:"email"`
@@ -408,7 +415,87 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.auditConfig(r, "user_created", u.ID, map[string]any{"email": u.Email, "role": u.Role})
 	writeJSON(w, http.StatusCreated, u)
+}
+
+func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
+	var req struct {
+		Role     *auth.Role `json:"role"`
+		Disabled *bool      `json:"disabled"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	id := r.PathValue("id")
+	p, _ := principal(r)
+	if id == p.User.ID {
+		writeErr(w, http.StatusBadRequest, "you can't change your own role or switch yourself off")
+		return
+	}
+	target, err := s.Auth.GetUser(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "no such account")
+		return
+	}
+	// Only the owner manages other admins.
+	if (target.Role == auth.RoleAdmin || (req.Role != nil && *req.Role == auth.RoleAdmin)) && p.User.Role != auth.RoleOwner {
+		writeErr(w, http.StatusForbidden, "only the owner can change admins or make someone an admin")
+		return
+	}
+	if req.Role != nil {
+		if err := s.Auth.SetRole(r.Context(), id, *req.Role); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.Disabled != nil {
+		if err := s.Auth.SetDisabled(r.Context(), id, *req.Disabled); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	s.auditConfig(r, "user_changed", id, req)
+	u, _ := s.Auth.GetUser(r.Context(), id)
+	writeJSON(w, http.StatusOK, u)
+}
+
+func (s *Server) resetUserPassword(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	id := r.PathValue("id")
+	p, _ := principal(r)
+	target, err := s.Auth.GetUser(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "no such account")
+		return
+	}
+	if id == p.User.ID {
+		writeErr(w, http.StatusBadRequest, "change your own password in Settings")
+		return
+	}
+	if target.Role == auth.RoleAdmin && p.User.Role != auth.RoleOwner {
+		writeErr(w, http.StatusForbidden, "only the owner can reset an admin's password")
+		return
+	}
+	if err := s.Auth.ResetPassword(r.Context(), id, req.Password); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.auditConfig(r, "user_password_reset", id, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- modules and instances --------------------------------------------------

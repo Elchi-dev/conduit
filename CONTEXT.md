@@ -12,22 +12,30 @@ owner and a company equally; never tailor it to one setup.
 
 ## Current state
 
-- **Released:** v0.1.0 on 2026-11-03 (~03:55 CET), all 16 phases done.
+- **Released:** v0.1.0 on 2026-11-03 (~03:55 CET).
   https://github.com/Elchi-dev/conduit/releases/tag/v0.1.0
-- **Works today:** everything in `docs/releases/v0.1.0.md`; the security
-  review's fixes are in (BUILD_LOG.md, phase 15).
-- **Next:** the owner decisions below (signing secrets first, then re-run
-  the release workflow for signed assets), trying the APK on real devices,
-  and whatever the owner prioritises.
+- **Since v0.1.0 (phases 17–20, see BUILD_LOG.md):** 7 more modules (27 in
+  all), signed outgoing webhooks, password-manager CSV import, one-line
+  installers, changelog and API reference pages, hub passkeys, daemon OIDC
+  single sign-on, a People page, sync between daemons (hub or peers), phone
+  notifications through ntfy, an F-Droid repository with signed releases.
+- **Next:** phase 21: a second independent security review of everything
+  since v0.1.0 (running), fixes; phase 22: release v0.2.0, docs, handover.
+  The build window ends Thu 2026-11-05 00:00 CET.
 - **Releasing:** push a `v*` tag, or run the release workflow by hand with
-  a tag name (it creates the tag on the commit it runs on). Notes come from
-  `docs/releases/<tag>.md`.
-- **Known gaps:** v0.1.0's assets are unsigned (no secrets yet), so the APK
-  won't install and installs don't see it as an update; the APK hasn't been
-  tried on a device; the repository is private, so the Android update check
-  (GitHub API) can't see releases until it's public.
-- **Settings added in phase 15:** `CONDUIT_ALLOWED_HOSTS` (daemon, extra host
-  names), `CONDUIT_HUB_TRUST_PROXY` (hub behind a reverse proxy).
+  a tag name (it creates the tag on the commit it runs on; the build
+  environment can't push tags). Notes come from `docs/releases/<tag>.md`.
+- **Known gaps:** releases are unsigned until the signing secrets are set
+  (the APK won't install, installs don't see updates, no F-Droid repo); the
+  APK hasn't been tried on a device; the repository is private, so the
+  Android update check (GitHub API) can't see releases until it's public;
+  daemon passkeys aren't possible on the desktop app's IP-address origin.
+- **Settings added since v0.1.0:** `CONDUIT_ALLOWED_HOSTS` (daemon, extra
+  host names), `CONDUIT_HUB_TRUST_PROXY` (hub behind a reverse proxy).
+- **Working method:** independent pieces (modules, site pages, installers,
+  passkeys, SSO) were built by parallel helper agents in separate folders,
+  then reviewed, registered and committed here. Check with `pnpm build` (it
+  runs `tsc -b`), not `tsc --noEmit -p .`, which misses errors.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/ai"
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/vault"
@@ -105,6 +106,11 @@ func (s *Server) routes() []route {
 		{"POST /api/v1/keys/{id}/rotate", s.need("keys:*:manage", s.rotateKey)},
 		{"DELETE /api/v1/keys/{id}", s.need("keys:*:manage", s.revokeKey)},
 		{"GET /api/v1/keys/{id}/usage", s.need("keys:*:manage", s.keyUsage)},
+
+		// Model Context Protocol (streamable HTTP)
+		{"POST /mcp", s.need("", s.mcp)},
+		{"GET /mcp", s.need("", s.mcp)},
+		{"DELETE /mcp", s.need("", s.mcp)},
 
 		// Live events (server-sent events)
 		{"GET /api/v1/events", s.need("events:*:read", s.events)},
@@ -906,6 +912,31 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+}
+
+// toolbox returns the AI tools for the request's caller. People using it
+// (through the built-in agent) still act as an agent, so agent rules apply.
+func (s *Server) toolbox(r *http.Request) *ai.Toolbox {
+	p, _ := principal(r)
+	return &ai.Toolbox{
+		Engine: s.Engine,
+		Actor:  p.Actor,
+		Allows: func(scope string) bool { return auth.Allows(p.Scopes, scope) },
+		Panic: func(ctx context.Context) error {
+			if _, err := s.Engine.Panic(ctx, p.Actor); err != nil {
+				return err
+			}
+			_, _ = s.Auth.RevokeKind(ctx, auth.KeyAgent, "emergency stop by "+p.Actor.Subject())
+			if s.Vault != nil {
+				_ = s.Vault.Lock(false)
+			}
+			return nil
+		},
+	}
+}
+
+func (s *Server) mcp(w http.ResponseWriter, r *http.Request) {
+	ai.HandleMCP(w, r, s.toolbox(r))
 }
 
 func nonNil[T any](s []T) []T {

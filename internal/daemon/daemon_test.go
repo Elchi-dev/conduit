@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -381,7 +382,7 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 	srv := &Server{}
 	for _, r := range append(srv.routes(), srv.automationRoutes()...) {
 		method, path, _ := strings.Cut(r.pattern, " ")
-		if path == "/healthz" || strings.HasPrefix(path, "/hooks/") {
+		if path == "/healthz" || path == "/mcp" || strings.HasPrefix(path, "/hooks/") {
 			continue // outside the /api/v1 base; documented in docs/api/webhooks.md
 		}
 		path = strings.TrimPrefix(path, "/api/v1")
@@ -474,5 +475,80 @@ func TestApprovalForwardedToChannel(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("approval was not forwarded")
+	}
+}
+
+func mcpCall(t *testing.T, base, key, method string, params any) map[string]any {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+	req, _ := http.NewRequest("POST", base+"/mcp", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	return out
+}
+
+func TestMCPServer(t *testing.T) {
+	_, c, l, id := setup(t)
+	var k keyResp
+	c.do("POST", "/api/v1/keys", map[string]any{"name": "desk", "kind": "agent", "scopes": []string{"actions:*:invoke", "modules:*:read", "audit:*:read"}}, &k)
+
+	init := mcpCall(t, c.base, k.Secret, "initialize", map[string]any{"protocolVersion": "2025-06-18"})
+	if init["result"].(map[string]any)["protocolVersion"] != "2025-06-18" {
+		t.Fatalf("initialize: %v", init)
+	}
+	list := mcpCall(t, c.base, k.Secret, "tools/list", nil)
+	tools := list["result"].(map[string]any)["tools"].([]any)
+	names := map[string]map[string]any{}
+	for _, x := range tools {
+		tl := x.(map[string]any)
+		names[tl["name"].(string)] = tl
+	}
+	status := id + "__status"
+	toggle := id + "__toggle"
+	for _, want := range []string{"conduit_overview", "conduit_preview", "conduit_what_changed", status, toggle} {
+		if names[want] == nil {
+			t.Fatalf("tool %s missing; have %v", want, len(names))
+		}
+	}
+	if names["conduit_undo"] != nil {
+		t.Fatal("undo tool offered without the audit:*:undo scope")
+	}
+	if !names[status]["annotations"].(map[string]any)["readOnlyHint"].(bool) {
+		t.Fatal("read tool not marked read-only")
+	}
+
+	res := mcpCall(t, c.base, k.Secret, "tools/call", map[string]any{"name": status})
+	if res["result"].(map[string]any)["isError"].(bool) {
+		t.Fatalf("read call failed: %v", res)
+	}
+	prev := mcpCall(t, c.base, k.Secret, "tools/call", map[string]any{"name": "conduit_preview", "arguments": map[string]any{"tool": toggle}})
+	if txt := fmt.Sprint(prev["result"]); !strings.Contains(txt, "Preview") || l.on {
+		t.Fatalf("preview: %v", txt)
+	}
+	res = mcpCall(t, c.base, k.Secret, "tools/call", map[string]any{"name": toggle, "arguments": map[string]any{}})
+	r := res["result"].(map[string]any)
+	approval := r["structuredContent"].(map[string]any)["approvalId"].(string)
+	if l.on || approval == "" {
+		t.Fatal("write went through without approval")
+	}
+	c.do("POST", "/api/v1/approvals/"+approval+"/approve", nil, nil)
+	st := mcpCall(t, c.base, k.Secret, "tools/call", map[string]any{"name": "conduit_approval_status", "arguments": map[string]any{"id": approval}})
+	if !strings.Contains(fmt.Sprint(st["result"]), "Approved") {
+		t.Fatalf("approval status: %v", st)
+	}
+	wc := mcpCall(t, c.base, k.Secret, "tools/call", map[string]any{"name": "conduit_what_changed", "arguments": map[string]any{"minutes": 10}})
+	if !strings.Contains(fmt.Sprint(wc["result"]), "readsOmitted") {
+		t.Fatalf("what changed: %v", wc)
+	}
+	// Without a key: rejected.
+	if out := mcpCall(t, c.base, "", "tools/list", nil); out["result"] != nil {
+		t.Fatal("unauthenticated MCP allowed")
 	}
 }

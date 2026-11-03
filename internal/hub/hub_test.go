@@ -413,7 +413,6 @@ func TestSemver(t *testing.T) {
 	}
 }
 
-
 func TestRoutesMatchOpenAPI(t *testing.T) {
 	spec, err := os.ReadFile("../../api/openapi/hub.yaml")
 	if err != nil {

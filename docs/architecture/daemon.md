@@ -33,6 +33,12 @@ Failed sign-ins are limited to 20 per source address and 10 per account in
 15 minutes (429 with `Retry-After`); a successful sign-in clears the
 account's count. At most a few Argon2id hashes run at once.
 
+Passkeys are a hub feature for now (see the hub protocol). The desktop app
+opens the daemon at `http://127.0.0.1:7600`, and WebAuthn doesn't accept IP
+addresses as a relying party, so daemon passkeys would need the app to move
+to a host name such as `localhost` first; the phone's relay client has no
+stable origin of its own either.
+
 ### Host names
 
 The daemon answers only under names it is known by: IP addresses,

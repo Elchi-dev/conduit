@@ -37,6 +37,34 @@ are rate-limited per client address.
 - With `CONDUIT_HUB_OPEN_REGISTRATION=false`, only the admin address and
   invited people can sign up.
 
+### Passkeys
+
+People can add passkeys (WebAuthn) to their account and sign in with one
+instead of a password, without typing an email address.
+
+- The relying party is the hub's public address: the host name of
+  `CONDUIT_HUB_URL` is the RP ID and its origin is the only accepted origin.
+  A passkey made on `https://hub.example.com` only works there.
+- Adding one needs a signed-in person (not a device token or API key) with a
+  confirmed email address: `POST /v1/passkeys/register/begin` returns
+  WebAuthn creation options (resident key required, so the passkey is
+  discoverable) and a ceremony id; `POST /v1/passkeys/register/finish` with
+  `{ceremony, name, response}` stores it. At most 20 per account. Adding or
+  removing one emails the account's address.
+- Signing in: `POST /v1/sessions/passkey/begin` returns request options and a
+  ceremony id; `POST /v1/sessions/passkey/finish` with `{ceremony, response}`
+  answers exactly like a password sign-in (`{token, account}`) and sends the
+  same new-sign-in email. Both calls are rate-limited per address.
+- Ceremonies are single use and expire after five minutes. They live in the
+  hub's memory, so a sign-in that was in progress during a restart has to
+  start over.
+- The signature counter is stored after each sign-in. A counter that goes
+  backwards (a sign that the private key was copied) is refused; sign in
+  with the password and remove that passkey.
+- Credentials are stored as the JSON of `github.com/go-webauthn/webauthn`'s
+  `Credential`: the public key, counter and flags. Nothing secret is on the
+  hub.
+
 ## Organisations
 
 Roles: owner, admin, member. Owners and admins invite by email (links last

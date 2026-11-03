@@ -146,6 +146,86 @@ paths:
       summary: Sign out this session
       responses:
         "204": { description: Signed out }
+  /sessions/passkey/begin:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Start signing in with a passkey (no email address needed)
+      description: Answers the WebAuthn request options for a discoverable credential and a ceremony id, valid once for five minutes. Pass `options.publicKey` to navigator.credentials.get().
+      responses:
+        "200": { description: Request options, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /sessions/passkey/finish:
+    post:
+      tags: [accounts]
+      security: []
+      summary: Finish signing in with a passkey
+      description: Same answer as a password sign-in, and the same new-sign-in email. A signature counter that went backwards (a possibly copied passkey) is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, response]
+              properties:
+                ceremony: { type: string }
+                device: { type: string, description: A label for this sign-in }
+                response: { type: object, description: The PublicKeyCredential from navigator.credentials.get(), as JSON with base64url fields }
+      responses:
+        "200":
+          description: Signed in; sessions last 30 days
+          content:
+            application/json:
+              schema: { type: object, required: [token, account], properties: { token: { type: string }, account: { $ref: "#/components/schemas/Account" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /passkeys:
+    get:
+      tags: [accounts]
+      summary: Your passkeys (signed-in person only)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Passkey" } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /passkeys/register/begin:
+    post:
+      tags: [accounts]
+      summary: Start adding a passkey (signed-in person with a confirmed email)
+      description: Answers WebAuthn creation options (resident key required) and a ceremony id. Pass `options.publicKey` to navigator.credentials.create(). At most 20 passkeys per account.
+      responses:
+        "200": { description: Creation options, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /passkeys/register/finish:
+    post:
+      tags: [accounts]
+      summary: Finish adding a passkey; the account's address gets an email about it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, response]
+              properties:
+                ceremony: { type: string }
+                name: { type: string, maxLength: 60, description: e.g. "Work laptop" }
+                response: { type: object, description: The PublicKeyCredential from navigator.credentials.create(), as JSON with base64url fields }
+      responses:
+        "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/Passkey" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /passkeys/{id}:
+    delete:
+      tags: [accounts]
+      summary: Remove a passkey; the account's address gets an email about it
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/Error" }
   /me:
     get:
       tags: [accounts]
@@ -510,6 +590,20 @@ components:
       description: OK
       content: { application/json: { schema: { type: object, additionalProperties: true } } }
   schemas:
+    Passkey:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+    PasskeyCeremony:
+      type: object
+      required: [ceremony, options]
+      properties:
+        ceremony: { type: string, description: Send back with the finish call; single use, five minutes }
+        options: { type: object, description: "WebAuthn options: { publicKey: {...} } with base64url challenge and ids" }
     Account:
       type: object
       properties:

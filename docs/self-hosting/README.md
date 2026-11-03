@@ -75,6 +75,13 @@ log). For real use:
 
 `GET /v1/info` reports whether real mail is configured.
 
+### Passkeys
+
+Passkeys work only on the exact address in `CONDUIT_HUB_URL`, which must be
+`https://` (browsers allow `http://localhost` for testing). Its host name
+becomes the passkey's relying party, so changing the hub's domain later means
+people add their passkeys again; their passwords keep working.
+
 ## Link a daemon
 
 1. Sign up on the hub (the admin address first) and confirm your email.

@@ -313,8 +313,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logins.Reset(email)
+	s.issueSession(w, r, id, req.Device)
+}
+
+// issueSession signs an account in on a new hub session, answers like a
+// password sign-in ({token, account}) and sends the new-sign-in email.
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id, device string) {
+	ctx := r.Context()
 	tok := sessionPrefix + token(20)
-	device := req.Device
 	if device == "" {
 		device = r.UserAgent()
 	}

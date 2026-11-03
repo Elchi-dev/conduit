@@ -111,7 +111,10 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Server, error) {
 }
 
 // Close releases the database.
-func (s *Server) Close() error { return s.db.Close() }
+func (s *Server) Close() error {
+	passkeyStates.Delete(s)
+	return s.db.Close()
+}
 
 // Run starts the hub and blocks until ctx is cancelled.
 func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
@@ -186,6 +189,12 @@ func (s *Server) routes() []route {
 		{"POST /v1/accounts/password-reset", s.limited("reset", 5, s.requestReset)},
 		{"POST /v1/accounts/password-reset/confirm", s.confirmReset},
 		{"POST /v1/sessions", s.limited("login", 20, s.login)},
+		{"POST /v1/sessions/passkey/begin", s.limited("passkey-login", 30, s.beginPasskeyLogin)},
+		{"POST /v1/sessions/passkey/finish", s.limited("passkey-finish", 30, s.finishPasskeyLogin)},
+		{"GET /v1/passkeys", s.auth(s.listPasskeys)},
+		{"POST /v1/passkeys/register/begin", s.auth(s.beginPasskeyRegistration)},
+		{"POST /v1/passkeys/register/finish", s.auth(s.finishPasskeyRegistration)},
+		{"DELETE /v1/passkeys/{id}", s.auth(s.deletePasskey)},
 		{"DELETE /v1/sessions", s.auth(s.logout)},
 		{"GET /v1/me", s.auth(s.me)},
 		{"POST /v1/me/resend-verification", s.auth(s.resendVerification)},

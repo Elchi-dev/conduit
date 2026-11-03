@@ -20,6 +20,10 @@ import Base from "../../layouts/Base.astro";
             <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required /></label>
             <div class="error" data-error hidden></div>
             <div class="row"><button class="btn primary" type="submit">Sign in</button><a href="#" id="to-reset" class="quiet">Forgot your password?</a></div>
+            <div class="passkey-signin" id="passkey-signin" hidden>
+              <button class="btn" type="button" id="passkey-go">Sign in with a passkey</button>
+              <div class="error" id="passkey-error" hidden></div>
+            </div>
           </form>
           <form id="signup" class="panel stack">
             <h2>Create an account</h2>
@@ -72,6 +76,17 @@ import Base from "../../layouts/Base.astro";
         <div class="rows" id="devices"></div>
       </div>
 
+      <div class="block" id="passkeys-block" hidden>
+        <div class="block-head"><h2>Passkeys</h2></div>
+        <p class="muted">Sign in with your fingerprint, face or device PIN instead of your password. Each passkey stays on the device or password manager that made it.</p>
+        <form id="new-passkey" class="inline-form">
+          <label class="field"><span>Name</span><input name="name" placeholder="Work laptop" maxlength="60" /></label>
+          <button class="btn sm" type="submit">Add a passkey</button>
+          <div class="error" data-error hidden></div>
+        </form>
+        <div class="rows" id="passkeys"></div>
+      </div>
+
       <div class="block">
         <div class="block-head"><h2>API keys</h2></div>
         <p class="muted">For scripts and CI: publishing modules, reading sync, listing devices. A key can never do more than its scopes.</p>
@@ -109,13 +124,14 @@ import Base from "../../layouts/Base.astro";
 </Base>
 
 <script>
-  import { api, ago, el, form, setToken, token, HubError } from "../../scripts/hub";
+  import { api, ago, el, form, setToken, token, HubError, addPasskey, passkeyError, passkeysSupported, signInWithPasskey } from "../../scripts/hub";
 
   type Account = { id: string; email: string; name: string; verified: boolean; admin: boolean };
   type Device = { id: string; name: string; kind: string; createdAt: string; lastSeenAt: string; online: boolean };
   type Key = { id: string; name: string; prefix: string; scopes: string[]; createdAt: string };
   type Org = { id: string; name: string; role: string };
   type Member = { accountId: string; email: string; name: string; role: string };
+  type Passkey = { id: string; name: string; createdAt: string; lastUsedAt?: string };
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   let me: Account | null = null;
@@ -141,6 +157,7 @@ import Base from "../../layouts/Base.astro";
     devices();
     keys();
     orgs();
+    passkeys();
   }
 
   function row(...kids: (Node | string)[]) {
@@ -167,6 +184,25 @@ import Base from "../../layouts/Base.astro";
       );
     }));
     if (!list.length) box.append(empty("No devices yet. Make a pairing code and link a computer."));
+  }
+
+  async function passkeys() {
+    if (!passkeysSupported() || !me) return;
+    $("passkeys-block").hidden = false;
+    const f = $<HTMLFormElement>("new-passkey");
+    f.hidden = !me.verified;
+    const box = $("passkeys");
+    const list = await api<Passkey[]>("GET", "/passkeys");
+    box.replaceChildren(...list.map((p) => {
+      const rm = el("button", { class: "btn sm quiet", textContent: "Remove" });
+      rm.onclick = async () => {
+        await api("DELETE", `/passkeys/${p.id}`);
+        passkeys();
+      };
+      return row(el("span", {}, p.name), el("span", { class: "muted small" }, `added ${ago(p.createdAt)}`), el("span", { class: "muted small" }, p.lastUsedAt ? `used ${ago(p.lastUsedAt)}` : "not used yet"), rm);
+    }));
+    if (!me.verified) box.append(empty("Confirm your email address to add a passkey."));
+    else if (!list.length) box.append(empty("No passkeys yet."));
   }
 
   async function keys() {
@@ -213,6 +249,29 @@ import Base from "../../layouts/Base.astro";
     const r = await api<{ token: string }>("POST", "/sessions", { email: v.email, password: v.password, device: "Website" });
     setToken(r.token);
     await load();
+  });
+  if (passkeysSupported()) {
+    $("passkey-signin").hidden = false;
+    $("passkey-go").onclick = async () => {
+      const err = $("passkey-error");
+      err.hidden = true;
+      try {
+        setToken(await signInWithPasskey("Website"));
+        await load();
+      } catch (x) {
+        err.textContent = passkeyError(x);
+        err.hidden = false;
+      }
+    };
+  }
+  form($<HTMLFormElement>("new-passkey"), async (v) => {
+    try {
+      await addPasskey(v.name || "Passkey");
+    } catch (x) {
+      throw new Error(passkeyError(x));
+    }
+    $<HTMLFormElement>("new-passkey").reset();
+    await passkeys();
   });
   form($("signup"), async (v) => {
     let inviteToken: string | undefined;
@@ -285,6 +344,15 @@ import Base from "../../layouts/Base.astro";
 </script>
 
 <style is:global>
+  .passkey-signin {
+    display: grid;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .passkey-signin .btn {
+    justify-self: start;
+  }
   .acct {
     padding-top: 48px;
   }

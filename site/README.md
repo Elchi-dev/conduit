@@ -25,6 +25,7 @@ Pages:
 | `/download/` | Desktop, Android, daemon, hub |
 | `/hub/` | What a hub can and can't do |
 | `/docs/…` | Everything in `docs/`; links between docs are rewritten, links to other repo files go to GitHub |
+| `/registry/` | Modules published to this hub, with search |
 | `/account/` | Hub account |
 | `/verify/`, `/reset/`, `/invite/` | Targets of the hub's emails (`?token=`) |
 

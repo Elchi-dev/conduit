@@ -63,6 +63,8 @@ func main() {
 			}
 			fmt.Println("installed conduitd", p.Version+"; restart the daemon to use it")
 			return
+		case "backup", "restore":
+			os.Exit(backupCommand(ctx, os.Args[1], os.Args[2:]))
 		case "version":
 			v := version.Get()
 			fmt.Printf("conduitd %s (%s, %s) %s/%s\n", v.Version, v.Commit, v.Date, v.OS, v.Arch)

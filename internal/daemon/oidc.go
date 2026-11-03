@@ -260,6 +260,10 @@ func (s *Server) oidcPutSettings(w http.ResponseWriter, r *http.Request) {
 	c.Issuer = strings.TrimRight(strings.TrimSpace(c.Issuer), "/")
 	c.ClientID = strings.TrimSpace(c.ClientID)
 	c.ClientSecret = strings.TrimSpace(c.ClientSecret)
+	if err := s.mayUse(r.Context(), principalActor(r), strings.TrimPrefix(c.ClientSecret, "secret://")); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
 	c.Label = strings.TrimSpace(c.Label)
 	if c.NewUserRole == "" {
 		c.NewUserRole = auth.RoleMember

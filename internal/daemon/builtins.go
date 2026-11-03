@@ -8,6 +8,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
+	"github.com/elchi-dev/conduit/modules/database"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/docker"
@@ -25,12 +26,15 @@ import (
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/metrics"
+	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/obs"
+	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/pihole"
 	"github.com/elchi-dev/conduit/modules/proxmox"
+	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/slack"
@@ -39,6 +43,8 @@ import (
 	"github.com/elchi-dev/conduit/modules/tailscale"
 	"github.com/elchi-dev/conduit/modules/truenas"
 	"github.com/elchi-dev/conduit/modules/twitch"
+	"github.com/elchi-dev/conduit/modules/unifi"
+	"github.com/elchi-dev/conduit/modules/uptimekuma"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/web"
@@ -93,6 +99,12 @@ func builtins(app *App) []sdk.Module {
 		digitalocean.New(),
 		vercel.New(),
 		fly.New(),
+		database.New(),
+		redis.New(),
+		uptimekuma.New(),
+		unifi.New(),
+		nextcloud.New(),
+		ollama.New(),
 		files.New(),
 		app.Games,
 		notes.New(notesDir),

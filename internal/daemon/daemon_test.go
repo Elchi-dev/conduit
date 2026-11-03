@@ -21,6 +21,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/backup"
 	"github.com/elchi-dev/conduit/internal/core"
+	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -399,7 +400,7 @@ func TestRoutesMatchOpenAPI(t *testing.T) {
 	served := map[string]bool{}
 	srv := &Server{}
 	all := srv.routes()
-	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes(), srv.ambientRoutes(), srv.webhookRoutes(), srv.syncRoutes(), srv.phoneRoutes(), srv.twoFactorRoutes(), srv.oidcRoutes(), srv.backupRoutes(), srv.tileRoutes(), srv.discoverRoutes(), srv.registryRoutes()} {
+	for _, extra := range [][]route{srv.automationRoutes(), srv.assistantRoutes(), srv.remoteRoutes(), srv.updateRoutes(), srv.ambientRoutes(), srv.webhookRoutes(), srv.syncRoutes(), srv.phoneRoutes(), srv.twoFactorRoutes(), srv.oidcRoutes(), srv.backupRoutes(), srv.tileRoutes(), srv.discoverRoutes(), srv.registryRoutes(), srv.vaultFolderRoutes()} {
 		all = append(all, extra...)
 	}
 	for _, r := range all {
@@ -432,11 +433,11 @@ func TestVaultSecretsNeverLogged(t *testing.T) {
 		t.Fatalf("vault setup = %d", code)
 	}
 	const secret = "hunter2-hunter2-hunter2"
-	if code := c.do("POST", "/api/v1/instances/vault/actions/set", map[string]any{"input": map[string]string{"name": "mail/work", "value": secret}}, nil); code != 200 {
+	if code := c.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/set", map[string]any{"input": map[string]string{"name": "mail/work", "value": secret}}, nil); code != 200 {
 		t.Fatalf("set = %d", code)
 	}
 	var out core.Outcome
-	if code := c.do("POST", "/api/v1/instances/vault/actions/reveal", map[string]any{"input": map[string]string{"name": "mail/work"}}, &out); code != 200 {
+	if code := c.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/reveal", map[string]any{"input": map[string]string{"name": "mail/work"}}, &out); code != 200 {
 		t.Fatalf("reveal = %d", code)
 	}
 	if !strings.Contains(string(out.Result.Output), secret) {
@@ -456,7 +457,7 @@ func TestVaultSecretsNeverLogged(t *testing.T) {
 	var k keyResp
 	c.do("POST", "/api/v1/keys", map[string]any{"name": "a", "kind": "agent", "scopes": []string{"actions:*:invoke"}}, &k)
 	agent := client{t: t, base: c.base, token: k.Secret}
-	if code := agent.do("POST", "/api/v1/instances/vault/actions/reveal", map[string]any{"input": map[string]string{"name": "mail/work"}}, nil); code != 202 {
+	if code := agent.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/reveal", map[string]any{"input": map[string]string{"name": "mail/work"}}, nil); code != 202 {
 		t.Fatalf("agent reveal = %d, want 202", code)
 	}
 	c.do("POST", "/api/v1/panic", nil, nil)
@@ -713,5 +714,65 @@ func TestBackupAndTilesAPI(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, backup.DBName)); err != nil {
 		t.Fatal("restored backup has no database")
+	}
+}
+
+func TestVaultFolders(t *testing.T) {
+	app, c, _, _ := setup(t)
+	ctx := context.Background()
+	if err := app.Vault.Setup(ctx, "a long vault passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	app.Engine.Guard = app.Server.vaultGuard
+	_ = app.Engine.Register(&vaultmod.Module{V: app.Vault})
+	if _, err := app.Engine.SaveInstance(ctx, core.Instance{ID: vaultmod.InstanceID, Module: "vault", Name: "Vault", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	reveal := func(cl client, name string) int {
+		return cl.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/reveal", map[string]any{"input": map[string]string{"name": name}}, nil)
+	}
+	set := func(cl client, name string) int {
+		return cl.do("POST", "/api/v1/instances/"+vaultmod.InstanceID+"/actions/set", map[string]any{"input": map[string]string{"name": name, "value": "v"}}, nil)
+	}
+	if code := set(c, "finance/bank"); code != 200 {
+		t.Fatalf("owner set: %d", code)
+	}
+	c.do("POST", "/api/v1/users", map[string]string{"email": "kim@example.com", "password": "kims long password", "role": "admin"}, nil)
+	var ks sessionResp
+	c.do("POST", "/api/v1/auth/login", map[string]string{"email": "kim@example.com", "password": "kims long password"}, &ks)
+	kim := client{t: t, base: c.base, token: ks.Token}
+	if code := reveal(kim, "finance/bank"); code != 200 {
+		t.Fatalf("before restricting: %d", code)
+	}
+	// Only the owner restricts folders.
+	if code := kim.do("PUT", "/api/v1/vault/folders", []map[string]any{{"prefix": "finance"}}, nil); code != 403 {
+		t.Fatalf("admin restricts: %d", code)
+	}
+	var fs []VaultFolder
+	if code := c.do("PUT", "/api/v1/vault/folders", []map[string]any{{"prefix": "finance", "roles": []string{}}}, &fs); code != 200 || fs[0].Prefix != "finance/" || fs[0].Roles[0] != "owner" {
+		t.Fatalf("restrict: %d %+v", code, fs)
+	}
+	if code := reveal(kim, "finance/bank"); code != 403 {
+		t.Fatalf("admin reveals restricted: %d", code)
+	}
+	if code := set(kim, "finance/new"); code != 403 {
+		t.Fatalf("admin writes into restricted: %d", code)
+	}
+	if code := set(kim, "other/ok"); code != 200 {
+		t.Fatalf("unrestricted: %d", code)
+	}
+	// Using a restricted secret in module settings is refused too.
+	if code := kim.do("POST", "/api/v1/instances", map[string]any{"module": "lamp", "name": "x", "config": map[string]string{"token": "secret://finance/bank"}}, nil); code != 403 {
+		t.Fatalf("restricted secret in settings: %d", code)
+	}
+	// Kim's key gets no more than Kim.
+	var k keyResp
+	kim.do("POST", "/api/v1/keys", map[string]any{"name": "k", "kind": "live", "scopes": []string{"actions:*:invoke"}}, &k)
+	if code := reveal(client{t: t, base: c.base, token: k.Secret}, "finance/bank"); code != 403 {
+		t.Fatalf("key reveals restricted: %d", code)
+	}
+	// The owner still can.
+	if code := reveal(c, "finance/bank"); code != 200 {
+		t.Fatalf("owner reveals: %d", code)
 	}
 }

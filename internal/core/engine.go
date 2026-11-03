@@ -49,6 +49,11 @@ type Engine struct {
 	Approvals *Approvals
 	Log       *slog.Logger
 
+	// Guard, when set, is asked before the policy for every call and can
+	// refuse it (the daemon uses it for restricted vault folders). A
+	// refusal is audited as denied.
+	Guard func(ctx context.Context, actor Actor, in Instance, call sdk.Call) error
+
 	mu        sync.RWMutex
 	modules   map[string]sdk.Module
 	instances map[string]Instance
@@ -303,6 +308,15 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 	}
 
 	base := Entry{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, DryRun: call.DryRun, Input: redact(spec, call.Input), Undoes: opt.undoes}
+
+	if e.Guard != nil {
+		if err := e.Guard(ctx, actor, in, call); err != nil {
+			base.Status, base.Error, base.Decision = "denied", err.Error(), Deny
+			out := Outcome{Decision: Decision{Effect: Deny, Reason: err.Error()}}
+			out.Audit, _ = e.Audit.Append(ctx, base)
+			return out, fmt.Errorf("%w: %s", ErrForbidden, err.Error())
+		}
+	}
 
 	decision, err := e.Policy.Decide(ctx, actor, in.Module, in.ID, spec.Name, spec.Risk)
 	if err != nil {

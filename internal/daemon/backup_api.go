@@ -116,6 +116,10 @@ func (s *Server) putBackupSchedule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "store the backup passphrase in the vault and enter its secret:// reference")
 		return
 	}
+	if err := s.mayUse(r.Context(), principalActor(r), strings.TrimPrefix(c.Passphrase, "secret://")); c.Passphrase != "" && err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
 	if c.Folder != "" && !filepath.IsAbs(c.Folder) {
 		writeErr(w, http.StatusBadRequest, "the folder must be a full path, like /mnt/nas/conduit")
 		return

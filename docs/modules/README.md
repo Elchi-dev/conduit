@@ -41,6 +41,12 @@ recommended policies.
 | DigitalOcean | [digitalocean.md](digitalocean.md) | developer |
 | Vercel | [vercel.md](vercel.md) | developer |
 | Fly.io | [fly.md](fly.md) | developer |
+| Databases (PostgreSQL, MySQL) | [database.md](database.md) | developer, team |
+| Redis and Valkey | [redis.md](redis.md) | developer |
+| Uptime Kuma | [uptimekuma.md](uptimekuma.md) | homelab, developer |
+| UniFi Network | [unifi.md](unifi.md) | homelab |
+| Nextcloud | [nextcloud.md](nextcloud.md) | homelab, team |
+| Ollama | [ollama.md](ollama.md) | developer, gamer, homelab |
 | Files and backups | [files.md](files.md) | homelab, team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |

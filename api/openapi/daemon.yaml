@@ -1451,6 +1451,25 @@ paths:
         - { name: name, in: query, required: true, schema: { type: string } }
       responses:
         "204": { description: Removed }
+  /vault/folders:
+    get:
+      operationId: vaultFolders
+      tags: [vault]
+      summary: Restricted vault folders and who may use them
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/VaultFolder" } } } } }
+    put:
+      operationId: setVaultFolders
+      tags: [vault]
+      summary: Restrict vault folders to roles and people (the owner only)
+      description: Secrets in a restricted folder can only be revealed, changed, deleted or used in settings by the roles and people listed (and agents and keys acting for them). The owner always keeps access.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/VaultFolder" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/VaultFolder" } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 components:
   securitySchemes:
     bearer:
@@ -1465,6 +1484,14 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    VaultFolder:
+      type: object
+      required: [prefix, roles, users, automations]
+      properties:
+        prefix: { type: string, description: "e.g. finance/" }
+        roles: { type: array, items: { type: string, enum: [owner, admin, member, viewer] } }
+        users: { type: array, items: { type: string } }
+        automations: { type: boolean, description: Whether automations may use these secrets }
     InstalledModule:
       type: object
       required: [name, version, authorKey, fingerprint, moduleId, network, installedAt]

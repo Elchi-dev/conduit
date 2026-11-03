@@ -94,6 +94,8 @@ export function People() {
         ))}
       </div>
 
+      {myRole === "owner" && <VaultFolders people={list.data ?? []} />}
+
       <section className="stack" style={{ gap: 6 }}>
         <h2 className="section-title">Roles</h2>
         {Object.entries(roleHelp).map(([r, d]) => (
@@ -190,5 +192,85 @@ function ResetPassword({ user, onDone }: { user: User; onDone: () => void }) {
         </button>
       </div>
     </form>
+  );
+}
+
+type Folder = S["VaultFolder"];
+
+/** The owner restricts vault folders to roles and people. */
+function VaultFolders({ people }: { people: User[] }) {
+  const qc = useQueryClient();
+  const cur = useQuery({ queryKey: ["vault", "folders"], queryFn: () => ok(api.GET("/vault/folders")) });
+  const [draft, setDraft] = useState<Folder[] | null>(null);
+  const folders = draft ?? cur.data ?? [];
+  const save = useMutation({
+    mutationFn: (fs: Folder[]) => ok(api.PUT("/vault/folders", { body: fs })),
+    onSuccess: (fs) => {
+      qc.setQueryData(["vault", "folders"], fs);
+      setDraft(null);
+    },
+  });
+  const edit = (i: number, f: Partial<Folder>) => setDraft(folders.map((x, j) => (j === i ? { ...x, ...f } : x)));
+  const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  return (
+    <section className="stack" style={{ gap: 8 }}>
+      <div className="spread">
+        <h2 className="section-title">Restricted vault folders</h2>
+        <button className="btn sm" onClick={() => setDraft([...folders, { prefix: "", roles: ["owner"], users: [], automations: false }])}>
+          Restrict a folder
+        </button>
+      </div>
+      <p className="small muted">
+        Secrets in a restricted folder, such as <span className="data">finance/</span>, can only be revealed, changed or used in
+        settings by the roles and people you pick, and by agents and keys acting for them. Everyone still sees that they exist.
+      </p>
+      {folders.map((f, i) => (
+        <div className="panel stack remote-panel" key={i}>
+          <div className="spread">
+            <label className="field" style={{ maxWidth: 260 }}>
+              <span>Folder</span>
+              <input className="data" value={f.prefix} onChange={(e) => edit(i, { prefix: e.target.value })} placeholder="finance/" />
+            </label>
+            <button className="btn sm quiet" onClick={() => setDraft(folders.filter((_, j) => j !== i))}>
+              Remove restriction
+            </button>
+          </div>
+          <fieldset className="inline" style={{ border: 0, padding: 0, flexWrap: "wrap" }}>
+            <legend className="small">Roles</legend>
+            {["owner", "admin", "member", "viewer"].map((r) => (
+              <label className="check" key={r}>
+                <input type="checkbox" checked={f.roles.includes(r as Folder["roles"][number]) || r === "owner"} disabled={r === "owner"}
+                  onChange={() => edit(i, { roles: toggle(f.roles, r) as Folder["roles"] })} />
+                <span>{r[0].toUpperCase() + r.slice(1)}</span>
+              </label>
+            ))}
+          </fieldset>
+          <fieldset className="inline" style={{ border: 0, padding: 0, flexWrap: "wrap" }}>
+            <legend className="small">And these people</legend>
+            {people.filter((u) => u.role !== "owner").map((u) => (
+              <label className="check" key={u.id}>
+                <input type="checkbox" checked={f.users.includes(u.id)} onChange={() => edit(i, { users: toggle(f.users, u.id) })} />
+                <span>{u.name}</span>
+              </label>
+            ))}
+          </fieldset>
+          <label className="check">
+            <input type="checkbox" checked={f.automations} onChange={(e) => edit(i, { automations: e.target.checked })} />
+            <span>Automations may use these secrets</span>
+          </label>
+        </div>
+      ))}
+      {save.error && <div className="error">{save.error.message}</div>}
+      {draft && (
+        <div className="inline">
+          <button className="btn quiet" onClick={() => setDraft(null)}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={() => save.mutate(draft)} disabled={save.isPending}>
+            Save restrictions
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

@@ -50,6 +50,10 @@ func (s *Server) saveMCPServer(w http.ResponseWriter, r *http.Request) {
 	if id := r.PathValue("id"); id != "" {
 		m.ID = id
 	}
+	if raw, _ := json.Marshal(m); s.checkConfigRefs(r, raw) != nil {
+		writeErr(w, http.StatusForbidden, s.checkConfigRefs(r, raw).Error())
+		return
+	}
 	saved, err := s.Bridge.Save(r.Context(), m)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -90,6 +94,10 @@ func (s *Server) saveProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pr.ID = r.PathValue("id")
+	if raw, _ := json.Marshal(pr); s.checkConfigRefs(r, raw) != nil {
+		writeErr(w, http.StatusForbidden, s.checkConfigRefs(r, raw).Error())
+		return
+	}
 	saved, err := s.Providers.Save(r.Context(), pr)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())

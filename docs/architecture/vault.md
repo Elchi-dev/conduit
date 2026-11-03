@@ -46,3 +46,20 @@ every other value with `"[redacted]"`.
   can read secrets from memory; the emergency stop locks the vault.
 - The audit log's hash chain makes later edits to records of secret access
   detectable.
+
+## Restricted folders (teams)
+
+The owner can restrict folders of the vault (People, Restricted vault
+folders; `PUT /api/v1/vault/folders`): secrets whose names start with
+`finance/`, say, can then only be revealed, changed, deleted, imported into
+or used in settings (module instances, AI providers, MCP servers, single
+sign-on, the backup passphrase) by the roles and people the folder lists.
+Agents and API keys get exactly what their owner gets; automations only
+when the folder allows them; the owner always keeps access, and only the
+owner changes restrictions, since they bind admins too. The most specific
+folder wins. Names stay visible to everyone who can see the vault.
+
+Enforcement is an engine guard (`core.Engine.Guard`) that runs before the
+policy for every call, so it holds for the app, the API, MCP, automations
+and undo alike; refusals are audited as denied. Module instances that
+already referenced a secret before its folder was restricted keep working.

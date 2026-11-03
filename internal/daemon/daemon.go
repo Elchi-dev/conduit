@@ -101,6 +101,7 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	}
 	app.Remote, app.Server.Remote = rem, rem
 	app.Sync = newSync(app)
+	engine.Guard = app.Server.vaultGuard
 	app.Server.Sync = app.Sync
 	app.Updates = update.New(dataDir, log)
 	app.Server.Updates = app.Updates

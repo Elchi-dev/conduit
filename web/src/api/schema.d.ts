@@ -1734,10 +1734,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vault/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Restricted vault folders and who may use them */
+        get: operations["vaultFolders"];
+        /**
+         * Restrict vault folders to roles and people (the owner only)
+         * @description Secrets in a restricted folder can only be revealed, changed, deleted or used in settings by the roles and people listed (and agents and keys acting for them). The owner always keeps access.
+         */
+        put: operations["setVaultFolders"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        VaultFolder: {
+            /** @description e.g. finance/ */
+            prefix: string;
+            roles: ("owner" | "admin" | "member" | "viewer")[];
+            users: string[];
+            /** @description Whether automations may use these secrets */
+            automations: boolean;
+        };
         InstalledModule: {
             name: string;
             version: string;
@@ -5475,6 +5504,52 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    vaultFolders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VaultFolder"][];
+                };
+            };
+        };
+    };
+    setVaultFolders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VaultFolder"][];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VaultFolder"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
         };
     };
 }

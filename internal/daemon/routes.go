@@ -55,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	routes = append(routes, s.tileRoutes()...)
 	routes = append(routes, s.discoverRoutes()...)
 	routes = append(routes, s.registryRoutes()...)
+	routes = append(routes, s.vaultFolderRoutes()...)
 	if s.Remote != nil {
 		// Direct, end-to-end encrypted connections from paired devices on
 		// the local network (the handshake authenticates them).
@@ -586,6 +587,10 @@ func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Enabled != nil {
 		in.Enabled = *req.Enabled
+	}
+	if err := s.checkConfigRefs(r, req.Config); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
 	}
 	saved, err := s.Engine.SaveInstance(r.Context(), in)
 	if err != nil {

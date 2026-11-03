@@ -8,6 +8,23 @@ agents can drive all of it, under rules you set.
 > See [BUILD_LOG.md](BUILD_LOG.md) for progress and [CONTEXT.md](CONTEXT.md)
 > for the current state.
 
+## What's in it
+
+- **20 modules**: vault, this computer, servers over SSH, Docker, mail,
+  calendar, notifications, Prometheus and Grafana, uptime checks, GitHub,
+  GitLab, Cloudflare, Home Assistant, Discord, files and backups, games
+  (Steam), notes, automations, the daily brief and ambient status. Any MCP
+  server mounts as a module; write your own in any language
+  ([kits](sdk/external/)) or run untrusted ones in a WebAssembly sandbox.
+- **Agents under rules**: the built-in assistant, any MCP client, local
+  models or API keys. Policies per agent, system and action; approvals with
+  exact previews; a tamper-evident audit log; undo; an emergency stop.
+- **Everywhere**: a desktop app with a tray, an Android app that pairs by QR
+  code (and confirms approvals with your fingerprint), remote access through
+  any hub with end-to-end encryption, or directly on your network.
+- **Signed updates** for the desktop app, the daemon (with automatic
+  rollback) and the hub.
+
 ## How it fits together
 
 Conduit works the way git and GitHub do. The protocol is open, a default hub
@@ -24,7 +41,8 @@ is provided, and every install chooses:
 | Daemon (`conduitd`) | `cmd/conduitd`, `internal/` | Go |
 | Hub (`conduit-hub`) | `cmd/conduit-hub`, `internal/hub` | Go |
 | API contracts | `api/openapi` | OpenAPI 3.1 |
-| Module SDK | `pkg/sdk`, `sdk/` | Go, plus JSON-RPC for any language |
+| Module SDK and kits | `pkg/sdk`, `sdk/external` | Go, Python, TypeScript, any language over JSON-RPC |
+| API clients | `sdk/clients` | TypeScript, Python |
 | Built-in modules | `modules/` | Go |
 | App UI | `web/` | TypeScript, React |
 | Desktop and Android shell | `apps/desktop` | Tauri 2 (Rust) |
@@ -51,3 +69,4 @@ During UI work run `cd web && pnpm dev`; it proxies `/api` to the daemon.
 - [API](docs/api/README.md)
 - [Modules](docs/modules/README.md)
 - [Self-hosting a hub](docs/self-hosting/README.md)
+- The same docs are on every hub's website (`site/`).

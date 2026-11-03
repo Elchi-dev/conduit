@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { api, ok, type S } from "../api/client";
 import { apiFetchUrl } from "../lib/connection";
+import { useDictation, voiceSupported } from "../lib/voice";
 import { ApprovalCard } from "../pages/Approvals";
 import "./assistant.css";
 
@@ -75,6 +76,7 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
   const [showList, setShowList] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const voice = useDictation(setInput);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
@@ -264,10 +266,24 @@ export function Assistant({ open, onClose, seed, onSeedUsed }: { open: boolean; 
             }
           }}
         />
-        <button className="btn primary" disabled={busy || none || !input.trim()}>
-          Send
-        </button>
+        <div className="assistant-buttons">
+          {voiceSupported() && !none && (
+            <button
+              type="button"
+              className={`btn ${voice.listening ? "signal" : ""}`}
+              onClick={() => (voice.listening ? voice.stop() : voice.start())}
+              aria-pressed={voice.listening}
+              title="Speak instead of typing; check the text, then send"
+            >
+              {voice.listening ? "Listening…" : "Speak"}
+            </button>
+          )}
+          <button className="btn primary" disabled={busy || none || !input.trim()}>
+            Send
+          </button>
+        </div>
       </form>
+      {voice.error && <p className="xs muted voice-error">{voice.error}</p>}
     </aside>
   );
 }

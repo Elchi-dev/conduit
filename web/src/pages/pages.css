@@ -673,3 +673,8 @@ pre.log {
   white-space: pre-line;
   max-width: 68ch;
 }
+
+/* Tags never stretch to fill a grid cell. */
+.row > .tag {
+  justify-self: start;
+}

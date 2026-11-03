@@ -343,3 +343,50 @@
     padding: 20px 16px 48px;
   }
 }
+
+/* ---------- phones ---------- */
+
+.narrow-only {
+  display: none;
+}
+@media (max-width: 760px) {
+  .wide-only {
+    display: none;
+  }
+  .narrow-only {
+    display: inline;
+  }
+  .bar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .bar .cmd-trigger {
+    display: none;
+  }
+  .bar .lamps {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .bar .lamps::-webkit-scrollbar {
+    display: none;
+  }
+  .bar-end {
+    gap: 4px;
+  }
+  .bar-end .btn {
+    padding-inline: 10px;
+  }
+  .rail {
+    scrollbar-width: none;
+  }
+  .main {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+}
+@media (max-width: 760px) {
+  .rail a {
+    white-space: nowrap;
+  }
+}

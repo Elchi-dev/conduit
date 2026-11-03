@@ -3,6 +3,40 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 12 — Android
+
+**Landed**
+
+- The Tauri shell builds for Android with the web app bundled; the phone
+  reaches daemons through a hub relay. `gen/android` committed with release
+  signing from `keystore.properties`, Conduit launcher icons and a
+  `conduit://` deep link.
+- Pairing by scanning the daemon's QR code in the app, or by opening the
+  link from the camera app.
+- Feature 6, phone as a hardware key: approving on the phone asks for a
+  fingerprint, face or PIN first.
+- Feature 13, voice (first cut): dictation into the assistant where speech
+  recognition exists; nothing is sent by voice alone.
+- In-app update check against GitHub releases; Android's installer enforces
+  the signing key.
+- Phone layout: compact top bar (lamps scroll, short Stop button),
+  scrolling tabs, tags no longer stretch in narrow rows. Checked at 412 px.
+- `android.yml` builds the APK (universal) and uploads it; signed when the
+  keystore secrets exist.
+
+**Changed from the plan**
+
+- No Firebase push: it would tie every hub operator to a Google project.
+  Background alerts go through the notify module's ntfy channel, which has
+  its own phone app; the app notifies while open.
+- Cleartext HTTP is allowed in the APK so self-hosted hubs on a LAN work;
+  relay content is end-to-end encrypted regardless.
+
+**Fixed**
+
+- The desktop sidecar config no longer leaks into the Android build
+  (`externalBin` is desktop-only).
+
 ## 2026-11-03 · Phase 11 — Desktop
 
 **Landed**

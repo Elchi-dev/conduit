@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ok } from "../api/client";
 import { forgetRelay, pairFromCode, relayProfile } from "../lib/connection";
 import { fingerprint } from "../lib/relay";
+import { isMobileApp, scanQR } from "../lib/native";
 import "../components/shell.css";
 
 export function Brand() {
@@ -160,8 +161,15 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
   const qc = useQueryClient();
   const [code, setCode] = useState("");
   const m = useMutation({
-    mutationFn: () => pairFromCode(code),
+    mutationFn: (text?: string) => pairFromCode(text ?? code),
     onSuccess: () => qc.invalidateQueries(),
+  });
+  const scan = useMutation({
+    mutationFn: scanQR,
+    onSuccess: (text) => {
+      setCode(text);
+      m.mutate(text);
+    },
   });
   return (
     <div className="gate">
@@ -175,10 +183,18 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
             with your phone's camera, or copy the pairing link and paste it here.
           </p>
         </div>
+        {isMobileApp() && (
+          <div className="stack" style={{ gap: 8 }}>
+            <button className="btn primary scan-btn" onClick={() => scan.mutate()} disabled={scan.isPending || m.isPending}>
+              {scan.isPending ? "Opening the camera…" : "Scan the pairing code"}
+            </button>
+            {scan.error && <div className="error">{String(scan.error)}</div>}
+          </div>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            m.mutate();
+            m.mutate(undefined);
           }}
         >
           <label className="field">
@@ -196,7 +212,7 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
             <small>Single use, valid for 10 minutes.</small>
           </label>
           {m.error && <div className="error">{m.error.message}</div>}
-          <button className="btn primary" disabled={m.isPending}>
+          <button className={`btn ${isMobileApp() ? "" : "primary"}`} disabled={m.isPending}>
             {m.isPending ? "Connecting…" : "Connect"}
           </button>
         </form>

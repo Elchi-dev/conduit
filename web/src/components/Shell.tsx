@@ -95,7 +95,8 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
           </button>
           {frozen ? (
             <Link href="/policy" className="btn danger">
-              Emergency stop is on
+              <span className="wide-only">Emergency stop is on</span>
+              <span className="narrow-only">Stopped</span>
             </Link>
           ) : (
             <button
@@ -105,8 +106,10 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
                   stop.mutate();
               }}
               disabled={stop.isPending}
+              aria-label="Emergency stop"
             >
-              Emergency stop
+              <span className="wide-only">Emergency stop</span>
+              <span className="narrow-only">Stop</span>
             </button>
           )}
         </div>

@@ -68,6 +68,10 @@ let permission: Promise<boolean> | null = null;
 export async function notify(title: string, body?: string) {
   if (typeof document !== "undefined" && document.visibilityState === "visible" && document.hasFocus()) return;
   const n = tauri()?.notification;
+  if (!n && isNative()) {
+    tauri()!.core.invoke("plugin:notification|notify", { options: { title, body } }).catch(() => {});
+    return;
+  }
   if (n) {
     permission ??= n.isPermissionGranted().then(async (ok) => ok || (await n.requestPermission()) === "granted");
     if (await permission) n.sendNotification({ title, body });
@@ -95,4 +99,107 @@ export function onShell<T>(event: "conduit://navigate" | "conduit://panic", cb: 
     cancelled = true;
     off?.();
   };
+}
+
+// --- phone ---------------------------------------------------------------------
+
+function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const t = tauri();
+  if (!t) return Promise.reject(new Error("not in the Conduit app"));
+  return t.core.invoke<T>(cmd, args);
+}
+
+/** The Conduit app on a phone (not the desktop shell, not a browser). */
+export function isMobileApp(): boolean {
+  return isNative() && /Android|iPhone|iPad/i.test(navigator.userAgent);
+}
+
+/** Scan a QR code with the camera; resolves to its text. */
+export async function scanQR(): Promise<string> {
+  try {
+    await invoke("plugin:barcode-scanner|request_permissions");
+  } catch {
+    /* older plugin builds ask on scan */
+  }
+  const r = await invoke<{ content: string }>("plugin:barcode-scanner|scan", { windowed: false, formats: ["QR_CODE"] });
+  return r.content;
+}
+
+/**
+ * Ask for a fingerprint, face or the device PIN before a sensitive step.
+ * Resolves true when confirmed, or when this device can't do biometrics (so
+ * phones without a sensor still work); false when the person cancels.
+ */
+export async function confirmWithDevice(reason: string): Promise<boolean> {
+  if (!isMobileApp()) return true;
+  try {
+    const s = await invoke<{ isAvailable: boolean }>("plugin:biometric|status");
+    if (!s.isAvailable) return true;
+  } catch {
+    return true;
+  }
+  try {
+    await invoke("plugin:biometric|authenticate", { reason, allowDeviceCredential: true, title: "Confirm in Conduit" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Open a link in the system browser (or the APK installer). */
+export async function openExternal(url: string) {
+  if (!isNative()) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  await invoke("plugin:opener|open_url", { url });
+}
+
+/** conduit:// links the app was opened with, now and later. */
+export function onDeepLink(cb: (url: string) => void): () => void {
+  if (!isMobileApp()) return () => {};
+  invoke<string[] | null>("plugin:deep-link|get_current")
+    .then((urls) => urls?.forEach(cb))
+    .catch(() => {});
+  return onShellRaw<string[]>("deep-link://new-url", (urls) => urls.forEach(cb));
+}
+
+function onShellRaw<T>(event: string, cb: (payload: T) => void): () => void {
+  const t = tauri();
+  if (!t) return () => {};
+  let off: (() => void) | null = null;
+  let cancelled = false;
+  t.event
+    .listen<T>(event, (e) => cb(e.payload))
+    .then((u) => (cancelled ? u() : (off = u)))
+    .catch(() => {});
+  return () => {
+    cancelled = true;
+    off?.();
+  };
+}
+
+export type ApkRelease = { version: string; url: string; notes: string };
+
+/**
+ * Newest Android release on GitHub, if newer than this app. The APK isn't in
+ * a store; Android's installer refuses an update signed with another key.
+ */
+export async function checkApkUpdate(current: string): Promise<ApkRelease | null> {
+  const res = await fetch("https://api.github.com/repos/Elchi-dev/conduit/releases/latest", { headers: { Accept: "application/vnd.github+json" } });
+  if (!res.ok) return null;
+  const r = (await res.json()) as { tag_name: string; body?: string; assets: { name: string; browser_download_url: string }[] };
+  const version = r.tag_name.replace(/^v/, "");
+  const apk = r.assets.find((a) => a.name.endsWith(".apk"));
+  if (!apk || !newer(version, current)) return null;
+  return { version, url: apk.browser_download_url, notes: r.body ?? "" };
+}
+
+function newer(a: string, b: string): boolean {
+  const pa = a.split(/[.-]/).map((x) => parseInt(x, 10));
+  const pb = b.split(/[.-]/).map((x) => parseInt(x, 10));
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
 }

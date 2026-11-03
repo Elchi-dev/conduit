@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
-import { checkUpdate, installUpdate, isNative, setAutostart, shellInfo } from "../lib/native";
+import { checkApkUpdate, checkUpdate, installUpdate, isMobileApp, isNative, openExternal, setAutostart, shellInfo } from "../lib/native";
 
 /** Settings section for the desktop app: updates and start at login. */
 export function AppSection() {
@@ -9,8 +9,44 @@ export function AppSection() {
   const check = useMutation({ mutationFn: checkUpdate });
   const install = useMutation({ mutationFn: installUpdate });
   const autostart = useMutation({ mutationFn: setAutostart, onSuccess: () => info.refetch() });
+  const apk = useMutation({ mutationFn: () => checkApkUpdate(info.data?.version ?? "0.0.0") });
   if (!isNative() || !info.data) return null;
   const i = info.data;
+
+  if (isMobileApp()) {
+    return (
+      <section className="stack" style={{ gap: 8 }}>
+        <h2 className="section-title">App</h2>
+        <div className="panel stack app-panel">
+          <div className="spread">
+            <strong className="small">
+              Conduit for Android <span className="data">{i.version}</span>
+            </strong>
+            <button className="btn" onClick={() => apk.mutate()} disabled={apk.isPending}>
+              {apk.isPending ? "Checking…" : "Check for updates"}
+            </button>
+          </div>
+          {apk.error && <div className="error">{updateError(apk.error)}</div>}
+          {apk.isSuccess && !apk.data && <p className="small muted">You have the latest version.</p>}
+          {apk.data && (
+            <div className="update-offer stack" style={{ gap: 8 }}>
+              <strong className="small">
+                Version <span className="data">{apk.data.version}</span> is ready
+              </strong>
+              <p className="xs muted">
+                The download opens Android's installer, which only accepts it if it's signed with the same key as this app.
+              </p>
+              <div>
+                <button className="btn primary" onClick={() => openExternal(apk.data!.url)}>
+                  Download and install
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="stack" style={{ gap: 8 }}>

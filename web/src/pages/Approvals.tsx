@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { confirmWithDevice } from "../lib/native";
 import { api, ok, type Approval } from "../api/client";
 import { PlanView } from "../components/PlanView";
 import { actorLabel, ago, json } from "../lib/format";
@@ -42,12 +43,18 @@ export function Approvals() {
 export function ApprovalCard({ a, onDecided }: { a: Approval; onDecided?: (approved: boolean) => void }) {
   const qc = useQueryClient();
   const decide = useMutation({
-    mutationFn: (approve: boolean) =>
-      ok(
+    mutationFn: async (approve: boolean) => {
+      // On the phone app, approving is confirmed with a fingerprint, face or
+      // PIN: the phone acts as a hardware key for risky actions.
+      if (approve && !(await confirmWithDevice(`Approve ${a.action} on ${a.instance}`))) {
+        throw new Error("Not approved: the confirmation on this device was cancelled.");
+      }
+      return ok(
         approve
           ? api.POST("/approvals/{id}/approve", { params: { path: { id: a.id } } })
           : api.POST("/approvals/{id}/deny", { params: { path: { id: a.id } } }),
-      ),
+      );
+    },
     onSuccess: (res, approve) => {
       qc.invalidateQueries({ queryKey: ["approvals"] });
       setDecided(res?.status ?? (approve ? "approved" : "denied"));

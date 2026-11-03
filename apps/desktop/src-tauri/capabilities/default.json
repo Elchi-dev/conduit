@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "The bundled pages (the splash on desktop, the whole app on mobile)",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "shell:allow-spawn",
@@ -12,5 +14,10 @@
     "allow-check-update",
     "allow-install-update",
     "allow-set-autostart"
+  ],
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
   ]
 }

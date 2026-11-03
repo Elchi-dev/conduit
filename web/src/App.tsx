@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Route, Switch } from "wouter";
 import { api, ApiError, ok } from "./api/client";
 import { Shell } from "./components/Shell";
@@ -9,13 +9,24 @@ import { Home } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { Keys } from "./pages/Keys";
 import { Connect, Login, Setup } from "./pages/Auth";
-import { forgetRelay, relayProfile } from "./lib/connection";
+import { forgetRelay, pairFromCode, relayProfile } from "./lib/connection";
+import { onDeepLink } from "./lib/native";
+import { useEffect } from "react";
 import { Modules } from "./pages/Modules";
 import { PolicyPage } from "./pages/Policy";
 import { Settings } from "./pages/Settings";
 import { Timeline } from "./pages/Timeline";
 
 export default function App() {
+  const qc = useQueryClient();
+  // conduit://pair links opened from the phone's camera app pair directly.
+  useEffect(
+    () =>
+      onDeepLink((url) => {
+        if (url.startsWith("conduit://pair")) pairFromCode(url).then(() => qc.invalidateQueries(), () => {});
+      }),
+    [qc],
+  );
   const setup = useQuery({ queryKey: ["setup"], queryFn: () => ok(api.GET("/setup")) });
   const me = useQuery({
     queryKey: ["me"],

@@ -13,25 +13,26 @@ owner and a company equally; never tailor it to one setup.
 ## Current state
 
 - **Version target:** v0.1.0, due Thu 2026-11-05 00:00 CET.
-- **Phase:** 11 of 16 (desktop) — done 2026-11-03 ~02:40 CET.
+- **Phase:** 12 of 16 (Android) — done 2026-11-03 ~03:10 CET.
 - **Works today:** core engine; accounts, keys; daemon API and events; web
-  app; 12 built-in modules; automations and the daily brief; MCP server and
-  stdio bridge; AI providers and the built-in assistant; outside MCP servers
-  as modules; what-changed and record-to-automation; `conduit-hub` (accounts,
-  orgs, pairing, relay, sync, signed registry and update feed; SQLite or
-  Postgres; `deploy/hub`); daemon remote access with QR pairing; web app
-  through the relay; desktop shell (sidecar or attach, tray with attention
-  state, notifications, start at login, signed Tauri updates) verified under
-  Xvfb; daemon self-update with signed releases and automatic rollback.
-- **Next:** phase 12, Android: Tauri mobile build of the same shell, phone
-  layout for the web app (the top bar overflows at 412 px), QR scanning,
-  approvals and notifications, in-app APK update, CI job. Then phase 13
-  (remaining features), 14 (website), 15 (hardening, security review),
+  app (now with a phone layout); 12 built-in modules; automations and the
+  daily brief; MCP server and stdio bridge; AI providers and the assistant
+  (with voice dictation where supported); outside MCP servers as modules;
+  what-changed and record-to-automation; `conduit-hub` (accounts, orgs,
+  pairing, relay, sync, signed registry and update feed; SQLite or Postgres;
+  `deploy/hub`); daemon remote access with QR pairing; desktop shell (tray,
+  notifications, start at login, signed updates); daemon self-update with
+  rollback; Android app (QR scan, deep links, biometric approvals, APK
+  update check) built in CI (`android.yml`).
+- **Next:** phase 13: ambient status (tray done; webhook/device scaffolds),
+  hub-free LAN pairing scaffold, WASM sandbox scaffold, GitHub and Home
+  Assistant modules. Then 14 (website), 15 (hardening, security review),
   16 (release).
 - **Known gaps:** the hub has no web pages yet (sign-up and pairing codes are
   API-only until the public site in phase 14); the relay doesn't carry the
   event stream (relayed clients poll every 10 s); no release has been
-  published, so update checks report nothing yet.
+  published, so update checks report nothing yet; the Android APK has only
+  been built in CI, not run on a device.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 

@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "The bundled web app on phones: pair by QR, confirm approvals with biometrics, open links, notifications",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "opener:default",
+    "barcode-scanner:default",
+    "biometric:default",
+    "deep-link:default",
+    "allow-shell-info"
+  ]
+}

@@ -129,3 +129,12 @@
     padding-right: min(440px, 100vw);
   }
 }
+.assistant-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.voice-error {
+  margin: 0;
+  padding: 0 12px 10px;
+}

@@ -395,7 +395,16 @@ pub fn run() {
         ))
         .manage(desktop::Shell::default());
 
+    // Phone: scan pairing QR codes, confirm approvals with a fingerprint or
+    // face, and open conduit://pair links from the camera app.
+    #[cfg(mobile)]
+    let builder = builder
+        .plugin(tauri_plugin_barcode_scanner::init())
+        .plugin(tauri_plugin_biometric::init())
+        .plugin(tauri_plugin_deep_link::init());
+
     let app = builder
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())

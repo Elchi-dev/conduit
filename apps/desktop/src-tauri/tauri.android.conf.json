@@ -1,0 +1,30 @@
+{
+  "build": {
+    "frontendDist": "../../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Conduit",
+        "url": "index.html"
+      }
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "scheme": [
+            "conduit"
+          ],
+          "appLink": false
+        }
+      ]
+    }
+  },
+  "bundle": {
+    "externalBin": [],
+    "createUpdaterArtifacts": false
+  }
+}

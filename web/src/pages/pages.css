@@ -682,3 +682,15 @@ pre.log {
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
+
+/* Webhooks */
+.tag.warn {
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 50%, transparent);
+}
+.state-ok {
+  color: var(--ok);
+}
+.state-down {
+  color: var(--fault);
+}

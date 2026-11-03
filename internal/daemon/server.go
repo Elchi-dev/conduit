@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/elchi-dev/conduit/internal/webhooks"
 	"log/slog"
 	"net"
 	"net/http"
@@ -36,7 +37,9 @@ type Server struct {
 	Ambient *ambientModule
 	// Updates may be nil in tests.
 	Updates *update.Updater
-	Log     *slog.Logger
+	// Webhooks may be nil in tests.
+	Webhooks *webhooks.Service
+	Log      *slog.Logger
 	// SetupToken must be presented to create the owner account. It is printed
 	// to the log and written to <data>/setup-token on first start.
 	SetupToken string

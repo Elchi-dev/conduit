@@ -914,6 +914,84 @@ paths:
       responses:
         "200": { description: Stream, content: { text/event-stream: { schema: { type: string } } } }
 
+  /webhooks:
+    get:
+      operationId: listWebhooks
+      tags: [webhooks]
+      summary: Outbound webhooks (secrets are never listed)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Webhook" } } } } }
+    post:
+      operationId: createWebhook
+      tags: [webhooks]
+      summary: Send matching events to a URL, signed with HMAC-SHA256 (signed-in people only)
+      description: The answer includes the signing secret, shown only this once. See docs/api/webhooks.md for the signature format.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                name: { type: string }
+                url: { type: string, description: "https:// (or http:// on your own network)" }
+                events: { type: array, items: { type: string }, description: "Event type prefixes such as action. or approval.requested; empty for every event" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Webhook" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /webhooks/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getWebhook
+      tags: [webhooks]
+      summary: One webhook
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Webhook" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateWebhook
+      tags: [webhooks]
+      summary: Switch a webhook on or off (on resets its failure count)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Webhook" } } } }
+    delete:
+      operationId: deleteWebhook
+      tags: [webhooks]
+      summary: Remove a webhook and its delivery log
+      responses:
+        "204": { description: Removed }
+  /webhooks/{id}/rotate:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: rotateWebhookSecret
+      tags: [webhooks]
+      summary: Replace the signing secret; the old one stops working at once
+      responses:
+        "200": { description: The new secret, content: { application/json: { schema: { type: object, required: [secret], properties: { secret: { type: string } } } } } }
+  /webhooks/{id}/test:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: testWebhook
+      tags: [webhooks]
+      summary: Send a webhook.test event now and report how the receiver answered
+      responses:
+        "200": { description: The delivery, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookDelivery" } } } }
+  /webhooks/{id}/deliveries:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: listWebhookDeliveries
+      tags: [webhooks]
+      summary: Recent deliveries, newest first (the last 500 are kept)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } } } } }
 components:
   securitySchemes:
     bearer:
@@ -928,6 +1006,30 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    Webhook:
+      type: object
+      required: [id, name, url, events, enabled, failures, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        url: { type: string }
+        events: { type: array, items: { type: string } }
+        enabled: { type: boolean }
+        failures: { type: integer, description: Consecutive failed deliveries; 25 switch the webhook off }
+        createdAt: { type: string, format: date-time }
+        secret: { type: string, description: Only in the answer to createWebhook }
+    WebhookDelivery:
+      type: object
+      required: [id, event, at, status, attempts, ok, durationMs]
+      properties:
+        id: { type: string, description: Also sent as X-Conduit-Delivery }
+        event: { type: string }
+        at: { type: string, format: date-time }
+        status: { type: integer, description: Last HTTP status; 0 when the receiver didn't answer }
+        attempts: { type: integer }
+        ok: { type: boolean }
+        error: { type: string }
+        durationMs: { type: integer }
     Ambient:
       type: object
       required: [state, color, summary, approvalsWaiting, down, since]

@@ -38,6 +38,9 @@ func (s *Server) Handler() http.Handler {
 	if s.Updates != nil {
 		routes = append(routes, s.updateRoutes()...)
 	}
+	if s.Webhooks != nil {
+		routes = append(routes, s.webhookRoutes()...)
+	}
 	routes = append(routes, s.ambientRoutes()...)
 	if s.Remote != nil {
 		// Direct, end-to-end encrypted connections from paired devices on

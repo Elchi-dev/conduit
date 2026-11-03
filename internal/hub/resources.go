@@ -191,6 +191,7 @@ func (s *Server) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	// Accepting an emailed link also proves the address.
 	_, _ = s.db.Exec(ctx, `UPDATE accounts SET verified = 1 WHERE id = ?`, c.Account.ID)
+	s.grantConfiguredAdmin(ctx, c.Account.ID)
 	writeJSON(w, 200, map[string]string{"org": inv.Org, "role": inv.Role})
 }
 

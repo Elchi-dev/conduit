@@ -215,7 +215,11 @@ import Base from "../../layouts/Base.astro";
     await load();
   });
   form($("signup"), async (v) => {
-    await api("POST", "/accounts", { email: v.email, password: v.password, name: v.name });
+    let inviteToken: string | undefined;
+    try {
+      inviteToken = sessionStorage.getItem("conduit.invite") || undefined;
+    } catch {}
+    await api("POST", "/accounts", { email: v.email, password: v.password, name: v.name, inviteToken });
     ($("signup").querySelector("[data-done]") as HTMLElement).hidden = false;
   });
   form($("reset"), async (v) => {

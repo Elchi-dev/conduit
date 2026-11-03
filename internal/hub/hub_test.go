@@ -176,7 +176,35 @@ func TestAccounts(t *testing.T) {
 func TestClosedRegistration(t *testing.T) {
 	h := newHarness(t, func(c *Config) { c.OpenRegistration = false })
 	h.do("POST", "/v1/accounts", "", map[string]string{"email": "x@example.com", "password": "correct horse battery"}, 403)
-	h.signup("root@example.com")
+	// Any string used to pass as an invitation.
+	h.do("POST", "/v1/accounts", "", map[string]string{"email": "x@example.com", "password": "correct horse battery", "inviteToken": "anything"}, 403)
+	root := h.signup("root@example.com")
+
+	org := h.do("POST", "/v1/orgs", root, map[string]string{"name": "Home"}, 201)
+	h.do("POST", "/v1/orgs/"+org["id"].(string)+"/invites", root, map[string]string{"email": "x@example.com"}, 202)
+	inv := h.mail.lastToken(t, "x@example.com")
+	// An invitation only admits the address it was sent to.
+	h.do("POST", "/v1/accounts", "", map[string]string{"email": "y@example.com", "password": "correct horse battery", "inviteToken": inv}, 403)
+	h.do("POST", "/v1/accounts", "", map[string]string{"email": "x@example.com", "password": "correct horse battery", "inviteToken": inv}, 202)
+}
+
+func TestAdminNeedsConfirmedAddress(t *testing.T) {
+	h := newHarness(t, nil)
+	// Someone who doesn't own the admin address signs up with it first.
+	h.do("POST", "/v1/accounts", "", map[string]string{"email": "root@example.com", "password": "squatter password"}, 202)
+	sq := h.do("POST", "/v1/sessions", "", map[string]string{"email": "root@example.com", "password": "squatter password"}, 200)["token"].(string)
+	if h.do("GET", "/v1/me", sq, nil, 200)["account"].(map[string]any)["admin"] != false {
+		t.Fatal("an unconfirmed admin address must not be admin")
+	}
+	// The real owner resets the password from their inbox and becomes admin;
+	// the squatter's session ends.
+	h.do("POST", "/v1/accounts/password-reset", "", map[string]string{"email": "root@example.com"}, 202)
+	h.do("POST", "/v1/accounts/password-reset/confirm", "", map[string]string{"token": h.mail.lastToken(t, "root@example.com"), "password": "the real password"}, 200)
+	h.do("GET", "/v1/me", sq, nil, 401)
+	tok := h.do("POST", "/v1/sessions", "", map[string]string{"email": "root@example.com", "password": "the real password"}, 200)["token"].(string)
+	if h.do("GET", "/v1/me", tok, nil, 200)["account"].(map[string]any)["admin"] != true {
+		t.Fatal("confirmed admin address should be admin")
+	}
 }
 
 func TestRateLimit(t *testing.T) {

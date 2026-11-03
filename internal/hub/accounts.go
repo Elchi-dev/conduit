@@ -191,12 +191,14 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "the password must be at least 10 characters")
 		return
 	}
-	if !s.cfg.OpenRegistration && email != s.cfg.AdminEmail && req.InviteToken == "" {
-		writeErr(w, http.StatusForbidden, "this hub only accepts invited people")
+	ctx := r.Context()
+	if !s.cfg.OpenRegistration && email != s.cfg.AdminEmail && !s.validInvite(ctx, req.InviteToken, email) {
+		writeErr(w, http.StatusForbidden, "this hub only accepts invited people; open the invitation link from your email and sign up with the address it was sent to")
 		return
 	}
-	ctx := r.Context()
-	a := Account{ID: newID("acct"), Email: email, Name: strings.TrimSpace(req.Name), CreatedAt: s.now().UTC(), Admin: s.cfg.AdminEmail != "" && email == s.cfg.AdminEmail}
+	// Admin rights come with a confirmed address (see verifyEmail), so
+	// whoever signs up first with the admin address can't take the hub.
+	a := Account{ID: newID("acct"), Email: email, Name: strings.TrimSpace(req.Name), CreatedAt: s.now().UTC()}
 	if a.Name == "" {
 		a.Name = strings.Split(email, "@")[0]
 	}
@@ -240,7 +242,33 @@ func (s *Server) verifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = s.db.Exec(r.Context(), `UPDATE accounts SET verified = 1 WHERE id = ?`, id)
+	s.grantConfiguredAdmin(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]bool{"verified": true})
+}
+
+// grantConfiguredAdmin makes the account an admin if its (now confirmed)
+// address is CONDUIT_HUB_ADMIN_EMAIL.
+func (s *Server) grantConfiguredAdmin(ctx context.Context, id string) {
+	if s.cfg.AdminEmail == "" {
+		return
+	}
+	_, _ = s.db.Exec(ctx, `UPDATE accounts SET is_admin = 1 WHERE id = ? AND email = ? AND verified = 1`, id, s.cfg.AdminEmail)
+}
+
+// validInvite reports whether tok is an unused, unexpired invitation sent
+// to email. It doesn't consume it; accepting the invitation does.
+func (s *Server) validInvite(ctx context.Context, tok, email string) bool {
+	if tok == "" {
+		return false
+	}
+	var data, exp string
+	var used int
+	if s.db.Row(ctx, `SELECT data, expires_at, used FROM email_tokens WHERE token_hash = ? AND kind = 'invite'`, hash(tok)).Scan(&data, &exp, &used) != nil {
+		return false
+	}
+	var inv struct{ Email string }
+	_ = json.Unmarshal([]byte(data), &inv)
+	return used == 0 && !s.now().After(parseTS(exp)) && inv.Email == email
 }
 
 func (s *Server) resendVerification(w http.ResponseWriter, r *http.Request) {
@@ -351,6 +379,7 @@ func (s *Server) confirmReset(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	_, _ = s.db.Exec(ctx, `UPDATE accounts SET password_hash = ?, verified = 1 WHERE id = ?`, auth.HashPassword(req.Password), id)
+	s.grantConfiguredAdmin(ctx, id)
 	_, _ = s.db.Exec(ctx, `UPDATE hub_sessions SET revoked = 1 WHERE account_id = ?`, id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "password changed; every other sign-in was ended"})
 }

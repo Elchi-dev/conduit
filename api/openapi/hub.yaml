@@ -79,7 +79,7 @@ paths:
                 email: { type: string }
                 name: { type: string }
                 password: { type: string, minLength: 10 }
-                inviteToken: { type: string, description: Lets invited people register on hubs with closed registration }
+                inviteToken: { type: string, description: "An unused, unexpired invitation sent to this email address; lets invited people register on hubs with closed registration. Accepting it (POST /v1/invites/accept) adds the membership." }
       responses:
         "202": { $ref: "#/components/responses/Status" }
         "400": { $ref: "#/components/responses/Error" }

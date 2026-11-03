@@ -50,8 +50,8 @@ override the first three).
 | `CONDUIT_HUB_DB` | `hub.db` | `postgres://…` URL, or a SQLite file path |
 | `CONDUIT_HUB_URL` | `http://localhost:7700` | Public address, used in emails |
 | `CONDUIT_HUB_NAME` | `Conduit hub` | Shown in emails |
-| `CONDUIT_HUB_ADMIN_EMAIL` | | This address becomes admin when it signs up |
-| `CONDUIT_HUB_OPEN_REGISTRATION` | `true` | `false`: only the admin and invited people can sign up |
+| `CONDUIT_HUB_ADMIN_EMAIL` | | The account with this address becomes admin once the address is confirmed (by the verification link, a password reset or an accepted invitation) |
+| `CONDUIT_HUB_OPEN_REGISTRATION` | `true` | `false`: only the admin and people with a valid invitation to their address can sign up |
 | `CONDUIT_HUB_MAIL` | `console` | `console`, `resend` or `smtp` |
 | `CONDUIT_HUB_MAIL_FROM` | | Sender, e.g. `Example hub <hub@example.com>` |
 | `CONDUIT_HUB_RESEND_KEY` | | Resend API key (driver `resend`) |

@@ -149,7 +149,7 @@ func TestVectors(t *testing.T) {
 	if err != nil {
 		t.Fatal("run go test ./pkg/relay -run Vectors -update:", err)
 	}
-	if string(bytes.TrimSpace(want)) != string(b) {
+	if string(bytes.TrimSpace(bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n")))) != string(b) {
 		t.Fatal("wire format changed; if intended, run with -update and update the TypeScript side")
 	}
 }

@@ -23,24 +23,25 @@ owner and a company equally; never tailor it to one setup.
   between daemons (hub or peers), phone notifications through ntfy, an
   F-Droid repository with signed releases, and the fixes from a second
   independent security review.
-- **Since v0.2.0 (phases 23–27, unreleased):** 10 more modules (37), encrypted
-  backups, two-factor sign-in, the `conduit` CLI, a hub operator console,
-  mDNS discovery, home tiles, guides.
-- **Now:** phase 28: browser tests and an accessibility pass in CI (a
-  helper is building them), then a third security review and v0.3.0.
+- **Since v0.2.0 (phases 23–30, unreleased):** 20 more modules (47),
+  encrypted backups, two-factor sign-in, the `conduit` CLI, a hub operator
+  console, mDNS discovery, home tiles, guides, browser tests and an
+  accessibility pass in CI, installing signed modules from a hub,
+  restricted vault folders for teams.
+- **Now:** a third independent security review (running), the German
+  translation (a helper), container images and a Helm chart (a helper);
+  then fixes and v0.3.0.
 - **Backlog** (take the next item when a phase ends; the build runs until
   Thu 2026-11-05 00:00 CET):
-  1. German translation of the app and site (i18n framework first).
-  2. Daemon container image (Docker/Podman) and a Helm chart for the hub.
-  3. Modules: PostgreSQL/MySQL (read-only queries), Redis, S3-compatible
-     storage (MinIO), Uptime Kuma, UniFi, Nextcloud, Hetzner Cloud,
-     DigitalOcean, Vercel, Fly.io, Ollama models, Matrix and Gotify
-     notification channels.
-  4. Per-role access to vault folders for teams.
-  5. Daemon passkeys (serve the desktop app on localhost, which WebAuthn
+  1. Daemon passkeys (serve the desktop app on localhost, which WebAuthn
      allows).
-  6. Install modules from a hub registry in the app, with signature checks.
-  7. A third independent security review; release v0.3.0.
+  2. Translate the website (after the app).
+  3. More modules: S3-compatible storage (MinIO, R2), Plex, Grafana
+     alerting, GitHub Actions runs, Docker registry, Gitea/Forgejo,
+     Mastodon, Bitwarden/Vaultwarden status.
+  4. Mobile: home tiles as an Android widget; quick approve from the
+     notification.
+  5. A fourth review of whatever lands after v0.3.0; v0.4.0 before the end.
 - **Releasing:** push a `v*` tag, or run the release workflow by hand with
   a tag name (it creates the tag on the commit it runs on; the build
   environment can't push tags). Notes come from `docs/releases/<tag>.md`.

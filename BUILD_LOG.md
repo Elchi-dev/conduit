@@ -3,6 +3,32 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · Phases 28–30 — Tests, registry, team vault, more modules
+
+- **Phase 28, browser tests:** 31 Playwright tests drive a freshly built
+  daemon through first run, the command bar, modules, the vault, API keys,
+  agent rules, People, Settings, sign-in and the emergency stop, at desktop
+  and phone widths, using roles and labels only. An axe scan of the main
+  screens in dark and light fails CI on serious or critical WCAG 2.1 A/AA
+  problems; it found low-contrast muted, fault, ok and (light) amber
+  colours and unnamed meters, all fixed. New CI jobs: `e2e`, and
+  `databases` (real PostgreSQL 16 and MySQL 8.4 for the database module).
+- **Phase 29, modules from a hub:** Modules, Add modules from your hub
+  browses the linked hub's registry and installs sandboxed (WebAssembly)
+  builds: the author's signature and the download's checksum are checked,
+  the author key is pinned on first install, the person sees the key
+  fingerprint and the network hosts first, and a module must use ids in
+  its author's namespace (`docs/protocol/sandbox.md`).
+- **Phase 30, team vault and modules:** the owner can restrict vault
+  folders (`finance/`, `prod/`) to roles and people, enforced by an engine
+  guard for every caller and in every setting that takes a secret
+  reference (`docs/architecture/vault.md`). Ten more modules, 47 in all:
+  Hetzner Cloud, DigitalOcean, Vercel, Fly.io, PostgreSQL and MySQL
+  (read-only queries in a read-only transaction), Redis and Valkey (a
+  small RESP client), Uptime Kuma, UniFi, Nextcloud, Ollama; and Matrix,
+  Gotify and email notification channels (the password is never sent
+  without TLS; header injection is refused).
+
 ## 2026-11-03/04 · Phases 23–27 — Toward v0.3.0
 
 The build keeps going until Thu 5 Nov 00:00 CET; after each phase the next

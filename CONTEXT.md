@@ -64,6 +64,8 @@ owner and a company equally; never tailor it to one setup.
 - **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
   (Chrome is at /usr/bin/google-chrome in the build environment).
 
+**License:** MIT for everything (owner's decision, 4 Nov).
+
 ## Rules for working in this repo
 
 - Go for daemon, hub and APIs (ADR 0001). Pure Go only; `CGO_ENABLED=0` builds.
@@ -77,10 +79,9 @@ owner and a company equally; never tailor it to one setup.
 
 ## Decisions waiting on the owner
 
-- **License.** Not chosen yet; no LICENSE file is committed. Until one is
-  added the code is all-rights-reserved by default.
 - **Release signing secrets.** Three signing keys were generated outside the
-  repo (handed over with the build). Add them as GitHub Actions secrets before
+  repo and handed to the owner on 4 Nov as a folder with a script
+  (`set-github-secrets.sh`) that stores them with the GitHub CLI. Add them as GitHub Actions secrets before
   the first release; keep offline backups, since losing a key means existing
   installs can no longer update:
   - Android: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,

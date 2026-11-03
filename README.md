@@ -92,3 +92,7 @@ During UI work run `cd web && pnpm dev`; it proxies `/api` to the daemon.
 - [Modules](docs/modules/README.md)
 - [Self-hosting a hub](docs/self-hosting/README.md)
 - The same docs are on every hub's website (`site/`).
+
+## License
+
+MIT. See [LICENSE](LICENSE).

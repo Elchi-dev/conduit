@@ -1,6 +1,7 @@
 [package]
 name = "conduit-desktop"
 version = "0.1.0"
+license = "MIT"
 description = "Conduit desktop and mobile shell"
 edition = "2021"
 publish = false

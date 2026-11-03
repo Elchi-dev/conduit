@@ -10,5 +10,6 @@
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"
-  }
+  },
+  "license": "MIT"
 }

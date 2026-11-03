@@ -8,3 +8,5 @@ home: https://github.com/Elchi-dev/conduit
 sources:
   - https://github.com/Elchi-dev/conduit
 keywords: [conduit, relay, self-hosted]
+annotations:
+  artifacthub.io/license: MIT

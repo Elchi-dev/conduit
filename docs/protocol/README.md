@@ -10,3 +10,4 @@ Specifications, versioned as they land:
 | External modules (JSON-RPC over stdio) | [external-modules.md](external-modules.md) | v1 |
 | Hub: accounts, pairing, relay, sync, registry, update feed | [hub.md](hub.md) | v1 |
 | Updates: keys, release payloads, feeds, self-update and rollback | [updates.md](updates.md) | v1 |
+| Sandboxed modules: WebAssembly, permissions, host functions | [sandbox.md](sandbox.md) | v1 |

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elchi-dev/conduit/modules/internal/fakehost"
+	"github.com/elchi-dev/conduit/internal/fakehost"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 

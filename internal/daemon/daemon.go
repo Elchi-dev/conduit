@@ -22,6 +22,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/remote"
+	"github.com/elchi-dev/conduit/internal/sandbox"
 	"github.com/elchi-dev/conduit/internal/ui"
 	"github.com/elchi-dev/conduit/internal/update"
 	"github.com/elchi-dev/conduit/internal/vault"
@@ -143,8 +144,12 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		return err
 	}
 	externals := app.Engine.LoadExternalDir(ctx, filepath.Join(cfg.DataDir, "modules"))
+	sandboxed := sandbox.LoadDir(ctx, app.Engine, filepath.Join(cfg.DataDir, "modules"), log)
 	defer func() {
 		for _, x := range externals {
+			_ = x.Stop()
+		}
+		for _, x := range sandboxed {
 			_ = x.Stop()
 		}
 	}()

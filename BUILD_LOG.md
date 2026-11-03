@@ -3,6 +3,44 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-03 · Phase 13 — Modules and remaining features
+
+**Landed**
+
+- Eight new modules, each with docs and tests against fake APIs: GitHub,
+  GitLab, Cloudflare (record changes preview as diffs and undo), Home
+  Assistant (toggles and light changes undo), Discord (webhook or bot),
+  files and backups (folders, restic/rsync/command jobs, overdue and
+  free-space warnings), games (local Steam library, launch, running games,
+  start/stop events) and notes (Markdown folder; every change undoes).
+- Feature 9, ambient status: four states (ok, attention, down, stopped)
+  pushed on change to a Home Assistant light, a webhook or Discord, and
+  served at `GET /api/v1/ambient` for polling devices; a Stream Deck plugin
+  scaffold in `integrations/streamdeck`.
+- Feature 11, hub-free pairing: daemons that listen on the network serve the
+  relay protocol at `/relay`; pairing codes carry the address; clients try it
+  before the hub. Verified in a browser with the hub switched off.
+- Feature 12, sandboxed modules: wasip1 modules run in wazero with no files,
+  no environment and no sockets; HTTPS only to granted hosts (and never to
+  private addresses); `pkg/sdk/wasm` for Go modules; tested with a real
+  module built in the test, including host callbacks.
+- Feature 7, rotation: `vault.rotate` with a Cloudflare token provider and a
+  provider interface.
+
+**Changed from the plan**
+
+- Hub-free pairing and the WebAssembly sandbox were planned as scaffolds;
+  both work now. mDNS discovery and peer-to-peer sync remain designs, since
+  pairing already carries the address.
+- The Android build targets arm64 and x86_64 only, which keeps CI time sane
+  and covers current phones.
+
+**Fixed**
+
+- Sandboxed Go modules deadlocked: wasip1 blocks the whole runtime on a
+  blocking stdin read. The guest now sets stdin non-blocking and the host
+  passes a real OS pipe, which wazero can poll.
+
 ## 2026-11-03 · Phase 12 — Android
 
 **Landed**

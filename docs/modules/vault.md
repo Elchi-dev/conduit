@@ -21,6 +21,7 @@ every module that needs one reports itself as degraded.
 | `list` | read | Names, kinds, descriptions, last use. Never values. |
 | `generate` | read | A random password (16–128 characters), not stored |
 | `scan_text` | read | Finds vault secret values in pasted text, by secret name and line |
+| `rotate` | destructive | Gets a fresh value from the issuing service and stores it, keeping the secret's details; the old value stops working. Providers: `cloudflare` (the token needs permission to roll itself). More providers plug in through `vault.RegisterRotator`. |
 | `scan_path` | read | Same for a file or folder on the machine running Conduit; skips `.git`, `node_modules`, build output, binaries and files over 2 MiB |
 | `set` | write | Create or replace a secret; an empty value generates a password |
 | `import_env` | write | Stores each `KEY=value` line of a `.env` file as `<prefix>/<key>` |
@@ -59,3 +60,11 @@ The emergency stop locks the vault.
 ## How secrets are protected
 
 See [the vault design](../architecture/vault.md).
+
+## Leak watch and rotation
+
+Signature feature 7. `scan_text` and `scan_path` find vault values in logs,
+pastes and repositories. When one leaks, `rotate` replaces it at the source
+where the service allows it, so the leaked copy is dead. Automations can run
+`scan_path` on a schedule and notify you of findings; rotation stays a
+destructive action, so agents ask first.

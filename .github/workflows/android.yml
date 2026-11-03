@@ -13,6 +13,10 @@ on:
       - "web/**"
   workflow_dispatch:
 
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -34,7 +38,7 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          targets: aarch64-linux-android,x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
@@ -60,7 +64,7 @@ jobs:
         working-directory: apps/desktop/src-tauri
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          pnpm dlx @tauri-apps/cli@2 android build --apk --ci
+          pnpm dlx @tauri-apps/cli@2 android build --apk --ci --target aarch64 --target x86_64
       - name: collect
         run: |
           mkdir -p out

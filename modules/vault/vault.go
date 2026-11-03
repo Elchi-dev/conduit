@@ -48,6 +48,8 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: schema(`{"type":"object","properties":{"length":{"type":"integer","minimum":16,"maximum":128,"default":24},"symbols":{"type":"boolean","default":true}}}`)},
 			{Name: "import_env", Title: "Import a .env file", Description: "Store every KEY=value line as a secret under a prefix.", Risk: sdk.RiskWrite, Sensitive: true,
 				Input: schema(`{"type":"object","required":["text"],"properties":{"text":{"type":"string","x-multiline":true,"description":"Paste the file's contents"},"prefix":{"type":"string","description":"e.g. myapp"}}}`)},
+			{Name: "rotate", Title: "Rotate a secret", Description: "Get a fresh value from the service that issued it and store it; the old value stops working.", Risk: sdk.RiskDestructive,
+				Input: sdk.Schema(`{"type":"object","required":["name","provider"],"properties":{"name":{"type":"string"},"provider":{"type":"string","enum":["cloudflare"],"description":"Who issued it"}}}`)},
 			{Name: "scan_text", Title: "Check text for leaks", Description: "Find any vault secret pasted in this text, e.g. a log or a config file.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: schema(`{"type":"object","required":["text"],"properties":{"text":{"type":"string","x-multiline":true}}}`)},
 			{Name: "scan_path", Title: "Check a folder for leaks", Description: "Search files on this machine (e.g. a code repository) for vault secret values.", Risk: sdk.RiskRead,
@@ -154,6 +156,19 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 			return sdk.Result{}, err
 		}
 		return out(map[string]string{"deleted": in.Name})
+
+	case "rotate":
+		var in struct {
+			Name     string `json:"name"`
+			Provider string `json:"provider"`
+		}
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			return sdk.Result{}, err
+		}
+		if err := m.V.Rotate(ctx, in.Name, in.Provider); err != nil {
+			return sdk.Result{}, err
+		}
+		return out(map[string]string{"rotated": in.Name})
 
 	case "totp":
 		var in nameIn

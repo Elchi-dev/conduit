@@ -242,6 +242,10 @@ function ssoMessage(code: string): string {
       return "Your provider didn't confirm your email address, so single sign-on can't use it.";
     case "domain":
       return "Your email address isn't in a domain this Conduit accepts. Ask its owner to add it.";
+    case "link_required":
+      return "Owners and admins sign in with their password first, then link single sign-on in Settings.";
+    case "linked_elsewhere":
+      return "This account is linked to a different identity at your provider. Sign in with that one, or with your password.";
     case "no_account":
       return "There's no account here for your email address yet. Ask the owner to add you.";
     case "disabled":

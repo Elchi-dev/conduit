@@ -17,13 +17,28 @@ any OpenID Connect provider. How it works and its security rules:
 3. Store the client secret in the vault (Vault module, Save a secret), for
    example as `sso/client-secret`, and enter `secret://sso/client-secret`.
 4. Enter the issuer and client ID, a button label, and the email domains
-   that may sign in. Turn on "Make an account…" if new colleagues should get
+   that may sign in (at least one is required). Turn on "Make an account…" if new colleagues should get
    an account (as members or viewers) the first time they sign in.
 5. Tick "Show Sign in with…" and save. Sign out and try it.
 
-People who already have an account here are matched by email address. Give
-them their roles (owner, admin) as usual; single sign-on never makes owners
-or admins.
+## How accounts are matched
+
+The provider's stable account id (the `sub` claim), not the email address,
+decides which account signs in. The first time someone signs in, Conduit
+links their identity to an account:
+
+- **Members and viewers** with an address in an allowed domain are linked to
+  the account with that address (or a new one, if making accounts is on).
+- **Owners and admins** are never linked by email: they sign in with their
+  password and choose **Link my account** under Settings, Single sign-on.
+  This way nobody who can set an address at the provider (a provider admin,
+  or a provider that lets people edit their own email) can sign in as an
+  owner or admin.
+
+Once linked, the identity keeps signing in to the same account even if its
+email changes at the provider, and no other identity at the same provider
+can sign in to that account. `email_verified` must be the JSON value `true`.
+Single sign-on never makes owners or admins.
 
 ## Google Workspace
 
@@ -95,4 +110,6 @@ The sign-in page shows a short reason; the daemon's log says more (search for
 | Email not confirmed | The provider didn't send `email_verified: true` (see Entra above). |
 | Not in an accepted domain | Add the domain under Allowed email domains. |
 | No account yet | Turn on making accounts, or add the person first. |
+| Owners and admins sign in with their password first | Sign in with your password and choose Link my account in Settings. |
+| Linked to a different identity | The account is linked to another identity at the provider; use that one, or have it unlinked. |
 | Didn't work (other) | Wrong issuer, client ID or secret, the redirect URI isn't registered exactly, or the vault is locked. |

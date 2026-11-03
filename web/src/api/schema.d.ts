@@ -1366,6 +1366,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/oidc/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Link your account to your identity at the provider (a browser navigation; signed-in people only)
+         * @description Starts the provider's sign-in and, on return, links the provider's stable subject to your account, then redirects to /settings?sso=linked. Owners and admins must link before single sign-on works for them; members and viewers are linked on their first sign-in from an allowed domain.
+         */
+        get: operations["linkOIDC"];
+        put?: never;
+        post?: never;
+        /** Remove your linked identities */
+        delete: operations["unlinkOIDC"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether your account has a linked identity */
+        get: operations["myOIDCLink"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/oidc/start": {
         parameters: {
             query?: never;
@@ -4451,6 +4489,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OIDCSettings"];
+                };
+            };
+        };
+    };
+    linkOIDC: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the provider */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    unlinkOIDC: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    myOIDCLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        linked: boolean;
+                    };
                 };
             };
         };

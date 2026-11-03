@@ -1150,6 +1150,27 @@ paths:
       summary: Single sign-on settings and the redirect URI to register with the provider (signed-in people only)
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OIDCSettings" } } } }
+  /auth/oidc/link:
+    get:
+      operationId: linkOIDC
+      tags: [auth]
+      summary: Link your account to your identity at the provider (a browser navigation; signed-in people only)
+      description: Starts the provider's sign-in and, on return, links the provider's stable subject to your account, then redirects to /settings?sso=linked. Owners and admins must link before single sign-on works for them; members and viewers are linked on their first sign-in from an allowed domain.
+      responses:
+        "302": { description: To the provider }
+    delete:
+      operationId: unlinkOIDC
+      tags: [auth]
+      summary: Remove your linked identities
+      responses:
+        "204": { description: Removed }
+  /auth/oidc/me:
+    get:
+      operationId: myOIDCLink
+      tags: [auth]
+      summary: Whether your account has a linked identity
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [linked], properties: { linked: { type: boolean } } } } } }
   /auth/oidc/start:
     get:
       operationId: ssoStart

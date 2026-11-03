@@ -83,7 +83,7 @@ export function SsoSection({ admin }: { admin: boolean }) {
           <label className="field">
             <span>Allowed email domains</span>
             <input className="data" value={domains} onChange={(e) => setDomains(e.target.value)} placeholder="example.com" />
-            <small>Leave empty to let only people who already have an account here sign in.</small>
+            <small>Required. Only addresses in these domains can sign in for the first time; owners and admins also have to link their account below.</small>
           </label>
           <label className="check">
             <input type="checkbox" checked={!!f.autoCreate} onChange={(e) => set({ autoCreate: e.target.checked })} />
@@ -119,6 +119,36 @@ export function SsoSection({ admin }: { admin: boolean }) {
           </div>
         </form>
       )}
+      {cur.data?.enabled && <LinkMine />}
     </section>
+  );
+}
+
+/** Owners and admins sign in with SSO only after linking it while signed in. */
+function LinkMine() {
+  const qc = useQueryClient();
+  const mine = useQuery({ queryKey: ["auth", "oidc", "me"], queryFn: () => ok(api.GET("/auth/oidc/me")) });
+  const unlink = useMutation({
+    mutationFn: () => ok(api.DELETE("/auth/oidc/link")),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth", "oidc", "me"] }),
+  });
+  if (!mine.data) return null;
+  return (
+    <div className="spread">
+      <span className="xs muted">
+        {mine.data.linked
+          ? "Your account is linked to your identity at the provider."
+          : "Owners and admins can't sign in with single sign-on until they link their account here."}
+      </span>
+      {mine.data.linked ? (
+        <button className="btn sm quiet" onClick={() => unlink.mutate()}>
+          Unlink
+        </button>
+      ) : (
+        <a className="btn sm" href="/api/v1/auth/oidc/link">
+          Link my account
+        </a>
+      )}
+    </div>
   );
 }

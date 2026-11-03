@@ -94,6 +94,9 @@ func (c OIDCSettings) validate() error {
 			return errors.New("the address of this daemon is like https://conduit.example.com, without a path")
 		}
 	}
+	if len(c.AllowedDomains) == 0 {
+		return errors.New("add at least one allowed email domain, such as your company's; without one, anyone your provider lets set an address could try it")
+	}
 	for _, d := range c.AllowedDomains {
 		if strings.ContainsAny(d, "@/ ") || !strings.Contains(d, ".") {
 			return errors.New("allowed domains are like example.com")
@@ -122,7 +125,10 @@ func (s *Server) oidcRedirect(r *http.Request, c OIDCSettings) string {
 
 type oidcCeremony struct {
 	verifier, nonce, redirect string
-	expires                   time.Time
+	// linkUser is set when a signed-in person links their account to their
+	// identity at the provider, instead of signing in.
+	linkUser string
+	expires  time.Time
 }
 
 var (
@@ -215,6 +221,9 @@ func (s *Server) oidcRoutes() []route {
 		{"GET /api/v1/auth/oidc/settings", s.need("admin:*:*", s.oidcGetSettings)},
 		{"PUT /api/v1/auth/oidc", s.need("admin:*:*", s.oidcPutSettings)},
 		{"GET /api/v1/auth/oidc/start", s.oidcStart},
+		{"GET /api/v1/auth/oidc/link", s.need("", s.oidcLink)},
+		{"GET /api/v1/auth/oidc/me", s.need("", s.oidcMine)},
+		{"DELETE /api/v1/auth/oidc/link", s.need("", s.oidcUnlink)},
 		{"GET " + oidcCallbackPath, s.oidcCallback},
 	}
 }
@@ -290,6 +299,40 @@ func (s *Server) oidcFail(w http.ResponseWriter, r *http.Request, code, detail s
 }
 
 func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
+	s.oidcBegin(w, r, "")
+}
+
+// oidcLink starts the same ceremony for the signed-in person, to link their
+// account to their identity at the provider. Owners and admins must do this
+// before they can use single sign-on.
+func (s *Server) oidcLink(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
+	p, _ := principal(r)
+	s.oidcBegin(w, r, p.User.ID)
+}
+
+// oidcUnlink removes the signed-in person's links.
+func (s *Server) oidcUnlink(w http.ResponseWriter, r *http.Request) {
+	if !s.humanOnly(w, r) {
+		return
+	}
+	p, _ := principal(r)
+	_, _ = s.DB.ExecContext(r.Context(), `DELETE FROM oidc_links WHERE user_id = ?`, p.User.ID)
+	s.auditConfig(r, "oidc_unlinked", "", nil)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// oidcMine reports whether the signed-in person has a linked identity.
+func (s *Server) oidcMine(w http.ResponseWriter, r *http.Request) {
+	p, _ := principal(r)
+	var n int
+	_ = s.DB.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM oidc_links WHERE user_id = ?`, p.User.ID).Scan(&n)
+	writeJSON(w, http.StatusOK, map[string]bool{"linked": n > 0})
+}
+
+func (s *Server) oidcBegin(w http.ResponseWriter, r *http.Request, linkUser string) {
 	if !oidcLimit.Add(requestSource(r)) {
 		s.oidcFail(w, r, "busy", "rate limited")
 		return
@@ -311,7 +354,7 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state, nonce, verifier := randomToken(), randomToken(), oauth2.GenerateVerifier()
-	if !putCeremony(state, oidcCeremony{verifier: verifier, nonce: nonce, redirect: cfg.RedirectURL, expires: time.Now().Add(oidcCeremonyTTL)}) {
+	if !putCeremony(state, oidcCeremony{verifier: verifier, nonce: nonce, redirect: cfg.RedirectURL, linkUser: linkUser, expires: time.Now().Add(oidcCeremonyTTL)}) {
 		s.oidcFail(w, r, "busy", "too many pending sign-ins")
 		return
 	}
@@ -388,15 +431,54 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		s.oidcFail(w, r, "token", err.Error())
 		return
 	}
-	email := strings.ToLower(strings.TrimSpace(claims.Email))
-	// Some providers send email_verified as a string.
-	verified := claims.Verified == true || claims.Verified == "true"
-	if email == "" || !verified {
-		s.oidcFail(w, r, "unverified", "no verified email")
+	if idt.Subject == "" {
+		s.oidcFail(w, r, "token", "no subject")
 		return
 	}
-	domain := email[strings.LastIndex(email, "@")+1:]
-	if len(c.AllowedDomains) > 0 {
+
+	// Linking: the signed-in person who started this ceremony.
+	if cer.linkUser != "" {
+		var other string
+		err := s.DB.QueryRowContext(ctx, `SELECT user_id FROM oidc_links WHERE issuer = ? AND subject = ?`, c.Issuer, idt.Subject).Scan(&other)
+		if err == nil && other != cer.linkUser {
+			s.oidcFail(w, r, "linked_elsewhere", "identity already linked to another account")
+			return
+		}
+		if _, err := s.DB.ExecContext(ctx, `INSERT INTO oidc_links (issuer, subject, user_id, created_at) VALUES (?,?,?,?) ON CONFLICT(issuer, subject) DO NOTHING`,
+			c.Issuer, idt.Subject, cer.linkUser, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			s.oidcFail(w, r, "account", err.Error())
+			return
+		}
+		u, _ := s.Auth.GetUser(ctx, cer.linkUser)
+		in, _ := json.Marshal(map[string]any{"issuer": c.Issuer, "subject": shortHash(idt.Subject)})
+		_, _ = s.Engine.Audit.Append(context.WithoutCancel(ctx), core.Entry{Actor: core.Actor{ID: u.ID, Kind: core.ActorUser, Name: u.Name}, Module: "core", Instance: "auth", Action: "oidc_linked", Risk: sdk.RiskWrite, Decision: core.Allow, Status: "ok", Input: in})
+		http.SetCookie(w, &http.Cookie{Name: oidcStateCookie, Value: "", Path: "/api/v1/auth/oidc", MaxAge: -1, HttpOnly: true})
+		http.Redirect(w, r, "/settings?sso=linked", http.StatusFound)
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+	// Only a JSON true counts: a string could be anything a provider lets
+	// people type.
+	verified := claims.Verified == true
+	var u auth.User
+	created := false
+	var linkedID string
+	err = s.DB.QueryRowContext(ctx, `SELECT user_id FROM oidc_links WHERE issuer = ? AND subject = ?`, c.Issuer, idt.Subject).Scan(&linkedID)
+	switch {
+	case err == nil:
+		// A linked identity: the subject decides, whatever the email says now.
+		u, err = s.Auth.GetUser(ctx, linkedID)
+		if err != nil {
+			s.oidcFail(w, r, "account", "linked account is gone")
+			return
+		}
+	default:
+		if email == "" || !verified {
+			s.oidcFail(w, r, "unverified", "no verified email")
+			return
+		}
+		domain := email[strings.LastIndex(email, "@")+1:]
 		allowed := false
 		for _, d := range c.AllowedDomains {
 			allowed = allowed || d == domain
@@ -405,24 +487,44 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 			s.oidcFail(w, r, "domain", domain)
 			return
 		}
-	}
-	u, err := s.Auth.UserByEmail(ctx, email)
-	created := false
-	if errors.Is(err, sql.ErrNoRows) {
-		// Accounts are only made automatically for an explicit allow-list.
-		if !c.AutoCreate || len(c.AllowedDomains) == 0 {
-			s.oidcFail(w, r, "no_account", email)
+		u, err = s.Auth.UserByEmail(ctx, email)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			if !c.AutoCreate {
+				s.oidcFail(w, r, "no_account", email)
+				return
+			}
+			u, err = s.Auth.CreateUser(ctx, claims.Name, email, randomToken(), c.NewUserRole)
+			if err != nil {
+				s.oidcFail(w, r, "account", err.Error())
+				return
+			}
+			created = true
+		case err != nil:
+			s.oidcFail(w, r, "account", err.Error())
+			return
+		case u.Role == auth.RoleOwner || u.Role == auth.RoleAdmin:
+			// Never by email alone for accounts that can change everything.
+			s.oidcFail(w, r, "link_required", email)
+			return
+		default:
+			// A member or viewer whose account has a link to another
+			// identity at this provider doesn't get a second one by email.
+			var n int
+			_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM oidc_links WHERE user_id = ? AND issuer = ?`, u.ID, c.Issuer).Scan(&n)
+			if n > 0 {
+				s.oidcFail(w, r, "linked_elsewhere", email)
+				return
+			}
+		}
+		if _, err := s.DB.ExecContext(ctx, `INSERT INTO oidc_links (issuer, subject, user_id, created_at) VALUES (?,?,?,?)`,
+			c.Issuer, idt.Subject, u.ID, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			s.oidcFail(w, r, "account", err.Error())
 			return
 		}
-		u, err = s.Auth.CreateUser(ctx, claims.Name, email, randomToken(), c.NewUserRole)
-		created = err == nil
-	}
-	if err != nil {
-		s.oidcFail(w, r, "account", err.Error())
-		return
 	}
 	if u.Disabled {
-		s.oidcFail(w, r, "disabled", email)
+		s.oidcFail(w, r, "disabled", u.Email)
 		return
 	}
 	se, sessTok, err := s.Auth.CreateSession(ctx, u.ID, "Single sign-on, "+r.UserAgent())
@@ -431,7 +533,7 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor := core.Actor{ID: u.ID, Kind: core.ActorUser, Name: u.Name}
-	in, _ := json.Marshal(map[string]any{"issuer": c.Issuer, "email": email, "created": created, "subject": shortHash(idt.Subject)})
+	in, _ := json.Marshal(map[string]any{"issuer": c.Issuer, "email": u.Email, "created": created, "subject": shortHash(idt.Subject)})
 	_, _ = s.Engine.Audit.Append(context.WithoutCancel(ctx), core.Entry{Actor: actor, Module: "core", Instance: "auth", Action: "oidc_login", Risk: sdk.RiskWrite, Decision: core.Allow, Status: "ok", Input: in})
 	http.SetCookie(w, &http.Cookie{Name: oidcStateCookie, Value: "", Path: "/api/v1/auth/oidc", MaxAge: -1, HttpOnly: true})
 	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: sessTok, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,

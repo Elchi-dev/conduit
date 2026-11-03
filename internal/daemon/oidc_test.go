@@ -189,7 +189,7 @@ func TestOIDC(t *testing.T) {
 	}
 
 	// Success: a verified address in an allowed domain gets a member account.
-	idp.claims = map[string]any{"email": "sam@example.com", "email_verified": true, "name": "Sam"}
+	idp.claims = map[string]any{"sub": "sam-at-idp", "email": "sam@example.com", "email_verified": true, "name": "Sam"}
 	b := newBrowser(t)
 	if loc := b.signIn(c.base, idp); loc != "/" {
 		t.Fatalf("signed in to %q", loc)
@@ -214,11 +214,24 @@ func TestOIDC(t *testing.T) {
 			t.Fatalf("%s: redirected to %q, want error %s", name, loc, want)
 		}
 	}
-	idp.claims = map[string]any{"email": "sam@example.com", "email_verified": false}
+	idp.claims = map[string]any{"sub": "u2", "email": "kim@example.com", "email_verified": false}
 	fail("unverified email", "unverified")
-	idp.claims = map[string]any{"email": "eve@elsewhere.org", "email_verified": true}
+	idp.claims = map[string]any{"sub": "u3", "email": "kim@example.com", "email_verified": "true"}
+	fail("email_verified as a string", "unverified")
+	idp.claims = map[string]any{"sub": "u4", "email": "eve@elsewhere.org", "email_verified": true}
 	fail("other domain", "domain")
-	idp.claims = map[string]any{"email": "sam@example.com", "email_verified": true}
+	// Another identity claiming Sam's address doesn't get Sam's account.
+	idp.claims = map[string]any{"sub": "impostor", "email": "sam@example.com", "email_verified": true}
+	fail("second identity for a linked account", "linked_elsewhere")
+	// The owner's address alone never signs in as the owner.
+	idp.claims = map[string]any{"sub": "owner-lookalike", "email": "owner@example.com", "email_verified": true}
+	fail("owner by email", "link_required")
+	// Sam's linked identity signs in even if the provider's email changes.
+	idp.claims = map[string]any{"sub": "sam-at-idp", "email": "sam.renamed@example.com", "email_verified": true}
+	if loc := newBrowser(t).signIn(c.base, idp); loc != "/" {
+		t.Fatalf("linked identity: %q", loc)
+	}
+	idp.claims = map[string]any{"sub": "sam-at-idp", "email": "sam@example.com", "email_verified": true}
 	idp.nonce = "not-the-nonce"
 	fail("wrong nonce", "token")
 	idp.nonce = ""
@@ -237,7 +250,25 @@ func TestOIDC(t *testing.T) {
 		t.Fatalf("replayed callback: %q", loc)
 	}
 
+	// The owner links their identity while signed in, then can use SSO.
+	ob := newBrowser(t)
+	ob.c.Jar.SetCookies(u, []*http.Cookie{{Name: SessionCookie, Value: c.token, Path: "/"}})
+	idp.claims = map[string]any{"sub": "owner-at-idp", "email": "owner@corp.example", "email_verified": true}
+	res = ob.get(c.base + "/api/v1/auth/oidc/link")
+	cb = idp.authorize(t, res.Header.Get("Location"))
+	if loc := ob.get(cb).Header.Get("Location"); loc != "/settings?sso=linked" {
+		t.Fatalf("link: %q", loc)
+	}
+	if loc := newBrowser(t).signIn(c.base, idp); loc != "/" {
+		t.Fatalf("owner after linking: %q", loc)
+	}
+	// Linking needs a person, not an API key or no one.
+	if res := newBrowser(t).get(c.base + "/api/v1/auth/oidc/link"); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous link: %d", res.StatusCode)
+	}
+
 	// Disabled accounts stay out.
+	idp.claims = map[string]any{"sub": "sam-at-idp", "email": "sam@example.com", "email_verified": true}
 	if _, err := app.Store.DB.Exec(`UPDATE users SET disabled = 1 WHERE email = ?`, "sam@example.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -246,8 +277,14 @@ func TestOIDC(t *testing.T) {
 	// Without auto-create, unknown addresses are refused.
 	settings["autoCreate"] = false
 	c.do("PUT", "/api/v1/auth/oidc", settings, nil)
-	idp.claims = map[string]any{"email": "new@example.com", "email_verified": true}
+	idp.claims = map[string]any{"sub": "new-person", "email": "new@example.com", "email_verified": true}
 	fail("no account", "no_account")
+
+	// SSO can't be switched on without an allowed domain.
+	settings["allowedDomains"] = []string{}
+	if code := c.do("PUT", "/api/v1/auth/oidc", settings, nil); code != 400 {
+		t.Fatalf("no allowed domains accepted: %d", code)
+	}
 
 	// Settings are people-only.
 	var k keyResp

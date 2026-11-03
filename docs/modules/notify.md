@@ -10,7 +10,16 @@ instance per channel.
 | Discord | A channel webhook URL (vault) |
 | Slack | An incoming-webhook URL (vault) |
 | Webhook | Any URL; optionally a signing key |
+| Matrix | The homeserver address, an access token (vault) for a bot account that has joined the room, and the room ID (`!abc:example.org`, room settings, Advanced). Messages are sent unencrypted, so use a room without end-to-end encryption or Hide details |
+| Gotify | Your Gotify server and an application token (vault). Priorities map to 2, 5, 8 and 10; notifications open the link when tapped |
+| Email | An SMTP server, port (587 for STARTTLS, 465 for TLS), user and password (vault), From and To addresses. Mail is plain text |
 | Desktop | Nothing; the Conduit desktop app shows it |
+
+**Email and TLS.** Conduit uses implicit TLS on port 465 and STARTTLS on
+other ports, checks the server's certificate, and never sends the SMTP
+password without TLS. A server that doesn't offer TLS only gets mail when it
+runs on this machine (`localhost`), and never a password. Titles go in the
+subject with line breaks removed, so a message can't add headers.
 
 ## Approval requests on your phone
 

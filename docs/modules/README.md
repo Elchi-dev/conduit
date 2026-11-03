@@ -37,6 +37,10 @@ recommended policies.
 | PagerDuty | [pagerduty.md](pagerduty.md) | team, developer |
 | Sentry | [sentry.md](sentry.md) | developer, team |
 | Tailscale | [tailscale.md](tailscale.md) | homelab, developer, team |
+| Hetzner Cloud | [hetzner.md](hetzner.md) | developer, homelab |
+| DigitalOcean | [digitalocean.md](digitalocean.md) | developer |
+| Vercel | [vercel.md](vercel.md) | developer |
+| Fly.io | [fly.md](fly.md) | developer |
 | Files and backups | [files.md](files.md) | homelab, team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |

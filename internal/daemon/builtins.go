@@ -8,13 +8,16 @@ import (
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
+	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/docker"
 	"github.com/elchi-dev/conduit/modules/files"
+	"github.com/elchi-dev/conduit/modules/fly"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
+	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jira"
@@ -37,6 +40,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/truenas"
 	"github.com/elchi-dev/conduit/modules/twitch"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
+	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -85,6 +89,10 @@ func builtins(app *App) []sdk.Module {
 		pagerduty.New(),
 		sentry.New(),
 		tailscale.New(),
+		hetzner.New(),
+		digitalocean.New(),
+		vercel.New(),
+		fly.New(),
 		files.New(),
 		app.Games,
 		notes.New(notesDir),

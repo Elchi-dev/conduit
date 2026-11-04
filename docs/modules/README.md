@@ -47,6 +47,11 @@ recommended policies.
 | UniFi Network | [unifi.md](unifi.md) | homelab |
 | Nextcloud | [nextcloud.md](nextcloud.md) | homelab, team |
 | Ollama | [ollama.md](ollama.md) | developer, gamer, homelab |
+| OpenAI-compatible server | [openaicompat.md](openaicompat.md) | developer |
+| LiteLLM | [litellm.md](litellm.md) | developer |
+| OpenRouter | [openrouter.md](openrouter.md) | developer |
+| ComfyUI | [comfyui.md](comfyui.md) | developer, gamer |
+| Hugging Face | [huggingface.md](huggingface.md) | developer |
 | S3 storage | [s3.md](s3.md) | homelab, developer |
 | Plex | [plex.md](plex.md) | homelab, gamer |
 | Gitea and Forgejo | [gitea.md](gitea.md) | developer, homelab |

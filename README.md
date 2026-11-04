@@ -10,13 +10,13 @@ agents can drive all of it, under rules you set.
 
 ## What's in it
 
-- **135 modules**: vault, this computer, servers over SSH, Docker, mail,
+- **140 modules**: vault, this computer, servers over SSH, Docker, mail,
   calendar, notifications (ntfy, Telegram, Discord, Slack, Matrix, Gotify,
   email), Prometheus, Grafana, uptime checks, Uptime Kuma, UptimeRobot, Healthchecks.io, Better Stack Uptime, GitHub,
   GitLab, Gitea and Forgejo, Bitbucket, Azure DevOps, Woodpecker CI, Jenkins, container registries, Cloudflare (DNS and tunnels), Kubernetes, Argo CD, HCP Terraform, Nomad, Consul, HashiCorp Vault and OpenBao, Harbor, SonarQube and SonarCloud, Portainer, Proxmox VE, TrueNAS, Unraid, Synology DSM, Scrutiny, Network UPS Tools, OPNsense, MikroTik RouterOS, NetBox, AWS, S3 storage, Backblaze B2, Hetzner Cloud,
   DigitalOcean, Vercel, Netlify, Fly.io, Render, Railway, Supabase, PostgreSQL and MySQL, Redis, Tailscale, wg-easy, Syncthing, Speedtest Tracker,
   UniFi, Sentry, Datadog, PagerDuty, Plausible Analytics, Umami, Stripe, listmonk, Ghost, Slack, Mattermost, Jira, Linear, Todoist, Vikunja, Trello, Notion, Outline, BookStack, Nextcloud, Milanote, Paperless-ngx, Karakeep, Firefly III, Mealie, n8n, Home Assistant, MQTT brokers, Zigbee2MQTT, Philips Hue, Shelly, ESPHome, Tasmota,
-  Pi-hole, AdGuard Home, Technitium DNS, PowerDNS, Nginx Proxy Manager, Traefik, Caddy, authentik, Keycloak, Vaultwarden, Jellyfin, Plex, Tautulli, Overseerr and Jellyseerr, Kodi, Navidrome and Subsonic servers, Audiobookshelf, Immich, Frigate, Sonarr, Radarr, Lidarr, Readarr and Prowlarr, qBittorrent, Ollama, Discord, Telegram, Signal, Matrix, Mastodon, Bluesky, Twitch, OBS Studio,
+  Pi-hole, AdGuard Home, Technitium DNS, PowerDNS, Nginx Proxy Manager, Traefik, Caddy, authentik, Keycloak, Vaultwarden, Jellyfin, Plex, Tautulli, Overseerr and Jellyseerr, Kodi, Navidrome and Subsonic servers, Audiobookshelf, Immich, Frigate, Sonarr, Radarr, Lidarr, Readarr and Prowlarr, qBittorrent, Ollama, OpenAI-compatible servers (LM Studio, LocalAI, vLLM, llama.cpp, Jan), LiteLLM, OpenRouter, ComfyUI, Hugging Face, Discord, Telegram, Signal, Matrix, Mastodon, Bluesky, Twitch, OBS Studio,
   Spotify, game servers (Minecraft, Source), Pterodactyl and Pelican, Crafty Controller, AMP, Steam and Xbox (OpenXBL) accounts, files and backups, a game
   library (Steam, Epic, GOG, Riot, Battle.net, EA, Ubisoft, Xbox, itch.io, Lutris), AI standards and toolkits, notes, automations, the daily brief and ambient status. Any MCP
   server mounts as a module; write your own in any language

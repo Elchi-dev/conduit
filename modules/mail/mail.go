@@ -1,18 +1,15 @@
 // Package mail connects any mailbox over IMAP and SMTP: Gmail, Outlook,
-// iCloud, Fastmail, Proton Bridge or a self-hosted server.
+// iCloud, Fastmail, Proton Mail Bridge or a self-hosted server. It reads,
+// searches, threads, sorts, labels, deletes (to Trash, with undo), drafts,
+// sends, replies and forwards, and announces new mail as events.
 package mail
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
-	"io"
 	"net"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,20 +17,32 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	gomsg "github.com/emersion/go-message/mail"
-	gomail "github.com/wneessen/go-mail"
 
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
-// Provider presets fill in server settings.
-var providers = map[string]Config{
-	"gmail":    {IMAPHost: "imap.gmail.com", IMAPPort: 993, SMTPHost: "smtp.gmail.com", SMTPPort: 465, ServerSavesSent: true},
+// preset fills in a provider's servers and habits.
+type preset struct {
+	IMAPHost, SMTPHost string
+	IMAPPort, SMTPPort int
+	Security           string // "" picks by port
+	Trust              string
+	ServerSavesSent    bool
+	LabelMode          string // "folders" or "keywords"
+	LabelPrefix        string
+}
+
+var providers = map[string]preset{
+	"gmail":    {IMAPHost: "imap.gmail.com", IMAPPort: 993, SMTPHost: "smtp.gmail.com", SMTPPort: 465, ServerSavesSent: true, LabelMode: "folders"},
 	"outlook":  {IMAPHost: "outlook.office365.com", IMAPPort: 993, SMTPHost: "smtp.office365.com", SMTPPort: 587, ServerSavesSent: true},
 	"icloud":   {IMAPHost: "imap.mail.me.com", IMAPPort: 993, SMTPHost: "smtp.mail.me.com", SMTPPort: 587},
 	"fastmail": {IMAPHost: "imap.fastmail.com", IMAPPort: 993, SMTPHost: "smtp.fastmail.com", SMTPPort: 465},
 	"yahoo":    {IMAPHost: "imap.mail.yahoo.com", IMAPPort: 993, SMTPHost: "smtp.mail.yahoo.com", SMTPPort: 465},
-	"proton":   {IMAPHost: "127.0.0.1", IMAPPort: 1143, SMTPHost: "127.0.0.1", SMTPPort: 1025, InsecureLocal: true},
+	// Proton Mail Bridge runs on this machine with a self-signed certificate
+	// and STARTTLS on both ports. Its labels are folders under "Labels/", and
+	// it files sent mail in Sent itself.
+	"proton": {IMAPHost: "127.0.0.1", IMAPPort: 1143, SMTPHost: "127.0.0.1", SMTPPort: 1025, Security: secStartTLS, Trust: trustPinned,
+		ServerSavesSent: true, LabelMode: "folders", LabelPrefix: "Labels/"},
 }
 
 // Config is one mailbox's settings.
@@ -42,108 +51,86 @@ type Config struct {
 	Email    string `json:"email"`
 	Name     string `json:"name"`
 	Username string `json:"username"`
-	Password string `json:"password"` // secret:// reference (app password)
+	Password string `json:"password"` // secret:// reference (app or Bridge password)
 	IMAPHost string `json:"imapHost"`
 	IMAPPort int    `json:"imapPort"`
 	SMTPHost string `json:"smtpHost"`
 	SMTPPort int    `json:"smtpPort"`
-	// ServerSavesSent: the provider stores sent mail itself (Gmail, Outlook).
-	ServerSavesSent bool `json:"serverSavesSent"`
-	// InsecureLocal allows plain connections to 127.0.0.1 (Proton Bridge).
+	// Security is "tls", "starttls" or "none" (loopback only); empty picks
+	// by port, or the provider's choice.
+	Security     string `json:"security"`
+	SMTPSecurity string `json:"smtpSecurity"`
+	// TLSTrust is "system" (certificate authorities) or "pinned" (one
+	// certificate, trusted on first use or given below).
+	TLSTrust       string `json:"tlsTrust"`
+	TLSCertificate string `json:"tlsCertificate"` // PEM, e.g. Proton Bridge's exported cert.pem
+	TLSFingerprint string `json:"tlsFingerprint"` // SHA-256 hex
+	// ServerSavesSent: the provider stores sent mail itself.
+	ServerSavesSent *bool `json:"serverSavesSent"`
+	// InsecureLocal is the old Proton setting; it now only allows a plain
+	// connection when Security is empty and the host is loopback.
 	InsecureLocal bool `json:"insecureLocal"`
-	// Watch publishes mail.received events for new mail.
-	Watch bool `json:"watch"`
-}
-
-func (c *Config) applyProvider() {
-	p, ok := providers[c.Provider]
-	if !ok {
-		return
-	}
-	if c.IMAPHost == "" {
-		c.IMAPHost, c.IMAPPort = p.IMAPHost, p.IMAPPort
-	}
-	if c.SMTPHost == "" {
-		c.SMTPHost, c.SMTPPort = p.SMTPHost, p.SMTPPort
-	}
-	if !c.ServerSavesSent {
-		c.ServerSavesSent = p.ServerSavesSent
-	}
-	if !c.InsecureLocal {
-		c.InsecureLocal = p.InsecureLocal
-	}
+	// LabelMode is "folders" (a label is a folder: Proton, Gmail) or
+	// "keywords" (IMAP keywords).
+	LabelMode   string `json:"labelMode"`
+	LabelPrefix string `json:"labelPrefix"`
+	// AttachmentsDir is the folder attachments may be read from when
+	// sending by path (for example the Files module's folder).
+	AttachmentsDir  string `json:"attachmentsDir"`
+	MaxAttachmentMB int    `json:"maxAttachmentMB"`
+	// Watch publishes mail.received and mail.unread events.
+	Watch        bool `json:"watch"`
+	WatchSeconds int  `json:"watchSeconds"`
 }
 
 type account struct {
-	cfg  Config
-	host sdk.Host
+	id    string
+	cfg   Config
+	host  sdk.Host
+	state *state
+
+	imapSec, smtpSec string
+	trust            string
+	configPin        string // from tlsFingerprint or tlsCertificate
+	configPinSource  string
+	saveSent         bool
+	labelMode        string
+	labelPrefix      string
+	maxAttach        int64
 
 	mu   sync.Mutex
 	conn *imapclient.Client
 
-	stop    context.CancelFunc
-	lastUID imap.UID
+	stop context.CancelFunc
+	done chan struct{}
+}
+
+func (a *account) log(level, msg string, kv ...any) {
+	if a.host != nil {
+		a.host.Log(level, msg, kv...)
+	}
 }
 
 // Module implements sdk.Module.
 type Module struct {
+	// Dir holds each instance's state (pinned certificates, watcher
+	// position). Empty uses the daemon's default data folder.
+	Dir string
+
 	mu       sync.Mutex
 	accounts map[string]*account
 	// dial is replaceable in tests.
 	dial func(ctx context.Context, a *account) (*imapclient.Client, error)
+	// now is replaceable in tests.
+	now func() time.Time
 }
 
 // New returns the mail module.
 func New() *Module {
-	m := &Module{accounts: map[string]*account{}}
+	m := &Module{accounts: map[string]*account{}, now: time.Now}
 	m.dial = dialIMAP
 	return m
 }
-
-// Manifest implements sdk.Module.
-func (m *Module) Manifest() sdk.Manifest {
-	uid := `{"type":"object","required":["uid"],"properties":{"uid":{"type":"integer"},"mailbox":{"type":"string","default":"INBOX"}}}`
-	return sdk.Manifest{
-		ID: "mail", Name: "Mail", Version: "0.1.0", Category: "Communication", Icon: "mail",
-		Description: "Any mailbox over IMAP and SMTP: read, search, send, sort.",
-		Presets:     []string{"developer", "gamer", "homelab", "team"},
-		ConfigSchema: sdk.Schema(`{"type":"object","required":["email","password"],"properties":{
-			"provider":{"type":"string","enum":["gmail","outlook","icloud","fastmail","yahoo","proton","other"],"default":"gmail","description":"Fills in the server settings below"},
-			"email":{"type":"string","description":"Your address"},
-			"name":{"type":"string","description":"Name shown on mail you send"},
-			"username":{"type":"string","description":"Login, if not your address"},
-			"password":{"type":"string","x-secret":true,"description":"Vault reference to an app password. Gmail, Outlook and iCloud need an app password, not your normal one."},
-			"imapHost":{"type":"string"},"imapPort":{"type":"integer"},
-			"smtpHost":{"type":"string"},"smtpPort":{"type":"integer"},
-			"watch":{"type":"boolean","title":"Announce new mail","description":"Check every 2 minutes and publish an event for automations and notifications"}}}`),
-		Actions: []sdk.ActionSpec{
-			{Name: "inbox", Title: "Inbox", Description: "Newest messages.", Risk: sdk.RiskRead,
-				Input: sdk.Schema(`{"type":"object","properties":{"mailbox":{"type":"string","default":"INBOX"},"limit":{"type":"integer","default":30,"maximum":200},"unreadOnly":{"type":"boolean"}}}`)},
-			{Name: "search", Title: "Search", Risk: sdk.RiskRead,
-				Input: sdk.Schema(`{"type":"object","properties":{"text":{"type":"string","description":"Words anywhere in the message"},"from":{"type":"string"},"subject":{"type":"string"},"sinceDays":{"type":"integer"},"unreadOnly":{"type":"boolean"},"mailbox":{"type":"string","default":"INBOX"},"limit":{"type":"integer","default":50}}}`)},
-			{Name: "read", Title: "Read a message", Description: "Text, sender and attachments. Doesn't mark it read.", Risk: sdk.RiskRead, Input: sdk.Schema(uid)},
-			{Name: "mailboxes", Title: "Folders", Risk: sdk.RiskRead},
-			{Name: "mark_read", Title: "Mark read", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(uid)},
-			{Name: "mark_unread", Title: "Mark unread", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(uid)},
-			{Name: "flag", Title: "Flag", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(uid)},
-			{Name: "unflag", Title: "Remove flag", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(uid)},
-			{Name: "move", Title: "Move to folder", Risk: sdk.RiskWrite, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["uid","to"],"properties":{"uid":{"type":"integer"},"mailbox":{"type":"string","default":"INBOX"},"to":{"type":"string","description":"Folder name, e.g. Archive"}}}`)},
-			{Name: "draft", Title: "Save a draft", Description: "Write a message into Drafts without sending it.", Risk: sdk.RiskWrite,
-				Input: sdk.Schema(composeSchema)},
-			{Name: "send", Title: "Send", Description: "Send a message from this address.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(composeSchema)},
-		},
-		Events: []sdk.EventSpec{{Type: "mail.received", Description: "New messages arrived (when Announce new mail is on)"}},
-	}
-}
-
-const composeSchema = `{"type":"object","required":["to","subject","body"],"properties":{
-	"to":{"type":"array","items":{"type":"string"}},
-	"cc":{"type":"array","items":{"type":"string"}},
-	"subject":{"type":"string"},
-	"body":{"type":"string","x-multiline":true},
-	"replyToUid":{"type":"integer","description":"Reply in the thread of this message (INBOX)"}}}`
 
 // Configure implements sdk.Module.
 func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.RawMessage) error {
@@ -151,12 +138,47 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("invalid settings: %w", err)
 	}
-	cfg.applyProvider()
+	a, err := newAccount(id, cfg, h)
+	if err != nil {
+		return err
+	}
+	dir := m.Dir
+	if dir == "" {
+		if d, ok := h.(interface{ DataDir() string }); ok && d.DataDir() != "" {
+			dir = d.DataDir()
+		} else {
+			dir = defaultDir("mail")
+		}
+	}
+	a.state = openState(dir, id)
+
+	m.mu.Lock()
+	if old := m.accounts[id]; old != nil {
+		old.close()
+	}
+	m.accounts[id] = a
+	m.mu.Unlock()
+	if a.cfg.Watch {
+		ctx, cancel := context.WithCancel(context.Background())
+		a.stop, a.done = cancel, make(chan struct{})
+		go m.watch(ctx, a)
+	}
+	return nil
+}
+
+func newAccount(id string, cfg Config, h sdk.Host) (*account, error) {
+	p := providers[cfg.Provider]
+	if cfg.IMAPHost == "" {
+		cfg.IMAPHost, cfg.IMAPPort = p.IMAPHost, p.IMAPPort
+	}
+	if cfg.SMTPHost == "" {
+		cfg.SMTPHost, cfg.SMTPPort = p.SMTPHost, p.SMTPPort
+	}
 	if cfg.Email == "" || cfg.Password == "" {
-		return errors.New("email and password are required")
+		return nil, errors.New("email and password are required")
 	}
 	if cfg.IMAPHost == "" || cfg.SMTPHost == "" {
-		return errors.New("choose a provider or fill in the IMAP and SMTP servers")
+		return nil, errors.New("choose a provider or fill in the IMAP and SMTP servers")
 	}
 	if cfg.IMAPPort == 0 {
 		cfg.IMAPPort = 993
@@ -167,24 +189,82 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if cfg.Username == "" {
 		cfg.Username = cfg.Email
 	}
-	a := &account{cfg: cfg, host: h}
-	m.mu.Lock()
-	if old := m.accounts[id]; old != nil {
-		old.close()
+	a := &account{id: id, cfg: cfg, host: h}
+	var err error
+	sec := cfg.Security
+	if sec == "" {
+		sec = p.Security
 	}
-	m.accounts[id] = a
-	m.mu.Unlock()
-	if cfg.Watch {
-		ctx, cancel := context.WithCancel(context.Background())
-		a.stop = cancel
-		go m.watch(ctx, id, a)
+	if a.imapSec, err = security(sec, cfg.IMAPHost, cfg.IMAPPort, cfg.InsecureLocal); err != nil {
+		return nil, fmt.Errorf("IMAP: %w", err)
 	}
-	return nil
+	ssec := cfg.SMTPSecurity
+	if ssec == "" {
+		ssec = p.Security // else picked by the SMTP port
+		if strings.EqualFold(cfg.Security, secNone) {
+			ssec = secNone
+		}
+	}
+	if a.smtpSec, err = security(ssec, cfg.SMTPHost, cfg.SMTPPort, cfg.InsecureLocal); err != nil {
+		return nil, fmt.Errorf("SMTP: %w", err)
+	}
+
+	a.trust = strings.ToLower(cfg.TLSTrust)
+	if a.trust == "" {
+		a.trust = p.Trust
+	}
+	if cfg.TLSCertificate != "" || cfg.TLSFingerprint != "" {
+		a.trust = trustPinned
+	}
+	if a.trust == "" {
+		a.trust = trustSystem
+	}
+	if a.trust != trustSystem && a.trust != trustPinned {
+		return nil, fmt.Errorf("unknown certificate trust %q (use system or pinned)", cfg.TLSTrust)
+	}
+	switch {
+	case cfg.TLSFingerprint != "":
+		if a.configPin, err = normFingerprint(cfg.TLSFingerprint); err != nil {
+			return nil, err
+		}
+		a.configPinSource = "settings (fingerprint)"
+	case cfg.TLSCertificate != "":
+		fp, _, err := pemFingerprint(cfg.TLSCertificate)
+		if err != nil {
+			return nil, err
+		}
+		a.configPin, a.configPinSource = fp, "settings (certificate)"
+	}
+
+	a.saveSent = !p.ServerSavesSent
+	if cfg.ServerSavesSent != nil {
+		a.saveSent = !*cfg.ServerSavesSent
+	}
+	a.labelMode, a.labelPrefix = cfg.LabelMode, cfg.LabelPrefix
+	if a.labelMode == "" {
+		a.labelMode = p.LabelMode
+		if a.labelPrefix == "" {
+			a.labelPrefix = p.LabelPrefix
+		}
+	}
+	if a.labelMode == "" {
+		a.labelMode = "keywords"
+	}
+	if a.labelMode != "folders" && a.labelMode != "keywords" {
+		return nil, fmt.Errorf("unknown label mode %q (use folders or keywords)", cfg.LabelMode)
+	}
+	mb := cfg.MaxAttachmentMB
+	if mb <= 0 || mb > 50 {
+		mb = 25
+	}
+	a.maxAttach = int64(mb) << 20
+	return a, nil
 }
 
 func (a *account) close() {
 	if a.stop != nil {
 		a.stop()
+		<-a.done
 	}
 	a.mu.Lock()
 	if a.conn != nil {
@@ -221,22 +301,26 @@ func dialIMAP(ctx context.Context, a *account) (*imapclient.Client, error) {
 		return nil, fmt.Errorf("password: %w", err)
 	}
 	addr := net.JoinHostPort(a.cfg.IMAPHost, strconv.Itoa(a.cfg.IMAPPort))
-	opts := &imapclient.Options{Dialer: &net.Dialer{Timeout: 15 * time.Second}}
+	opts := &imapclient.Options{Dialer: &net.Dialer{Timeout: 15 * time.Second}, TLSConfig: a.tlsConfig("imap", a.cfg.IMAPHost)}
 	var c *imapclient.Client
-	switch {
-	case a.cfg.InsecureLocal && (a.cfg.IMAPHost == "127.0.0.1" || a.cfg.IMAPHost == "localhost"):
+	switch a.imapSec {
+	case secNone:
 		c, err = imapclient.DialInsecure(addr, opts)
-	case a.cfg.IMAPPort == 143:
+	case secStartTLS:
 		c, err = imapclient.DialStartTLS(addr, opts)
 	default:
 		c, err = imapclient.DialTLS(addr, opts)
 	}
 	if err != nil {
-		return nil, err
+		return nil, tlsHint(err)
 	}
 	if err := c.Login(a.cfg.Username, pw).Wait(); err != nil {
 		c.Close()
-		return nil, fmt.Errorf("sign-in failed (for Gmail, Outlook and iCloud use an app password): %w", err)
+		hint := "for Gmail, Outlook and iCloud use an app password"
+		if a.cfg.Provider == "proton" {
+			hint = "use the password Proton Mail Bridge shows for this account, not your Proton password"
+		}
+		return nil, fmt.Errorf("sign-in failed (%s): %w", hint, err)
 	}
 	return c, nil
 }
@@ -258,14 +342,25 @@ func (m *Module) with(ctx context.Context, a *account, f func(c *imapclient.Clie
 			return nil
 		}
 		var ie *imap.Error
-		if errors.As(err, &ie) || attempt == 1 {
+		if errors.As(err, &ie) || attempt == 1 || ctx.Err() != nil {
 			return err // a protocol answer, not a dead connection
+		}
+		var ue userError
+		if errors.As(err, &ue) {
+			return err
 		}
 		_ = a.conn.Close()
 		a.conn = nil
 	}
 	return nil
 }
+
+// userError is a problem with the request, not the connection.
+type userError struct{ msg string }
+
+func (e userError) Error() string { return e.msg }
+
+func userErr(format string, args ...any) error { return userError{fmt.Sprintf(format, args...)} }
 
 // Health implements sdk.Module.
 func (m *Module) Health(ctx context.Context, id string) sdk.Health {
@@ -284,575 +379,34 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 		}
 		return nil
 	})
+	tlsNote := ""
+	if a.trust == trustPinned && a.imapSec != secNone {
+		if fp := a.pinFor("imap"); fp != "" {
+			src := "pinned on first use"
+			if a.configPin != "" {
+				src = "pinned in settings"
+			}
+			tlsNote = fmt.Sprintf("; certificate %s SHA-256 %s", src, fp)
+		}
+	}
+	if a.imapSec == secNone || a.smtpSec == secNone {
+		tlsNote += "; unencrypted (this machine only)"
+	}
 	if err != nil {
-		return sdk.Health{Status: "down", Message: err.Error()}
+		return sdk.Health{Status: "down", Message: err.Error() + tlsNote}
 	}
-	return sdk.Health{Status: "ok", Message: fmt.Sprintf("%d unread", unseen)}
+	return sdk.Health{Status: "ok", Message: fmt.Sprintf("%d unread%s", unseen, tlsNote)}
 }
 
-// Summary is a message in a list.
-type Summary struct {
-	UID     uint32   `json:"uid"`
-	From    string   `json:"from"`
-	Subject string   `json:"subject"`
-	Date    string   `json:"date"`
-	Unread  bool     `json:"unread"`
-	Flagged bool     `json:"flagged"`
-	Size    int64    `json:"sizeKB,omitempty"`
-	Labels  []string `json:"-"`
-}
-
-func addrs(list []imap.Address) string {
-	var out []string
-	for _, a := range list {
-		if a.Name != "" {
-			out = append(out, a.Name+" <"+a.Addr()+">")
-		} else {
-			out = append(out, a.Addr())
-		}
-	}
-	return strings.Join(out, ", ")
-}
-
-func summarize(msgs []*imapclient.FetchMessageBuffer) []Summary {
-	out := make([]Summary, 0, len(msgs))
-	for _, msg := range msgs {
-		s := Summary{UID: uint32(msg.UID), Unread: true, Size: msg.RFC822Size / 1024}
-		for _, f := range msg.Flags {
-			switch f {
-			case imap.FlagSeen:
-				s.Unread = false
-			case imap.FlagFlagged:
-				s.Flagged = true
-			}
-		}
-		if e := msg.Envelope; e != nil {
-			s.From, s.Subject = addrs(e.From), e.Subject
-			if !e.Date.IsZero() {
-				s.Date = e.Date.Format(time.RFC3339)
-			}
-		}
-		out = append(out, s)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].UID > out[j].UID })
-	return out
-}
-
-func listFetch() *imap.FetchOptions {
-	return &imap.FetchOptions{UID: true, Flags: true, Envelope: true, RFC822Size: true}
-}
-
-type uidIn struct {
-	UID     uint32 `json:"uid"`
-	Mailbox string `json:"mailbox"`
-	To      string `json:"to"`
-}
-
-func (u *uidIn) mailbox() string {
-	if u.Mailbox == "" {
-		return "INBOX"
-	}
-	return u.Mailbox
-}
-
-// Invoke implements sdk.Module.
-func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
-	a, err := m.account(c.Instance)
-	if err != nil {
-		return sdk.Result{}, err
-	}
-	switch c.Action {
-	case "inbox", "search":
-		var in struct {
-			Mailbox    string `json:"mailbox"`
-			Limit      int    `json:"limit"`
-			UnreadOnly bool   `json:"unreadOnly"`
-			Text       string `json:"text"`
-			From       string `json:"from"`
-			Subject    string `json:"subject"`
-			SinceDays  int    `json:"sinceDays"`
-		}
-		if err := sdk.Decode(c, &in); err != nil {
-			return sdk.Result{}, err
-		}
-		if in.Mailbox == "" {
-			in.Mailbox = "INBOX"
-		}
-		if in.Limit <= 0 || in.Limit > 200 {
-			in.Limit = 30
-		}
-		crit := &imap.SearchCriteria{}
-		if in.UnreadOnly {
-			crit.NotFlag = []imap.Flag{imap.FlagSeen}
-		}
-		if in.Text != "" {
-			crit.Text = []string{in.Text}
-		}
-		if in.From != "" {
-			crit.Header = append(crit.Header, imap.SearchCriteriaHeaderField{Key: "From", Value: in.From})
-		}
-		if in.Subject != "" {
-			crit.Header = append(crit.Header, imap.SearchCriteriaHeaderField{Key: "Subject", Value: in.Subject})
-		}
-		if in.SinceDays > 0 {
-			crit.Since = time.Now().AddDate(0, 0, -in.SinceDays)
-		}
-		var list []Summary
-		err := m.with(ctx, a, func(cl *imapclient.Client) error {
-			if _, err := cl.Select(in.Mailbox, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-				return err
-			}
-			res, err := cl.UIDSearch(crit, nil).Wait()
-			if err != nil {
-				return err
-			}
-			uids := res.AllUIDs()
-			if len(uids) == 0 {
-				list = []Summary{}
-				return nil
-			}
-			sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
-			if len(uids) > in.Limit {
-				uids = uids[:in.Limit]
-			}
-			msgs, err := cl.Fetch(imap.UIDSetNum(uids...), listFetch()).Collect()
-			if err != nil {
-				return err
-			}
-			list = summarize(msgs)
-			return nil
-		})
-		if err != nil {
-			return sdk.Result{}, err
-		}
-		return sdk.JSON(list)
-
-	case "read":
-		var in uidIn
-		if err := sdk.Decode(c, &in); err != nil || in.UID == 0 {
-			return sdk.Result{}, errors.New("uid is required")
-		}
-		var msg *Message
-		err := m.with(ctx, a, func(cl *imapclient.Client) error {
-			if _, err := cl.Select(in.mailbox(), &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-				return err
-			}
-			sec := &imap.FetchItemBodySection{Peek: true}
-			msgs, err := cl.Fetch(imap.UIDSetNum(imap.UID(in.UID)), &imap.FetchOptions{UID: true, Flags: true, Envelope: true, RFC822Size: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
-			if err != nil {
-				return err
-			}
-			if len(msgs) == 0 {
-				return fmt.Errorf("no message %d in %s", in.UID, in.mailbox())
-			}
-			if msgs[0].RFC822Size > 25<<20 {
-				return errors.New("message is larger than 25 MB")
-			}
-			msg, err = parse(msgs[0], msgs[0].FindBodySection(sec))
-			return err
-		})
-		if err != nil {
-			return sdk.Result{}, err
-		}
-		return sdk.JSON(msg)
-
-	case "mailboxes":
-		var out []map[string]any
-		err := m.with(ctx, a, func(cl *imapclient.Client) error {
-			list, err := cl.List("", "*", &imap.ListOptions{ReturnStatus: &imap.StatusOptions{NumMessages: true, NumUnseen: true}}).Collect()
-			if err != nil {
-				return err
-			}
-			for _, l := range list {
-				row := map[string]any{"name": l.Mailbox}
-				for _, attr := range l.Attrs {
-					if s := specialUse(attr); s != "" {
-						row["role"] = s
-					}
-				}
-				if l.Status != nil {
-					if l.Status.NumMessages != nil {
-						row["messages"] = *l.Status.NumMessages
-					}
-					if l.Status.NumUnseen != nil {
-						row["unread"] = *l.Status.NumUnseen
-					}
-				}
-				out = append(out, row)
-			}
-			return nil
-		})
-		if err != nil {
-			return sdk.Result{}, err
-		}
-		return sdk.JSON(out)
-
-	case "mark_read", "mark_unread", "flag", "unflag":
-		var in uidIn
-		if err := sdk.Decode(c, &in); err != nil || in.UID == 0 {
-			return sdk.Result{}, errors.New("uid is required")
-		}
-		flag, op, inverse := imap.FlagSeen, imap.StoreFlagsAdd, "mark_unread"
-		switch c.Action {
-		case "mark_unread":
-			op, inverse = imap.StoreFlagsDel, "mark_read"
-		case "flag":
-			flag, inverse = imap.FlagFlagged, "unflag"
-		case "unflag":
-			flag, op, inverse = imap.FlagFlagged, imap.StoreFlagsDel, "flag"
-		}
-		err := m.with(ctx, a, func(cl *imapclient.Client) error {
-			if _, err := cl.Select(in.mailbox(), nil).Wait(); err != nil {
-				return err
-			}
-			return cl.Store(imap.UIDSetNum(imap.UID(in.UID)), &imap.StoreFlags{Op: op, Silent: true, Flags: []imap.Flag{flag}}, nil).Close()
-		})
-		if err != nil {
-			return sdk.Result{}, err
-		}
-		r, err := sdk.JSON(map[string]any{"uid": in.UID, "done": c.Action})
-		r.Undo = sdk.UndoWith(inverse, map[string]any{"uid": in.UID, "mailbox": in.mailbox()}, "Undo "+strings.ReplaceAll(c.Action, "_", " "))
-		return r, err
-
-	case "move":
-		var in uidIn
-		if err := sdk.Decode(c, &in); err != nil || in.UID == 0 || in.To == "" {
-			return sdk.Result{}, errors.New("uid and to are required")
-		}
-		var newUID uint32
-		err := m.with(ctx, a, func(cl *imapclient.Client) error {
-			if _, err := cl.Select(in.mailbox(), nil).Wait(); err != nil {
-				return err
-			}
-			data, err := cl.Move(imap.UIDSetNum(imap.UID(in.UID)), in.To).Wait()
-			if err != nil {
-				return err
-			}
-			if data != nil {
-				if uids, ok := data.DestUIDs.(imap.UIDSet); ok {
-					if list, ok := uids.Nums(); ok && len(list) == 1 {
-						newUID = uint32(list[0])
-					}
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return sdk.Result{}, err
-		}
-		r, err := sdk.JSON(map[string]any{"uid": in.UID, "movedTo": in.To, "newUid": newUID})
-		if newUID != 0 {
-			r.Undo = sdk.UndoWith("move", map[string]any{"uid": newUID, "mailbox": in.To, "to": in.mailbox()}, "Move back to "+in.mailbox())
-		}
-		return r, err
-
-	case "draft", "send":
-		var in Compose
-		if err := sdk.Decode(c, &in); err != nil {
-			return sdk.Result{}, err
-		}
-		if len(in.To) == 0 || in.Subject == "" {
-			return sdk.Result{}, errors.New("to and subject are required")
-		}
-		if c.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{
-				Summary: fmt.Sprintf("Send %q from %s", in.Subject, a.cfg.Email),
-				Changes: []sdk.Change{{Target: strings.Join(append(append([]string{}, in.To...), in.CC...), ", "), Op: "send",
-					After: mustJSON(map[string]any{"subject": in.Subject, "body": truncate(in.Body, 2000)})}},
-			}}, nil
-		}
-		return m.compose(ctx, a, in, c.Action == "send")
-	}
-	return sdk.Result{}, sdk.ErrUnknownAction(c.Action)
-}
-
-func specialUse(a imap.MailboxAttr) string {
-	switch a {
-	case imap.MailboxAttrSent:
-		return "sent"
-	case imap.MailboxAttrDrafts:
-		return "drafts"
-	case imap.MailboxAttrTrash:
-		return "trash"
-	case imap.MailboxAttrArchive:
-		return "archive"
-	case imap.MailboxAttrJunk:
-		return "junk"
-	case imap.MailboxAttrAll:
-		return "all"
-	}
-	return ""
-}
-
-// Compose is a message to send or save.
-type Compose struct {
-	To         []string `json:"to"`
-	CC         []string `json:"cc"`
-	Subject    string   `json:"subject"`
-	Body       string   `json:"body"`
-	ReplyToUID uint32   `json:"replyToUid"`
-}
-
-func (m *Module) folder(ctx context.Context, a *account, role imap.MailboxAttr, fallback string) string {
-	name := fallback
-	_ = m.with(ctx, a, func(cl *imapclient.Client) error {
-		list, err := cl.List("", "*", nil).Collect()
-		if err != nil {
-			return err
-		}
-		for _, l := range list {
-			for _, at := range l.Attrs {
-				if at == role {
-					name = l.Mailbox
-				}
-			}
-		}
-		return nil
-	})
-	return name
-}
-
-func (m *Module) compose(ctx context.Context, a *account, in Compose, send bool) (sdk.Result, error) {
-	msg := gomail.NewMsg()
-	from := a.cfg.Email
-	if a.cfg.Name != "" {
-		from = fmt.Sprintf("%q <%s>", a.cfg.Name, a.cfg.Email)
-	}
-	if err := msg.From(from); err != nil {
-		return sdk.Result{}, err
-	}
-	if err := msg.To(in.To...); err != nil {
-		return sdk.Result{}, err
-	}
-	if len(in.CC) > 0 {
-		if err := msg.Cc(in.CC...); err != nil {
-			return sdk.Result{}, err
-		}
-	}
-	subject := in.Subject
-	if in.ReplyToUID != 0 {
-		var orig *imapclient.FetchMessageBuffer
-		_ = m.with(ctx, a, func(cl *imapclient.Client) error {
-			if _, err := cl.Select("INBOX", &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-				return err
-			}
-			msgs, err := cl.Fetch(imap.UIDSetNum(imap.UID(in.ReplyToUID)), &imap.FetchOptions{Envelope: true}).Collect()
-			if err == nil && len(msgs) == 1 {
-				orig = msgs[0]
-			}
-			return err
-		})
-		if orig != nil && orig.Envelope != nil && orig.Envelope.MessageID != "" {
-			id := "<" + orig.Envelope.MessageID + ">"
-			msg.SetGenHeader(gomail.HeaderInReplyTo, id)
-			msg.SetGenHeader(gomail.HeaderReferences, id)
-			if !strings.HasPrefix(strings.ToLower(subject), "re:") {
-				subject = "Re: " + subject
-			}
-		}
-	}
-	msg.Subject(subject)
-	msg.SetDate()
-	msg.SetMessageID()
-	msg.SetBodyString(gomail.TypeTextPlain, in.Body)
-	var raw bytes.Buffer
-	if _, err := msg.WriteTo(&raw); err != nil {
-		return sdk.Result{}, err
-	}
-
-	if send {
-		pw, err := a.host.Secret(ctx, a.cfg.Password)
-		if err != nil {
-			return sdk.Result{}, fmt.Errorf("password: %w", err)
-		}
-		opts := []gomail.Option{gomail.WithPort(a.cfg.SMTPPort), gomail.WithSMTPAuth(gomail.SMTPAuthAutoDiscover),
-			gomail.WithUsername(a.cfg.Username), gomail.WithPassword(pw), gomail.WithTimeout(30 * time.Second)}
-		switch {
-		case a.cfg.InsecureLocal && (a.cfg.SMTPHost == "127.0.0.1" || a.cfg.SMTPHost == "localhost"):
-			opts = append(opts, gomail.WithTLSPolicy(gomail.NoTLS))
-		case a.cfg.SMTPPort == 465:
-			opts = append(opts, gomail.WithSSL())
-		default:
-			opts = append(opts, gomail.WithTLSPolicy(gomail.TLSMandatory))
-		}
-		client, err := gomail.NewClient(a.cfg.SMTPHost, opts...)
-		if err != nil {
-			return sdk.Result{}, err
-		}
-		if err := client.DialAndSendWithContext(ctx, msg); err != nil {
-			return sdk.Result{}, fmt.Errorf("sending failed: %w", err)
-		}
-		if !a.cfg.ServerSavesSent {
-			sent := m.folder(ctx, a, imap.MailboxAttrSent, "Sent")
-			_ = m.appendTo(ctx, a, sent, raw.Bytes(), []imap.Flag{imap.FlagSeen})
-		}
-		return sdk.JSON(map[string]any{"sent": true, "to": in.To, "subject": subject, "messageId": msg.GetMessageID()})
-	}
-
-	drafts := m.folder(ctx, a, imap.MailboxAttrDrafts, "Drafts")
-	if err := m.appendTo(ctx, a, drafts, raw.Bytes(), []imap.Flag{imap.FlagDraft, imap.FlagSeen}); err != nil {
-		return sdk.Result{}, err
-	}
-	return sdk.JSON(map[string]any{"saved": true, "folder": drafts, "subject": subject})
-}
-
-func (m *Module) appendTo(ctx context.Context, a *account, mailbox string, raw []byte, flags []imap.Flag) error {
-	return m.with(ctx, a, func(cl *imapclient.Client) error {
-		cmd := cl.Append(mailbox, int64(len(raw)), &imap.AppendOptions{Flags: flags, Time: time.Now()})
-		if _, err := cmd.Write(raw); err != nil {
-			return err
-		}
-		if err := cmd.Close(); err != nil {
-			return err
-		}
-		_, err := cmd.Wait()
-		return err
-	})
-}
-
-// watch polls INBOX for new UIDs and publishes mail.received.
-func (m *Module) watch(ctx context.Context, id string, a *account) {
-	tick := time.NewTicker(2 * time.Minute)
-	defer tick.Stop()
-	for {
-		var fresh []Summary
-		_ = m.with(ctx, a, func(cl *imapclient.Client) error {
-			sel, err := cl.Select("INBOX", &imap.SelectOptions{ReadOnly: true}).Wait()
-			if err != nil {
-				return err
-			}
-			next := sel.UIDNext
-			if a.lastUID == 0 {
-				a.lastUID = next - 1 // first run: only announce mail that arrives from now on
-				return nil
-			}
-			if next-1 <= a.lastUID {
-				return nil
-			}
-			msgs, err := cl.Fetch(imap.UIDSetNum(uidRange(a.lastUID+1, next-1)...), listFetch()).Collect()
-			if err != nil {
-				return err
-			}
-			fresh = summarize(msgs)
-			a.lastUID = next - 1
-			return nil
-		})
-		if len(fresh) > 0 && a.host != nil {
-			a.host.Publish(ctx, sdk.Event{Type: "mail.received", Instance: id, Data: mustJSON(map[string]any{"count": len(fresh), "messages": fresh})})
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-		}
-	}
-}
-
-func uidRange(from, to imap.UID) []imap.UID {
-	if to-from > 200 {
-		from = to - 200
-	}
-	var out []imap.UID
-	for u := from; u <= to; u++ {
-		out = append(out, u)
-	}
-	return out
-}
-
-// Message is a parsed message.
-type Message struct {
-	UID         uint32       `json:"uid"`
-	From        string       `json:"from"`
-	To          string       `json:"to"`
-	CC          string       `json:"cc,omitempty"`
-	Subject     string       `json:"subject"`
-	Date        string       `json:"date"`
-	Text        string       `json:"text"`
-	Attachments []Attachment `json:"attachments"`
-}
-
-// Attachment describes an attached file.
-type Attachment struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	SizeKB int    `json:"sizeKB"`
-}
-
-var (
-	tagRe   = regexp.MustCompile(`(?s)<(script|style)[^>]*>.*?</(script|style)>|<[^>]+>`)
-	blankRe = regexp.MustCompile(`\n{3,}`)
-	brRe    = regexp.MustCompile(`(?i)<br\s*/?>|</p>|</div>|</tr>|</h[1-6]>`)
-)
-
-// htmlToText strips markup for reading. It is not a renderer; mail HTML is
-// never shown as HTML, which also keeps tracking pixels and scripts out.
-func htmlToText(s string) string {
-	s = brRe.ReplaceAllString(s, "\n")
-	s = tagRe.ReplaceAllString(s, "")
-	s = html.UnescapeString(s)
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimSpace(l)
-	}
-	return strings.TrimSpace(blankRe.ReplaceAllString(strings.Join(lines, "\n"), "\n\n"))
-}
-
-func parse(buf *imapclient.FetchMessageBuffer, raw []byte) (*Message, error) {
-	m := &Message{UID: uint32(buf.UID), Attachments: []Attachment{}}
-	if e := buf.Envelope; e != nil {
-		m.From, m.To, m.CC, m.Subject = addrs(e.From), addrs(e.To), addrs(e.Cc), e.Subject
-		if !e.Date.IsZero() {
-			m.Date = e.Date.Format(time.RFC3339)
-		}
-	}
-	r, err := gomsg.CreateReader(bytes.NewReader(raw))
-	if err != nil {
-		m.Text = string(raw)
-		return m, nil
-	}
-	var plain, htmlBody string
-	for {
-		p, err := r.NextPart()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			break
-		}
-		switch h := p.Header.(type) {
-		case *gomsg.InlineHeader:
-			ct, _, _ := h.ContentType()
-			b, _ := io.ReadAll(io.LimitReader(p.Body, 2<<20))
-			switch ct {
-			case "text/plain":
-				if plain == "" {
-					plain = string(b)
-				}
-			case "text/html":
-				if htmlBody == "" {
-					htmlBody = string(b)
-				}
-			}
-		case *gomsg.AttachmentHeader:
-			name, _ := h.Filename()
-			ct, _, _ := h.ContentType()
-			n, _ := io.Copy(io.Discard, p.Body)
-			m.Attachments = append(m.Attachments, Attachment{Name: name, Type: ct, SizeKB: int(n / 1024)})
-		}
-	}
-	if plain != "" {
-		m.Text = strings.TrimSpace(plain)
-	} else {
-		m.Text = htmlToText(htmlBody)
-	}
-	return m, nil
-}
+func mustJSON(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
+	// don't split a UTF-8 sequence
+	for n > 0 && n < len(s) && s[n]&0xC0 == 0x80 {
+		n--
+	}
 	return s[:n] + "…"
 }
-
-func mustJSON(v any) json.RawMessage { b, _ := json.Marshal(v); return b }

@@ -137,6 +137,7 @@ var sensitiveUndo = map[string]string{
 	"firefly.create_transaction": "delete_transaction", // deletes the transaction it recorded, by id
 	"freshdesk.add_note":         "delete_note",        // deletes the note it added, by number
 	"hashivault.write_secret":    "restore_version",    // restores the version that was current
+	"hubspot.add_note":           "delete_note",        // deletes the note it added, by id
 	"monica.add_note":            "delete_note",        // deletes the note it added, by number
 	"nextcloud.share":            "unshare",            // removes the link by its id
 	"nextcloudtalk.send_message": "delete_message",     // deletes the message it sent, by conversation and id

@@ -102,6 +102,11 @@ recommended policies.
 | Telegram | [telegram.md](telegram.md) | homelab, team |
 | Stripe | [stripe.md](stripe.md) | team, developer |
 | Lemon Squeezy | [lemonsqueezy.md](lemonsqueezy.md) | developer, team |
+| Paddle | [paddle.md](paddle.md) | developer, team |
+| Shopify | [shopify.md](shopify.md) | team, developer |
+| HubSpot | [hubspot.md](hubspot.md) | team |
+| Twilio | [twilio.md](twilio.md) | developer, team |
+| Cal.com | [calcom.md](calcom.md) | team, developer |
 | Supabase | [supabase.md](supabase.md) | developer |
 | Render | [render.md](render.md) | developer |
 | Railway | [railway.md](railway.md) | developer |

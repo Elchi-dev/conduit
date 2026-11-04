@@ -20,6 +20,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/bookstack"
 	"github.com/elchi-dev/conduit/modules/buildkite"
 	"github.com/elchi-dev/conduit/modules/caddy"
+	"github.com/elchi-dev/conduit/modules/calcom"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/caprover"
 	"github.com/elchi-dev/conduit/modules/chatwoot"
@@ -66,6 +67,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
 	"github.com/elchi-dev/conduit/modules/homebox"
+	"github.com/elchi-dev/conduit/modules/hubspot"
 	"github.com/elchi-dev/conduit/modules/hue"
 	"github.com/elchi-dev/conduit/modules/huggingface"
 	"github.com/elchi-dev/conduit/modules/immich"
@@ -124,6 +126,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/openxbl"
 	"github.com/elchi-dev/conduit/modules/opnsense"
 	"github.com/elchi-dev/conduit/modules/outline"
+	"github.com/elchi-dev/conduit/modules/paddle"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/paperless"
 	"github.com/elchi-dev/conduit/modules/photoprism"
@@ -153,6 +156,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/shelly"
+	"github.com/elchi-dev/conduit/modules/shopify"
 	"github.com/elchi-dev/conduit/modules/signal"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/snyk"
@@ -180,6 +184,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/transmission"
 	"github.com/elchi-dev/conduit/modules/trello"
 	"github.com/elchi-dev/conduit/modules/truenas"
+	"github.com/elchi-dev/conduit/modules/twilio"
 	"github.com/elchi-dev/conduit/modules/twitch"
 	"github.com/elchi-dev/conduit/modules/umami"
 	"github.com/elchi-dev/conduit/modules/unifi"
@@ -357,6 +362,11 @@ func builtins(app *App) []sdk.Module {
 		sendgrid.New(),
 		postmark.New(),
 		lemonsqueezy.New(),
+		paddle.New(),
+		shopify.New(),
+		hubspot.New(),
+		twilio.New(),
+		calcom.New(),
 		zendesk.New(),
 		freshdesk.New(),
 		chatwoot.New(),

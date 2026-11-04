@@ -3,6 +3,30 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · After 1.0, late evening (322 modules, reviews 39–42)
+
+- **Modules 303–322:** AI usage and spend (Anthropic, OpenAI, Mistral,
+  Groq), gamer stats (BattleMetrics, FACEIT, Lichess, Chess.com), code
+  security (GitGuardian, Semgrep, Sourcegraph), virtualization (Proxmox
+  Backup Server, Xen Orchestra, Incus), smart home (openHAB, Domoticz,
+  ioBroker) and mail servers (mailcow, Stalwart, Mailu).
+- **Endpoints checked against vendor docs** by the helpers for these
+  batches; what couldn't be confirmed is left out and named in each page's
+  Notes.
+- **Decisions:** Incus keeps `delete_snapshot` (snapshots only) as the
+  undo of a new snapshot, like Proxmox. Stalwart is supported from 0.16
+  (its JMAP management API); the older REST API isn't. mailcow can flush
+  its queue (retry only); nothing on any mail server can be deleted.
+- **Review 39:** AI spend amounts must be plain decimals and are shown
+  exactly; model owners that are ids are hidden.
+- **Review 40:** Semgrep triage is scoped to one repository and checked;
+  GitGuardian dashboard links must be real gitguardian.com hosts.
+- **Review 41:** BattleMetrics drops details holding addresses.
+- **Review 42:** Incus trust tokens go only to a verified server, once;
+  PBS verify runs only what the preview counted.
+- **CI:** GitHub Actions still starts no jobs (zero steps), the repository
+  is private; verified locally instead.
+
 ## 2026-11-04 · After 1.0, night (286 modules, reviews 32–34)
 
 - **Modules 275–286:** hosted databases (Neon, Turso, Upstash,

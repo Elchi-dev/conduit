@@ -3,6 +3,20 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · After 1.0, night (286 modules, reviews 32–34)
+
+- **Modules 275–286:** hosted databases (Neon, Turso, Upstash,
+  PlanetScale), identity (Okta, Auth0, Kanidm, LLDAP) and CI servers
+  (TeamCity, GoCD, Concourse, Argo Workflows).
+- **Review 32:** newsletter sends carry a sha256 of everything previewed
+  and refuse if the campaign changed since approval; newsletter HTML
+  refuses script-like content; Discord keeps its webhook URL out of errors
+  and stays inside the configured server.
+- **Review 33:** Turso's create undo names the database by id; Neon
+  follows branch pagination.
+- **Review 34:** identity admin and self refusals fail closed: every
+  Kanidm `*_admins` group, LLDAP self by e-mail, every page of Auth0 roles.
+
 ## 2026-11-04 · After 1.0, late afternoon (262 modules, reviews 25–29)
 
 - **Modules 242–262:** backends and CMS (PocketBase, Appwrite, Directus,

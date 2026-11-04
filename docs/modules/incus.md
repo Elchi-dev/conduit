@@ -10,7 +10,11 @@ certificate and key (for example with
 and store both PEM blocks together in one vault secret. Then either add the
 certificate on the server (`incus config trust add-certificate conduit.crt`),
 or create a trust token with `incus config trust add conduit` and store it
-in the vault as `trustToken`: Conduit uses it once to add its certificate.
+in the vault as `trustToken`: Conduit uses it once to add its certificate,
+and doesn't send it again after Incus has answered it. A trust token needs
+the `fingerprint` (or a certificate from an authority); with only
+`insecureSkipVerify` it's refused, since whoever read it could add their own
+certificate.
 The address is the server's `core.https_address`, such as
 `https://incus.lan:8443`. Choose a `project` if it isn't `default`.
 
@@ -33,7 +37,9 @@ nothing to change when the instance is already in that state, waits for
 Incus to finish the operation and reads the result back.
 
 **Security.** The certificate and key are read from the vault for each TLS
-handshake and never leave it otherwise; the server is pinned by its
+handshake and never leave it otherwise; the key must be unencrypted PEM and
+match the first certificate (a chain may follow), and a parse error never
+quotes the secret; the server is pinned by its
 fingerprint, and the client won't follow a redirect to another host.
 Instance and snapshot names must be plain names before they reach a request
 path. Instances and snapshots are decoded field by field, so their

@@ -48,6 +48,9 @@ type conn struct {
 
 	mu      sync.Mutex
 	trusted bool
+	// tokenSpent is set once Incus has answered the trust token: a token
+	// is single use, so it isn't sent again.
+	tokenSpent bool
 }
 
 // Module implements sdk.Module.
@@ -122,6 +125,11 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if !projectRe.MatchString(c.Project) {
 		return errors.New("a project name has letters, digits, '.', '_' and '-'")
 	}
+	if c.TrustToken != "" && c.Fingerprint == "" && c.InsecureSkipVerify {
+		// Whoever reads the token can add their own certificate: it only
+		// goes to a server whose certificate was checked.
+		return errors.New("a trust token is only sent to a verified server: set the fingerprint instead of skipping certificate checks")
+	}
 	tc, err := tlspin.Config(c.Fingerprint, c.InsecureSkipVerify)
 	if err != nil {
 		return err
@@ -136,12 +144,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		if err != nil {
 			return nil, errors.New("the client certificate couldn't be read from the vault")
 		}
-		cert, err := tls.X509KeyPair([]byte(pem), []byte(pem))
-		if err != nil {
-			// The parse error is not passed on: it can quote the PEM.
-			return nil, errors.New("the client certificate secret needs a PEM certificate and its matching PEM private key")
-		}
-		return &cert, nil
+		return keyPair(pem)
 	}
 	tr := sdk.Transport(h)
 	tr.TLSClientConfig = tc
@@ -149,6 +152,18 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	api.HTTP = rest.SameHostOnly(&http.Client{Timeout: 30 * time.Second, Transport: tr})
 	m.set.Put(id, &conn{api: api, project: c.Project, host: h, tokenRef: c.TrustToken})
 	return nil
+}
+
+// keyPair reads the client certificate (and any chain after it) and its
+// private key from one PEM value. An encrypted key, a key that doesn't
+// match the first certificate, or a value missing either fails with a
+// fixed message: the parse error is not passed on, as it can quote the PEM.
+func keyPair(s string) (*tls.Certificate, error) {
+	cert, err := tls.X509KeyPair([]byte(s), []byte(s))
+	if err != nil {
+		return nil, errors.New("the client certificate secret needs a PEM certificate and its matching unencrypted PEM private key")
+	}
+	return &cert, nil
 }
 
 // Close implements sdk.Module.
@@ -211,11 +226,22 @@ func (c *conn) ensureTrusted(ctx context.Context) (server, error) {
 	if c.tokenRef == "" {
 		return s, errors.New("Incus doesn't trust this client certificate yet: add it with incus config trust add-certificate, or set a trust token")
 	}
+	if c.tokenSpent {
+		return s, errors.New("Incus doesn't trust this client certificate, and the trust token was already used: add the certificate with incus config trust add-certificate, or enter a new trust token")
+	}
 	tok, err := c.host.Secret(ctx, c.tokenRef)
 	if err != nil {
 		return s, errors.New("the trust token couldn't be read from the vault")
 	}
-	if _, err := c.do(ctx, http.MethodPost, "/1.0/certificates", nil, map[string]any{"type": "client", "name": "conduit", "trust_token": strings.TrimSpace(tok)}); err != nil {
+	// No "certificate" field: Incus adds the certificate this connection
+	// presented, and nothing else.
+	var env envelope
+	_, err = c.api.Do(ctx, http.MethodPost, "/1.0/certificates", nil, map[string]any{"type": "client", "name": "conduit", "trust_token": strings.TrimSpace(tok)}, &env)
+	var apiErr *rest.Error
+	if err == nil || errors.As(err, &apiErr) {
+		c.tokenSpent = true
+	}
+	if err != nil {
 		return s, fmt.Errorf("Incus refused the trust token (they're single use and expire): %w", err)
 	}
 	if s, err = c.info(ctx); err == nil && s.Auth != "trusted" {

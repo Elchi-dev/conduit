@@ -24,9 +24,10 @@ const (
 )
 
 type fakeXO struct {
-	mu    sync.Mutex
-	seen  []string
-	state map[string]string
+	mu           sync.Mutex
+	seen         []string
+	state        map[string]string
+	haltOnReboot bool
 }
 
 func (f *fakeXO) vm(id string) map[string]any {
@@ -70,6 +71,9 @@ func (f *fakeXO) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if next == "" || f.state[id] == "" {
 			w.WriteHeader(404)
 			return
+		}
+		if op == "clean_reboot" && f.haltOnReboot {
+			next = "Halted"
 		}
 		f.state[id] = next
 		w.Header().Set("Location", "/rest/v0/tasks/0m7kl0j9l")
@@ -152,7 +156,15 @@ func TestXenOrchestra(t *testing.T) {
 	if _, err := invoke(m, "reboot", `{"vm":"`+db+`"}`, false); err == nil || !strings.Contains(err.Error(), "isn't running") {
 		t.Fatal(err)
 	}
-	if r, err := invoke(m, "reboot", `{"vm":"`+web+`"}`, false); err != nil || r.Undo != nil || !contains(f.seen, "POST /rest/v0/vms/"+web+"/actions/clean_reboot") {
+	if r, err := invoke(m, "reboot", `{"vm":"`+web+`"}`, false); err != nil || r.Undo != nil || !contains(f.seen, "POST /rest/v0/vms/"+web+"/actions/clean_reboot") ||
+		!strings.Contains(string(r.Output), `"powerState":"Running"`) || f.seen[len(f.seen)-1] != "GET /rest/v0/vms/"+web {
+		t.Fatalf("%s %v %v", r.Output, err, f.seen)
+	}
+	// A reboot that leaves the VM halted is reported, not hidden.
+	f.mu.Lock()
+	f.state[db], f.haltOnReboot = "Running", true
+	f.mu.Unlock()
+	if r, err := invoke(m, "reboot", `{"vm":"`+db+`"}`, false); err != nil || !strings.Contains(string(r.Output), `"powerState":"Halted"`) || !strings.Contains(string(r.Output), "check again") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
 	if _, err := invoke(m, "start", `{"vm":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}`, false); err == nil || !strings.Contains(err.Error(), "another VM") {
@@ -200,6 +212,8 @@ func TestXenOrchestraValidation(t *testing.T) {
 		{URL: "https://xo.lan/?a=b", Token: "secret://xo"},
 		{URL: "https://xo.lan/#frag", Token: "secret://xo"},
 		{URL: "https://xo.lan", Token: "secret://xo", Fingerprint: "nope"},
+		{URL: "http://xo.lan", Token: "secret://xo", Fingerprint: strings.Repeat("ab", 32)},
+		{URL: "http://xo.lan", Token: "secret://xo", InsecureSkipVerify: true},
 	} {
 		raw, _ := json.Marshal(c)
 		if err := New().Configure(context.Background(), fakehost.New(nil), "y", raw); err == nil {

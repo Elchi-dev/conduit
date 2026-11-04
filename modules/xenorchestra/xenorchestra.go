@@ -94,6 +94,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if !strings.HasPrefix(c.Token, "secret://") {
 		return errors.New("store the authentication token in the vault and enter its secret:// reference")
 	}
+	if u.Scheme != "https" && (c.Fingerprint != "" || c.InsecureSkipVerify) {
+		// Over http neither would apply, and the address would look pinned.
+		return errors.New("a fingerprint or skipped certificate checks need an https address")
+	}
 	client := m.HTTP
 	if client == nil {
 		client = sdk.HTTPClient(h, 30*time.Second)
@@ -460,9 +464,17 @@ func (c *conn) power(ctx context.Context, call sdk.Call, id string) (sdk.Result,
 	if task.TaskID != "" && len(task.TaskID) <= 64 {
 		out["task"] = task.TaskID
 	}
-	// Read the state back until it's reached (a reboot keeps Running).
+	// Read the state back until it's reached; a reboot keeps Running, so
+	// it's read once.
 	now := v.PowerState
-	if call.Action != "reboot" {
+	if call.Action == "reboot" {
+		if x, err := c.vm(ctx, v.ID); err == nil {
+			now = x.PowerState
+		}
+		if now != want {
+			out["note"] = "Xen Orchestra accepted it; the VM is " + now + " for now, check again with vms"
+		}
+	} else {
 		deadline := time.Now().Add(waitFor)
 		for now != want && time.Now().Before(deadline) {
 			select {

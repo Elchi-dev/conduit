@@ -22,12 +22,12 @@ exactly that certificate. With a certificate from a public authority
 | `groups` | read | For a `store` (and optional namespace `ns`): type (`vm`, `ct`, `host`), id, number of snapshots, last backup, owner and comment. |
 | `snapshots` | read | Newest first, up to `limit` (100): time, size, verify state (`ok`, `failed` or `none`), protected, encrypted, file count, owner and comment. Filter by `ns`, `type` and `id`. |
 | `tasks` | read | Newest first, up to `limit` (50): type, target, user, start, end and result. `store`, `running` and `errors` filter. |
-| `verify` | write | Reads back and checks every chunk of the chosen snapshots: a whole `store`, a namespace, one group (`type` and `id`) or one snapshot (plus `time` from snapshots). Snapshots already verified are skipped unless `ignoreVerified` is false; `outdatedAfter` verifies again after that many days. The preview counts the snapshots it checks; when all of them are verified it reports nothing to change. Conduit reads the new task back and reports a job PBS refused straight away. |
+| `verify` | write | Reads back and checks every chunk of the chosen snapshots: a `store`'s root namespace or the namespace `ns` (never its child namespaces: verify those by their own `ns`), one group (`type` and `id`, both needed) or one snapshot (plus `time` from snapshots). Snapshots already verified are skipped unless `ignoreVerified` is false; `outdatedAfter` verifies again after that many days. The preview counts the snapshots it checks; when all of them are verified it reports nothing to change. Conduit reads the new task back and reports a job PBS refused straight away. |
 
 **Security.** The token goes in the `Authorization` header, and the client
 won't follow a redirect to another host or from https to http. Datastore
-names, namespaces and backup ids are checked against PBS's own patterns
-before they reach a request. The encryption key's fingerprint of a snapshot
+names, namespaces (up to PBS's 7 levels) and backup ids are checked against
+PBS's own patterns before they reach a request. The encryption key's fingerprint of a snapshot
 is never returned (only whether it's encrypted), task logs are never read,
 and server messages are redacted and kept to one short line.
 

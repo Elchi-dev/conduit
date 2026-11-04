@@ -308,6 +308,23 @@ func TestIncusTrust(t *testing.T) {
 	if h := m.Health(context.Background(), "i"); h.Status != "down" || !strings.Contains(h.Message, "refused the trust token") {
 		t.Fatalf("%+v", h)
 	}
+	// A token Incus has answered isn't sent again.
+	posts := func() int {
+		n := 0
+		for _, x := range w.fake.seen {
+			if strings.HasPrefix(x, "POST /1.0/certificates") {
+				n++
+			}
+		}
+		return n
+	}
+	before := posts()
+	if h := m.Health(context.Background(), "i"); h.Status != "down" || !strings.Contains(h.Message, "already used") || posts() != before {
+		t.Fatalf("%+v, %d posts", h, posts()-before)
+	}
+	if _, err := invoke(m, "instances", `{}`, false); err == nil || posts() != before {
+		t.Fatal("sent the trust token again")
+	}
 	// The right token adds the certificate once.
 	w.fake.token = "eyJ0b2tlbiI6InRydXN0LW1lIn0="
 	m = w.module(t, Config{ClientCert: "secret://other", TrustToken: "secret://token"})
@@ -371,11 +388,56 @@ func TestIncusValidation(t *testing.T) {
 		{URL: "https://incus.lan:8443/1.0", ClientCert: "secret://incus"},
 		{URL: "https://incus.lan:8443", ClientCert: "secret://incus", Project: "a/b"},
 		{URL: "https://incus.lan:8443", ClientCert: "secret://incus", Fingerprint: "zz"},
+		// The trust token never goes to an unverified server.
+		{URL: "https://incus.lan:8443", ClientCert: "secret://incus", TrustToken: "secret://token", InsecureSkipVerify: true},
 	} {
 		raw, _ := json.Marshal(c)
 		if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err == nil {
 			t.Fatalf("accepted %+v", c)
 		}
+	}
+}
+
+func TestIncusKeyPair(t *testing.T) {
+	good, _ := clientPEM(t)
+	other, _ := clientPEM(t)
+	certOf := func(s string) string { return s[:strings.Index(s, "-----BEGIN EC PRIVATE KEY")] }
+	keyOf := func(s string) string { return s[strings.Index(s, "-----BEGIN EC PRIVATE KEY"):] }
+	kb, _ := pem.Decode([]byte(keyOf(good)))
+	//nolint:staticcheck // an old-style encrypted key, as openssl writes without -nodes
+	enc, err := x509.EncryptPEMBlock(rand.Reader, "EC PRIVATE KEY", kb.Bytes, []byte("pw"), x509.PEMCipherAES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encPEM := string(pem.EncodeToMemory(enc))
+	// A PKCS #8 encrypted key: its DER holds ciphertext, not a key.
+	junk := make([]byte, 96)
+	rand.Read(junk)
+	pkcs8Enc := string(pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: junk}))
+	for name, v := range map[string]string{
+		"key first":          keyOf(good) + certOf(good),
+		"chain after":        good + certOf(other),
+		"text around blocks": "conduit client\n" + good + "\nend\n",
+	} {
+		if c, err := keyPair(v); err != nil || len(c.Certificate) == 0 {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	for name, v := range map[string]string{
+		"empty":          "",
+		"cert only":      certOf(good),
+		"key only":       keyOf(good),
+		"other's key":    certOf(good) + keyOf(other),
+		"other cert 1st": certOf(other) + good,
+		"encrypted":      certOf(good) + encPEM,
+		"pkcs8 enc":      certOf(good) + pkcs8Enc,
+		"public key":     certOf(good) + string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: kb.Bytes})),
+	} {
+		_, err := keyPair(v)
+		if err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+		noLeak(t, err.Error())
 	}
 }
 

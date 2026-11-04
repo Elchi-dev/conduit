@@ -7,7 +7,9 @@ snapshots.
 **Setup.** In Xen Orchestra, open your user's settings and create an
 authentication token (or run `xo-cli create-token`); store it in the vault.
 The token acts with its user's permissions. Enter Xen Orchestra's address,
-such as `https://xo.lan`. For a self-signed certificate, set `fingerprint`.
+such as `https://xo.lan`. For a self-signed certificate, set `fingerprint` (it needs an
+`https` address; over plain `http` the token travels unencrypted, so keep
+that to a trusted network).
 
 | Action | Risk | Notes |
 | --- | --- | --- |
@@ -22,7 +24,8 @@ such as `https://xo.lan`. For a self-signed certificate, set `fingerprint`.
 VMs are given by their id (a UUID, from `vms`). Each power action shows the
 VM and its state before and after in its preview, reports nothing to change
 when the VM is already in that state, and reads the state back after the
-change (for up to 20 seconds; a slow guest is reported as still on its way).
+change (for up to 20 seconds; a slow guest is reported as still on its way;
+a reboot is read back once).
 
 **Security.** The token is sent as Xen Orchestra's `authenticationToken`
 cookie, and the client won't follow a redirect to another host or from

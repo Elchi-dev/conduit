@@ -101,6 +101,7 @@ func TestProxmoxBackup(t *testing.T) {
 		{"datastores", `{}`, `"estimatedFull":"2027-12-28`},
 		{"datastores", `{}`, `"maintenance":"read-only"`},
 		{"groups", `{"store":"store1"}`, `"lastBackup":"2025-11-03T08:53:20Z"`},
+		{"groups", `{"store":"store1","ns":"a/b/c/d/e/f/g"}`, `"id":"101"`},
 		{"snapshots", `{"store":"store1"}`, `"encrypted":true`},
 		{"snapshots", `{"store":"store1","type":"vm","id":"101"}`, `"verify":"failed"`},
 		{"tasks", `{}`, `"target":"store1:vm/101"`},
@@ -131,8 +132,16 @@ func TestProxmoxBackup(t *testing.T) {
 	if err != nil || !strings.Contains(string(r.Output), `"status":"running"`) || r.Undo != nil {
 		t.Fatalf("%s %v", r.Output, err)
 	}
-	if f.body["backup-type"] != "vm" || f.body["backup-id"] != "101" || f.body["ignore-verified"] != true {
+	if f.body["backup-type"] != "vm" || f.body["backup-id"] != "101" || f.body["ignore-verified"] != true || f.body["max-depth"] != nil {
 		t.Fatal(f.body)
+	}
+	// A namespace is verified without its child namespaces, as previewed.
+	r, err = invoke(m, "verify", `{"store":"store1","ns":"site1"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Verify datastore store1, namespace site1 (not its child namespaces) (1 of 2 snapshots)" {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "verify", `{"store":"store1","ns":"site1"}`, false); err != nil || f.body["ns"] != "site1" || f.body["max-depth"] != float64(0) {
+		t.Fatal(err, f.body)
 	}
 	f.verified = true
 	if r, err := invoke(m, "verify", `{"store":"store1"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
@@ -161,6 +170,8 @@ func TestProxmoxBackupValidation(t *testing.T) {
 		{"tasks", `{"store":"x?y"}`},
 		{"verify", `{"store":"store1","time":1762160000}`},
 		{"verify", `{"store":"store 1"}`},
+		{"verify", `{"store":"store1","type":"vm"}`},
+		{"groups", `{"store":"store1","ns":"a/b/c/d/e/f/g/h"}`},
 	} {
 		if _, err := invoke(m, c.action, c.in, false); err == nil {
 			t.Fatalf("%s accepted %s", c.action, c.in)

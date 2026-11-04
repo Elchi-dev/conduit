@@ -51,10 +51,11 @@ var (
 	// Patterns from the PBS API schema.
 	storeRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{2,31}$`)
 	idRe    = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
-	nsRe    = regexp.MustCompile(`^(?:[A-Za-z0-9_][A-Za-z0-9._-]{0,31}/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]{0,31}$`)
-	upidRe  = regexp.MustCompile(`^UPID:[A-Za-z0-9._:@!-]{1,400}$`)
-	pathRe  = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
-	types   = map[string]bool{"vm": true, "ct": true, "host": true}
+	// PBS allows namespaces up to 7 levels deep (MAX_NAMESPACE_DEPTH).
+	nsRe   = regexp.MustCompile(`^(?:[A-Za-z0-9_][A-Za-z0-9._-]{0,31}/){0,6}[A-Za-z0-9_][A-Za-z0-9._-]{0,31}$`)
+	upidRe = regexp.MustCompile(`^UPID:[A-Za-z0-9._:@!-]{1,400}$`)
+	pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
+	types  = map[string]bool{"vm": true, "ct": true, "host": true}
 )
 
 // Manifest implements sdk.Module.
@@ -79,7 +80,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["store"],"properties":{` + scope + group + `,"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100}}}`)},
 			{Name: "tasks", Title: "Tasks", Description: "Recent tasks (backups, verifies, prunes, garbage collection, syncs), newest first, with their result. Task logs are never read.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"store":{"type":"string","description":"Only this datastore's tasks"},"running":{"type":"boolean"},"errors":{"type":"boolean","description":"Only failed tasks"},"limit":{"type":"integer","minimum":1,"maximum":500,"default":50}}}`)},
-			{Name: "verify", Title: "Start a verify job", Description: "Reads back and checks every chunk of the chosen snapshots: a whole datastore, a namespace, one group or one snapshot. Heavy disk activity; nothing is changed or deleted.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "verify", Title: "Start a verify job", Description: "Reads back and checks every chunk of the chosen snapshots: a datastore's root namespace or another namespace (not its child namespaces), one group or one snapshot. Heavy disk activity; nothing is changed or deleted.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["store"],"properties":{` + scope + group + `,
 					"time":{"type":"integer","minimum":1,"description":"One snapshot's backup time (Unix seconds, from snapshots); needs type and id"},
 					"ignoreVerified":{"type":"boolean","default":true,"description":"Skip snapshots already verified"},
@@ -229,7 +230,7 @@ func (p *params) check(needStore bool) error {
 		return errors.New("a datastore name has 3 to 32 letters, digits, '.', '_' and '-' (see datastores)")
 	}
 	if p.NS != "" && (len(p.NS) > 256 || !nsRe.MatchString(p.NS)) {
-		return errors.New("a namespace is up to 8 names separated by '/', each of letters, digits, '.', '_' and '-'")
+		return errors.New("a namespace is up to 7 names separated by '/', each of letters, digits, '.', '_' and '-'")
 	}
 	if p.Type != "" && !types[p.Type] {
 		return errors.New("the backup type is vm, ct or host")
@@ -323,6 +324,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	case "verify":
 		if err := p.check(true); err != nil {
 			return sdk.Result{}, err
+		}
+		if p.Type != "" && p.ID == "" {
+			// PBS verifies a namespace, a group or a snapshot; it refuses
+			// a type alone.
+			return sdk.Result{}, errors.New("a group is given by type and id; leave both out to verify the whole namespace")
 		}
 		return c.verify(ctx, call, p)
 	}
@@ -556,8 +562,8 @@ func (c *conn) verify(ctx context.Context, call sdk.Call, p params) (sdk.Result,
 		target += ", snapshot " + ss[0].label()
 	case p.ID != "":
 		target += ", group " + p.Type + "/" + p.ID
-	case p.Type != "":
-		target += ", every " + p.Type + " group"
+	default:
+		target += " (not its child namespaces)"
 	}
 	if pending == 0 && p.OutdatedAfter == 0 {
 		return sdk.JSON(map[string]any{"target": target, "snapshots": len(ss), "verify": states, "changed": false, "note": "nothing to change: every snapshot is verified"})
@@ -583,6 +589,11 @@ func (c *conn) verify(ctx context.Context, call sdk.Call, p params) (sdk.Result,
 	}
 	if p.OutdatedAfter > 0 {
 		body["outdated-after"] = p.OutdatedAfter
+	}
+	if p.ID == "" {
+		// Without it PBS also verifies every child namespace, which the
+		// preview's count (one namespace's snapshots) doesn't cover.
+		body["max-depth"] = 0
 	}
 	var upid string
 	if err := c.do(ctx, http.MethodPost, "/admin/datastore/"+url.PathEscape(p.Store)+"/verify", nil, body, &upid); err != nil {

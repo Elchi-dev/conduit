@@ -36,7 +36,16 @@ and why.
 - **Decision (owner asked at 17:05):** no Discord user-account module.
   Discord's terms ban automating a user account and Discord bans accounts
   for it, unlike Milanote, which has no API at all. The bot module gains
-  reading, replies, reactions, threads, pins and moderation instead.
+  reading, replies, reactions, threads, pins and moderation instead. When
+  the owner pushed back, an opt-in account module was started and then
+  dropped: it would have to impersonate Discord's own client.
+- **Review 31:** Homebridge treats every service on a critical accessory
+  as critical; Statuspage updates keep the incident's components.
+- **Modules 271–274:** Mailchimp, Brevo, Kit and Buttondown. Sending to an
+  audience is destructive; subscribers are only counted.
+- **Disk:** the session's disk allowance filled up with Go's build cache,
+  which looked like a failed build. `go clean -cache` freed it; the commit
+  was re-verified in a clean worktree.
 
 ## 2026-11-04 · After 1.0, evening (241 modules, reviews 20–24)
 

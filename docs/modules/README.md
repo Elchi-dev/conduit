@@ -71,6 +71,10 @@ recommended policies.
 | OpenRouter | [openrouter.md](openrouter.md) | developer |
 | ComfyUI | [comfyui.md](comfyui.md) | developer, gamer |
 | Hugging Face | [huggingface.md](huggingface.md) | developer |
+| Replicate | [replicate.md](replicate.md) | developer |
+| RunPod | [runpod.md](runpod.md) | developer |
+| Vast.ai | [vastai.md](vastai.md) | developer |
+| ElevenLabs | [elevenlabs.md](elevenlabs.md) | developer |
 | S3 storage | [s3.md](s3.md) | homelab, developer |
 | Plex | [plex.md](plex.md) | homelab, gamer |
 | Gitea and Forgejo | [gitea.md](gitea.md) | developer, homelab |

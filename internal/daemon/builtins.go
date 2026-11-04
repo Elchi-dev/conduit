@@ -55,6 +55,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/drone"
 	"github.com/elchi-dev/conduit/modules/dropbox"
 	"github.com/elchi-dev/conduit/modules/elasticsearch"
+	"github.com/elchi-dev/conduit/modules/elevenlabs"
 	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/fastmail"
 	"github.com/elchi-dev/conduit/modules/files"
@@ -180,10 +181,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/railway"
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/render"
+	"github.com/elchi-dev/conduit/modules/replicate"
 	"github.com/elchi-dev/conduit/modules/resend"
 	"github.com/elchi-dev/conduit/modules/restic"
 	"github.com/elchi-dev/conduit/modules/rocketchat"
 	"github.com/elchi-dev/conduit/modules/romm"
+	"github.com/elchi-dev/conduit/modules/runpod"
 	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/sabnzbd"
 	"github.com/elchi-dev/conduit/modules/scaleway"
@@ -231,6 +234,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/upcloud"
 	"github.com/elchi-dev/conduit/modules/uptimekuma"
 	"github.com/elchi-dev/conduit/modules/uptimerobot"
+	"github.com/elchi-dev/conduit/modules/vastai"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
@@ -450,6 +454,10 @@ func builtins(app *App) []sdk.Module {
 		openrouter.New(),
 		comfyui.New(),
 		huggingface.New(),
+		replicate.New(),
+		runpod.New(),
+		vastai.New(),
+		elevenlabs.New(),
 		openaicompat.New(),
 		photoprism.New(),
 		homebox.New(),

@@ -80,7 +80,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			"url":{"type":"string","description":"The forum's address, e.g. https://forum.example.com"},
 			"apiKey":{"type":"string","x-secret":true,"description":"An API key (Admin, API, New API key), ideally for a single user with read and write scopes"},
 			"username":{"type":"string","description":"The user the key acts as"},
-			"allowedCategories":{"type":"array","items":{"type":"string"},"description":"Category slugs (or ids) whose topics Conduit may read and reply to; subcategories are listed on their own"},
+			"allowedCategories":{"type":"array","items":{"type":"string"},"description":"Categories whose topics Conduit may read and reply to: a top-level category's slug, parent/child for a subcategory, or an id. Subcategories are listed on their own"},
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of a self-signed certificate to trust"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "categories", Title: "Categories", Description: "The forum's categories, whether each is private, and whether it's allowed.", Risk: sdk.RiskRead},
@@ -116,8 +116,8 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	allowed := map[string]bool{}
 	for _, a := range c.AllowedCategories {
 		a = strings.ToLower(strings.TrimSpace(a))
-		if _, err := strconv.ParseUint(a, 10, 32); err != nil && !slugRe.MatchString(a) {
-			return fmt.Errorf("%q isn't a category slug (as in its address) or id", a)
+		if _, err := strconv.ParseUint(a, 10, 32); err != nil && !slugPath(a) {
+			return fmt.Errorf("%q isn't a category slug (as in its address), parent/child for a subcategory, or id", a)
 		}
 		allowed[a] = true
 	}
@@ -238,8 +238,62 @@ func (c *conn) categories(ctx context.Context) (map[int64]category, error) {
 	return out, nil
 }
 
-func (c *conn) categoryAllowed(ct category) bool {
-	return c.allowed[strings.ToLower(ct.Slug)] || c.allowed[strconv.FormatInt(ct.ID, 10)]
+// slugPath reports whether s is a slug or slugs joined by / (parent/child).
+func slugPath(s string) bool {
+	parts := strings.Split(s, "/")
+	if len(parts) > 3 {
+		return false
+	}
+	for _, p := range parts {
+		if !slugRe.MatchString(p) {
+			return false
+		}
+	}
+	return true
+}
+
+// categoryPath is a category's slugs from the top level down
+// (parent/child), or "" when a parent is missing from cats or the
+// parents loop. A subcategory's slug is unique only within its parent, so
+// a bare slug names a top-level category only.
+func categoryPath(ct category, cats map[int64]category) string {
+	path := strings.ToLower(ct.Slug)
+	seen := map[int64]bool{ct.ID: true}
+	for p := ct.Parent; p != 0; {
+		pc, ok := cats[p]
+		if !ok || seen[p] || len(seen) > 3 {
+			return ""
+		}
+		seen[p] = true
+		path = strings.ToLower(pc.Slug) + "/" + path
+		p = pc.Parent
+	}
+	return path
+}
+
+// categoryAllowed reports whether a category is on the allow list: by id,
+// or by its path (a bare slug for a top-level category, parent/child for a
+// subcategory). A path that more than one category has is refused.
+func (c *conn) categoryAllowed(ct category, cats map[int64]category) bool {
+	if c.allowed[strconv.FormatInt(ct.ID, 10)] {
+		return true
+	}
+	path := categoryPath(ct, cats)
+	if path == "" || !c.allowed[path] {
+		return false
+	}
+	n := 0
+	for _, o := range cats {
+		if categoryPath(o, cats) == path {
+			n++
+		}
+	}
+	return n == 1
+}
+
+// allowedIn returns categoryAllowed against one list of categories.
+func (c *conn) allowedIn(cats map[int64]category) func(category) bool {
+	return func(ct category) bool { return c.categoryAllowed(ct, cats) }
 }
 
 type topicRow struct {
@@ -330,7 +384,7 @@ func (c *conn) topic(ctx context.Context, id int64, near int) (topic, category, 
 		return topic{}, category{}, err
 	}
 	ct, ok := cats[t.CategoryID]
-	if t.ID != id || t.Archetype == "private_message" || !ok || !c.categoryAllowed(ct) {
+	if t.ID != id || t.Archetype == "private_message" || !ok || !c.categoryAllowed(ct, cats) {
 		return topic{}, category{}, fmt.Errorf("topic %d isn't in an allowed category", id)
 	}
 	return t, ct, nil
@@ -384,7 +438,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		out := []map[string]any{}
 		for _, ct := range cats {
-			r := map[string]any{"id": ct.ID, "name": clip(ct.Name, 100), "slug": ct.Slug, "private": ct.ReadRestricted, "allowed": c.categoryAllowed(ct)}
+			r := map[string]any{"id": ct.ID, "name": clip(ct.Name, 100), "slug": ct.Slug, "private": ct.ReadRestricted, "allowed": c.categoryAllowed(ct, cats)}
 			if pc, ok := cats[ct.Parent]; ok && ct.Parent != 0 {
 				r["parent"] = pc.Slug
 			}
@@ -414,7 +468,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if len(out) == n {
 				break
 			}
-			out = append(out, row(t, cats, c.categoryAllowed))
+			out = append(out, row(t, cats, c.allowedIn(cats)))
 		}
 		return sdk.JSON(out)
 
@@ -433,10 +487,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		u, nw := []map[string]any{}, []map[string]any{}
 		for _, t := range unread {
-			u = append(u, row(t, cats, c.categoryAllowed))
+			u = append(u, row(t, cats, c.allowedIn(cats)))
 		}
 		for _, t := range fresh {
-			nw = append(nw, row(t, cats, c.categoryAllowed))
+			nw = append(nw, row(t, cats, c.allowedIn(cats)))
 		}
 		return sdk.JSON(map[string]any{"unread": u, "new": nw})
 

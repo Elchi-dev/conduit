@@ -2,6 +2,7 @@ package elasticsearch
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -243,5 +244,49 @@ func TestRedirect(t *testing.T) {
 	}
 	if _, err := invoke(m, "health", `{}`, false); err == nil || leaked != "" {
 		t.Fatalf("followed the redirect: %v %q", err, leaked)
+	}
+}
+
+// A wrapper query (base64 DSL), date math or another cluster in a lookup
+// index, duplicate keys and oversized aggregations are refused.
+func TestSearchRefusalsWrapperLookupAggs(t *testing.T) {
+	inner := `{"script":{"script":{"source":"int i=0; while(i<1000000){i++} return true"}}}`
+	enc := base64.StdEncoding.EncodeToString([]byte(inner))
+	m, f := setup(t, Config{}, "")
+	for _, in := range []string{
+		`{"index":"logs","query":{"wrapper":{"query":"` + enc + `"}}}`,
+		`{"index":"logs","query":{"bool":{"must":[{"WRAPPER":{"query":"` + enc + `"}}]}}}`,
+		`{"index":"logs","query":{"terms":{"user":{"index":"<.security-{now/d}>","id":"1","path":"x"}}}}`,
+		`{"index":"logs","query":{"terms":{"user":{"index":"%3C.security%3E","id":"1","path":"x"}}}}`,
+		`{"index":"logs","query":{"terms":{"user":{"index":"other:.security","id":"1","path":"x"}}}}`,
+		`{"index":"logs","query":{"terms":{"user":{"index":"users,.security","id":"1","path":"x"}}}}`,
+		`{"index":"logs","query":{"more_like_this":{"like":[{"_index":" .tasks","_id":"1"}]}}}`,
+		`{"index":"logs","query":{"bool":{"filter":[{"script":{"script":"1"}}],"filter":[]}}}`,
+		`{"index":"logs","aggs":{"x":{"terms":{"field":"a","size":1001}}}}`,
+		`{"index":"logs","aggs":{"x":{"terms":{"field":"a","size":"50000"}}}}`,
+		`{"index":"logs","aggs":{"x":{"terms":{"field":"a","shard_size":100000}}}}`,
+		`{"index":"logs","aggs":{"x":{"top_hits":{"size":101}}}}`,
+		`{"index":"logs","aggs":{"x":{"terms":{"field":"a","size":1000},"aggs":{"y":{"terms":{"field":"b","size":100}}}}}}`,
+		`{"index":"logs","aggs":{"x":{"terms":{"field":"a","size":500},"aggs":{"y":{"terms":{"field":"b"},"aggs":{"z":{"composite":{"sources":[]}}}}}}}}`,
+		`{"index":"logs","aggs":{"x":{"terms":{"field":"a","size":"lots"}}}}`,
+		`{"index":"logs","aggs":[1]}`,
+		`{"index":"logs","query":{"nested":{"path":"p","query":{"match_all":{}},"inner_hits":{"size":5000}}}}`,
+	} {
+		if _, err := invoke(m, "search", in, false); err == nil {
+			t.Errorf("accepted %s", in)
+		}
+	}
+	if len(f.seen) != 0 {
+		t.Fatalf("refused searches reached the server: %v", f.seen)
+	}
+	for _, in := range []string{
+		`{"index":"logs-2026.11","aggs":{"x":{"terms":{"field":"a","size":100},"aggs":{"y":{"terms":{"field":"b","size":100},"aggs":{"top":{"top_hits":{"size":3}}}}}}}}`,
+		`{"index":"logs-2026.11","aggs":{"h":{"date_histogram":{"field":"@timestamp","calendar_interval":"day"},"aggs":{"s":{"terms":{"field":"status"}}}}}}`,
+		`{"index":"logs-2026.11","query":{"terms":{"user":{"index":"users","id":"1","path":"x"}}}}`,
+		`{"index":"logs-2026.11","query":{"term":{"size":5000}}}`,
+	} {
+		if _, err := invoke(m, "search", in, false); err != nil {
+			t.Errorf("%s: %v", in, err)
+		}
 	}
 }

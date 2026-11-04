@@ -8,9 +8,13 @@ reading topics in the categories you allow, and replying there.
 for that user. Store the key in the vault and enter its `secret://`
 reference as `apiKey`, and the user it acts as as `username`. `url` is the
 forum's address. List the categories Conduit may read topics in and reply to
-in `allowedCategories`, by slug as in their address (`support`) or by id;
-a subcategory is listed on its own (allowing `support` doesn't allow
-`support/billing`). With none allowed, the instance is healthy but degraded
+in `allowedCategories`, by slug as in their address (`support`) or by id.
+A bare slug matches only a top-level category: a subcategory's slug is
+unique only within its parent (a private `staff` category can have its own
+`general`), so a subcategory is listed as `parent/child`
+(`support/billing`) or by id, and allowing `support` doesn't allow
+`support/billing`. A path that more than one category has, or a
+subcategory whose parent isn't visible, matches nothing. With none allowed, the instance is healthy but degraded
 and can only list categories and topics. For a self-signed certificate,
 enter its SHA-256 `fingerprint`.
 

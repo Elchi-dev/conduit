@@ -19,7 +19,7 @@ miss. For a self-signed certificate, enter its SHA-256 `fingerprint`.
 | `query` | read, sensitive | One Flux query, at most 15 seconds and 1000 rows (8 MB). Each table's rows come back as rows of the union of the columns. Results stay out of the audit log. |
 | `tasks` | read | Tasks with status (active or inactive), schedule (`every` or `cron`), last completed time, last run status and error (redacted and clipped). Never the task's Flux. |
 | `task_runs` | read | A task's last 20 runs with status and times. |
-| `enable_task` | write | Sets a task active. The preview shows the status before and after. Undo disables it again (when the call changed anything). |
+| `enable_task` | destructive | Sets a task active. A task is Flux that the server runs on its schedule, which Conduit never checks (it can write with `to()` or reach other servers), so turning one on is destructive. The preview shows the status before and after. Undo disables it again (when the call changed anything). |
 | `disable_task` | write | Sets a task inactive; a run in progress finishes. Undo enables it again. |
 
 **What a query may do.** Imports must be at the top and on an allow list
@@ -33,12 +33,20 @@ writes or reaches outside is left out, among them `http` and
 `influxdata/influxdb/secrets`, `influxdata/influxdb/monitor`, `csv`
 (`csv.from(file:)`), `experimental/csv`, `experimental/prometheus`,
 `experimental/mqtt`, `socket` and the notification packages (`slack`,
-`pagerduty`, `contrib/...`). With strings and comments blanked, `to` is
-refused wherever it's used as a value (`to(...)`, `experimental.to`,
-`universe.to`, an alias such as `w = to`), and so are `host:` and
-`token:` arguments, which point `from()` and similar functions at another
-server. String interpolation (`"${...}"`) is refused, since it would hide
-an expression inside a string.
+`pagerduty`, `contrib/...`). The query is split into tokens the way Flux
+reads it: strings (with their escapes), regular expression literals
+(`/.../`, recognised where an operand starts: at the start, after `=~`,
+`!~`, an operator, an opening bracket, `,`, `:`, `=` or a keyword such as
+`and`, `or`, `not` or `return`), comments and durations (`1h30m`). The
+checks look at the names in that token stream, so nothing inside a
+string, regex or comment counts as code and nothing that is code can hide
+inside one. `to` is refused wherever it's used as a value (`to(...)`,
+`experimental.to`, `universe.to`, an alias such as `w = to`), and so are
+`host:` and `token:` arguments, which point `from()` and similar functions
+at another server. String interpolation (`"${...}"`) is refused, since it
+would hide an expression inside a string, and so is a regex holding `"`
+or `//` (write `\x22` or `[/][/]`), and a `/` after `}` that could start
+one, where the two readings would differ.
 
 **Security.** The token goes in `Authorization: Token …`; the client
 follows redirects only within the same host and never from https to http.

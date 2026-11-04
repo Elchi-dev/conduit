@@ -204,3 +204,22 @@ func TestTalkRefusesRedirect(t *testing.T) {
 		t.Fatalf("%+v %q", h, leaked)
 	}
 }
+
+// /commands and wildcard mentions are refused before anything is sent; the
+// preview names who is mentioned.
+func TestTalkCommandsAndMentions(t *testing.T) {
+	m, f := setup(t, Config{AppPassword: "secret://nc", AllowedConversations: []string{"team1234"}})
+	for _, text := range []string{"/help", "  /wiki secrets", "@all meeting", `@"all" now`, "hey @here"} {
+		in, _ := json.Marshal(map[string]string{"conversation": "team1234", "text": text})
+		if _, err := invoke(m, "send_message", string(in), false); err == nil {
+			t.Fatalf("sent %q", text)
+		}
+	}
+	if len(f.sent) != 0 {
+		t.Fatal(f.sent)
+	}
+	r, err := invoke(m, "send_message", `{"conversation":"team1234","text":"ping @sam and @\"Kim Lee\", see a/b"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Send a message to "Team" (team1234), a group conversation; mentions @"Kim Lee", @sam (they're notified)` {
+		t.Fatal(r.Plan, err)
+	}
+}

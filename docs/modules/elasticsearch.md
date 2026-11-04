@@ -26,8 +26,14 @@ mistakes and the obvious tricks, but anything the role allows can be done.
 **What search refuses.** Anything that runs code: any key naming a script
 (`script`, `script_score`, `script_fields`, `scripted_metric`, `_script`
 sort, ...), `runtime_mappings` (fields defined by a script), a `lang` key
-and the word `painless` as a value. Lookups into system indices (a terms
-lookup or `more_like_this` naming an index that starts with `.` or `_`).
+and the word `painless` as a value. `wrapper` queries (base64-encoded DSL
+that would skip these checks). Lookups into system indices (a terms lookup
+or `more_like_this` naming an index that starts with `.`, `_` or `<` (date
+math, such as `<.security-{now}>`), or another cluster's index). JSON with
+the same key twice in one object. Oversized aggregations: a `size` or
+`shard_size` above 1000 (`shard_size` 2000), a `top_hits` or `inner_hits`
+size above 100, and nested bucket aggregations whose sizes multiply to more
+than 10,000 buckets (a terms-like aggregation without a size counts as 10).
 Index names starting with `.` or `_` (so no `_all`, and nothing such as
 `_update_by_query`, `_delete_by_query` or another API), names with `/`,
 `:` (cross-cluster search) or uppercase letters. Conduit builds the request

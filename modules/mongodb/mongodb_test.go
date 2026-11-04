@@ -197,3 +197,57 @@ func TestCleanErr(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// The check runs on the decoded BSON, where duplicate keys survive (a Go
+// map kept only the last one), and duplicate keys are refused outright.
+func TestDuplicateKeysAndDecodedCheck(t *testing.T) {
+	for _, s := range []string{
+		`{"database":"app","collection":"orders","filter":{"$expr":{"$function":{"body":"function(){while(true){}}","args":[],"lang":"js"}},"$expr":true}}`,
+		`{"database":"app","collection":"orders","filter":{"a":1,"a":2}}`,
+		`{"database":"app","collection":"orders","sort":{"a":1,"a":-1}}`,
+	} {
+		if _, err := BuildFind(in(s)); err == nil {
+			t.Errorf("accepted %s", s)
+		}
+	}
+	if _, _, err := BuildPipeline(in(`{"database":"app","collection":"orders","pipeline":[{"$match":{"$and":[{"$where":"sleep(100000)"}],"$and":[{}]}}]}`)); err == nil {
+		t.Error("accepted a duplicate $and hiding $where")
+	}
+	// Check itself walks every element of a bson.D, duplicates included,
+	// and refuses BSON JavaScript values.
+	for _, d := range []bson.D{
+		{{Key: "$expr", Value: bson.D{{Key: "$function", Value: bson.D{}}}}, {Key: "$expr", Value: true}},
+		{{Key: "$and", Value: bson.A{bson.D{{Key: "$where", Value: "1"}}}}, {Key: "$and", Value: bson.A{}}},
+		{{Key: "a", Value: bson.JavaScript("function(){}")}},
+		{{Key: "a", Value: bson.CodeWithScope{Code: "x"}}},
+		{{Key: "$unionWith", Value: "system.users"}},
+	} {
+		if err := Check(d, 0); err == nil {
+			t.Errorf("Check accepted %v", d)
+		}
+	}
+	if err := Check(bson.D{{Key: "a", Value: 1}, {Key: "b", Value: bson.A{bson.D{{Key: "c", Value: "system"}}}}}, 0); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Collections named as strings in $unionWith, $lookup and $graphLookup
+// are kept out of the system namespace.
+func TestSystemCollectionStrings(t *testing.T) {
+	for _, st := range []string{
+		`{"$unionWith":"system.users"}`,
+		`{"$unionWith":"System.Profile"}`,
+		`{"$unionWith":{"coll":"system.users","pipeline":[]}}`,
+		`{"$graphLookup":{"from":"system.roles","startWith":"$a","connectFromField":"a","connectToField":"b","as":"c"}}`,
+		`{"$lookup":{"from":"system.views","as":"c","pipeline":[]}}`,
+		`{"$facet":{"x":[{"$unionWith":"system.js"}]}}`,
+		`{"$unionWith":{"db":"admin","coll":"x"}}`,
+	} {
+		if _, _, err := BuildPipeline(in(`{"database":"admin","collection":"x","pipeline":[` + st + `]}`)); err == nil {
+			t.Errorf("accepted %s", st)
+		}
+	}
+	if _, _, err := BuildPipeline(in(`{"database":"app","collection":"orders","pipeline":[{"$unionWith":"archive"},{"$lookup":{"from":"users","localField":"u","foreignField":"_id","as":"user"}}]}`)); err != nil {
+		t.Fatal(err)
+	}
+}

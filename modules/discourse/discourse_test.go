@@ -190,3 +190,69 @@ func TestDiscourseRefusesRedirect(t *testing.T) {
 		t.Fatalf("%+v %q", h, leaked)
 	}
 }
+
+// Subcategory slugs are unique only within a parent: a bare slug allows
+// only the top-level category, parent/child a subcategory, an id either.
+func TestCategorySlugsByPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/site.json":
+			io.WriteString(w, `{"categories":[{"id":1,"name":"General","slug":"general"},{"id":2,"name":"Staff","slug":"staff","read_restricted":true},{"id":9,"name":"General","slug":"general","parent_category_id":2,"read_restricted":true},{"id":10,"name":"Dup","slug":"dup"},{"id":11,"name":"Dup","slug":"dup"},{"id":12,"name":"Orphan","slug":"orphan","parent_category_id":99}]}`)
+		case "/t/50.json":
+			io.WriteString(w, `{"id":50,"title":"Layoffs list","category_id":9,"archetype":"regular","post_stream":{"posts":[{"id":1,"username":"ceo","post_number":1,"cooked":"<p>private</p>"}]}}`)
+		case "/t/51.json":
+			io.WriteString(w, `{"id":51,"title":"Hello","category_id":1,"archetype":"regular","post_stream":{"posts":[{"id":2,"username":"sam","post_number":1,"cooked":"<p>hi</p>"}]}}`)
+		case "/t/52.json":
+			io.WriteString(w, `{"id":52,"title":"Dup","category_id":10,"archetype":"regular","post_stream":{"posts":[]}}`)
+		case "/t/53.json":
+			io.WriteString(w, `{"id":53,"title":"Orphan","category_id":12,"archetype":"regular","post_stream":{"posts":[]}}`)
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	conf := func(allowed ...string) *Module {
+		m := New()
+		m.HTTP = srv.Client()
+		raw, _ := json.Marshal(Config{URL: srv.URL, APIKey: "secret://d", Username: "conduit", AllowedCategories: allowed})
+		if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://d": "k"}), "d", raw); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	read := func(m *Module, topic string) error {
+		_, err := invoke(m, "read_topic", `{"topic":`+topic+`}`, false)
+		return err
+	}
+	m := conf("general", "dup", "orphan")
+	if err := read(m, "50"); err == nil {
+		t.Fatal("a subcategory matched a top-level slug")
+	}
+	if err := read(m, "51"); err != nil {
+		t.Fatal(err)
+	}
+	if err := read(m, "52"); err == nil {
+		t.Fatal("an ambiguous slug was allowed")
+	}
+	if err := read(m, "53"); err == nil {
+		t.Fatal("a subcategory with an unknown parent was allowed")
+	}
+	if err := read(conf("staff/general"), "50"); err != nil {
+		t.Fatal(err)
+	}
+	if err := read(conf("staff/general"), "51"); err == nil {
+		t.Fatal("parent/child allowed the top-level category")
+	}
+	if err := read(conf("9"), "50"); err != nil {
+		t.Fatal(err)
+	}
+	if err := read(conf("10"), "52"); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"a/", "/a", "a//b", "a/b/c/d", "A B"} {
+		raw, _ := json.Marshal(Config{URL: srv.URL, APIKey: "secret://d", Username: "conduit", AllowedCategories: []string{bad}})
+		if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

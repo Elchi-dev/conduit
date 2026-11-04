@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
+	"github.com/elchi-dev/conduit/modules/internal/mention"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/modules/internal/tlspin"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -76,7 +77,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "unread", Title: "Unread", Description: "Rooms with unread messages, with unread and mention counts (direct messages are named after the other person).", Risk: sdk.RiskRead, Sensitive: true},
 			{Name: "messages", Title: "Recent messages", Description: "Recent messages in an allowed room, oldest first.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["room"],"properties":{` + room + `,"limit":{"type":"integer","default":30,"minimum":1,"maximum":100}}}`)},
-			{Name: "send_message", Title: "Send a message", Description: "Sends a message (Markdown) to an allowed room, optionally in a thread. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
+			{Name: "send_message", Title: "Send a message", Description: "Sends a message (Markdown) to an allowed room, optionally in a thread of that room. The preview names everyone mentioned; wildcard mentions (@all, @here) are refused. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["room","text"],"properties":{` + room + `,"text":{"type":"string","maxLength":5000},"thread":{"type":"string","description":"Message id of the thread to reply in"}}}`)},
 			{Name: "delete_message", Title: "Delete a message", Description: "Deletes a message in an allowed room for everyone. The preview names its author and time, not its text.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["room","id"],"properties":{` + room + `,"id":{"type":"string","description":"Message id"}}}`)},
@@ -394,16 +395,41 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if thread != "" && !idRe.MatchString(thread) {
 			return sdk.Result{}, errors.New("thread is a message id (letters and digits)")
 		}
+		found := mention.Find(text)
+		if found.Wildcard != "" {
+			return sdk.Result{}, fmt.Errorf("%s notifies everyone in the room; wildcard mentions (@all, @here) aren't sent from Conduit", found.Wildcard)
+		}
 		r, err := c.room(ctx, p.Room)
 		if err != nil {
 			return sdk.Result{}, err
 		}
 		target := "#" + r.Name
+		var parent message
+		if thread != "" {
+			// The thread must be in this room: a tmid from another room
+			// would post there, outside the allow list.
+			var got struct {
+				Message message `json:"message"`
+			}
+			if err := c.do(ctx, http.MethodGet, "/chat.getMessage", url.Values{"msgId": {thread}}, nil, &got); err != nil {
+				if rest.IsStatus(err, http.StatusBadRequest) || rest.IsStatus(err, http.StatusNotFound) {
+					return sdk.Result{}, fmt.Errorf("no message %s to reply to", thread)
+				}
+				return sdk.Result{}, err
+			}
+			if got.Message.RID != r.ID {
+				return sdk.Result{}, fmt.Errorf("thread %s isn't in %s", thread, target)
+			}
+			parent = got.Message
+		}
 		if call.DryRun {
 			after, _ := json.Marshal(map[string]string{"text": text, "thread": thread})
 			sum := "Send a message to " + target
 			if thread != "" {
-				sum = "Reply in a thread in " + target
+				sum = fmt.Sprintf("Reply in %s's thread in %s", parent.U.Username, target)
+			}
+			if pv := found.Preview(); pv != "" {
+				sum += "; " + pv
 			}
 			return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: target, Op: "create", After: after}}}}, nil
 		}

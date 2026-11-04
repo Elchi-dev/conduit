@@ -5,10 +5,12 @@
 package mongodb
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"regexp"
@@ -507,31 +509,54 @@ var deniedOps = map[string]string{
 	"$changestream":  "change streams (they don't end)",
 }
 
-// Check walks MongoDB JSON and refuses JavaScript, writing stages and
-// lookups into system collections, and bounds its depth.
+// Check walks a decoded query (bson.D, bson.A, or the plain JSON forms
+// map[string]any and []any) and refuses JavaScript (operators and BSON
+// code values), writing stages, lookups into system collections or another
+// database, and bounds its depth. Every element of a bson.D is looked at,
+// duplicates included, since the server sees them all.
 func Check(v any, depth int) error {
 	if depth > maxDepth {
 		return errors.New("the query is nested too deeply")
 	}
 	switch x := v.(type) {
-	case map[string]any:
-		for k, val := range x {
-			if why, ok := deniedOps[strings.ToLower(k)]; ok {
-				return fmt.Errorf("%s isn't allowed here", why)
+	case bson.D:
+		hasColl := false
+		for _, e := range x {
+			if e.Key == "coll" {
+				hasColl = true
 			}
-			switch k {
-			case "from", "coll":
-				// $lookup, $graphLookup and $unionWith name another collection.
-				if s, ok := val.(string); ok && strings.HasPrefix(s, "system.") {
-					return errors.New("system collections aren't read here")
-				}
-			case "db":
-				// {from: {db: …, coll: …}} reads another database.
-				if _, ok := x["coll"]; ok {
-					return errors.New("reading another database from a pipeline isn't allowed here")
-				}
+		}
+		for _, e := range x {
+			if err := checkKey(e.Key, e.Value, hasColl); err != nil {
+				return err
+			}
+			if err := Check(e.Value, depth+1); err != nil {
+				return err
+			}
+		}
+	case bson.M:
+		_, hasColl := x["coll"]
+		for k, val := range x {
+			if err := checkKey(k, val, hasColl); err != nil {
+				return err
 			}
 			if err := Check(val, depth+1); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		_, hasColl := x["coll"]
+		for k, val := range x {
+			if err := checkKey(k, val, hasColl); err != nil {
+				return err
+			}
+			if err := Check(val, depth+1); err != nil {
+				return err
+			}
+		}
+	case bson.A:
+		for _, e := range x {
+			if err := Check(e, depth+1); err != nil {
 				return err
 			}
 		}
@@ -541,12 +566,98 @@ func Check(v any, depth int) error {
 				return err
 			}
 		}
+	case bson.JavaScript, bson.CodeWithScope, *bson.CodeWithScope:
+		return errors.New("JavaScript code isn't allowed here")
 	}
 	return nil
 }
 
+// checkKey refuses one key of a document: an operator that runs JavaScript
+// or writes, a collection named as a string ($lookup's and $graphLookup's
+// from, $unionWith's coll or its string form) in the system namespace, and
+// a db next to a coll (another database).
+func checkKey(k string, val any, hasColl bool) error {
+	lk := strings.ToLower(k)
+	if why, ok := deniedOps[lk]; ok {
+		return fmt.Errorf("%s isn't allowed here", why)
+	}
+	switch lk {
+	case "from", "coll", "$unionwith":
+		if s, ok := val.(string); ok && systemColl(s) {
+			return errors.New("system collections aren't read here")
+		}
+	case "db":
+		if hasColl {
+			return errors.New("reading another database from a pipeline isn't allowed here")
+		}
+	}
+	return nil
+}
+
+// systemColl reports whether a collection name is in the system namespace
+// (system.users, system.profile, …), in any case and with or without a
+// database prefix.
+func systemColl(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(s, "system.") || strings.Contains(s, ".system.")
+}
+
+// noDuplicateKeys refuses JSON with an object that has the same key twice
+// (after unescaping): a JSON map keeps one of them, the server sees both.
+func noDuplicateKeys(raw []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	type frame struct {
+		obj    bool
+		keys   map[string]bool
+		expKey bool
+	}
+	var stack []*frame
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		var top *frame
+		if len(stack) > 0 {
+			top = stack[len(stack)-1]
+		}
+		if top != nil && top.obj && top.expKey {
+			if k, ok := tok.(string); ok {
+				if top.keys[k] {
+					return fmt.Errorf("the key %q appears twice in one object", k)
+				}
+				top.keys[k] = true
+				top.expKey = false
+				continue
+			}
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				stack = append(stack, &frame{obj: true, keys: map[string]bool{}, expKey: true})
+				continue
+			case '[':
+				stack = append(stack, &frame{})
+				continue
+			case '}', ']':
+				stack = stack[:len(stack)-1]
+			}
+		}
+		// A value ended: the enclosing object wants a key next.
+		if len(stack) > 0 && stack[len(stack)-1].obj {
+			stack[len(stack)-1].expKey = true
+		}
+	}
+}
+
 // Doc checks one MongoDB JSON object (Extended JSON, so {"$oid": …} and
-// {"$date": …} work) and converts it to a BSON document.
+// {"$date": …} work) and converts it to a BSON document. The check runs on
+// the decoded BSON, exactly what is sent.
 func Doc(raw json.RawMessage, what string) (bson.D, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return bson.D{}, nil
@@ -561,12 +672,18 @@ func Doc(raw json.RawMessage, what string) (bson.D, error) {
 	if _, ok := v.(map[string]any); !ok {
 		return nil, fmt.Errorf("the %s is an object, like {\"status\":\"failed\"}", what)
 	}
+	if err := noDuplicateKeys(raw); err != nil {
+		return nil, fmt.Errorf("the %s: %w", what, err)
+	}
 	if err := Check(v, 0); err != nil {
 		return nil, err
 	}
 	var d bson.D
 	if err := bson.UnmarshalExtJSON(raw, false, &d); err != nil {
 		return nil, fmt.Errorf("the %s isn't valid MongoDB JSON: %w", what, err)
+	}
+	if err := Check(d, 0); err != nil {
+		return nil, err
 	}
 	return d, nil
 }

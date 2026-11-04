@@ -97,7 +97,7 @@ func TestReads(t *testing.T) {
 	// Every request carries readonly=1, last, after the limits.
 	for _, s := range f.seen {
 		qs, _, _ := strings.Cut(s, " | ")
-		if !strings.HasSuffix(qs, "&readonly=1") || !strings.Contains(qs, "max_execution_time=10") || !strings.Contains(qs, "max_result_rows=1000") || !strings.Contains(qs, "result_overflow_mode=break") {
+		if !strings.HasSuffix(qs, "&readonly=1") || !strings.Contains(qs, "max_execution_time=10") || !strings.Contains(qs, "max_result_rows=1000") || !strings.Contains(qs, "max_memory_usage=2147483648") || !strings.Contains(qs, "result_overflow_mode=break") {
 			t.Fatal(s)
 		}
 	}

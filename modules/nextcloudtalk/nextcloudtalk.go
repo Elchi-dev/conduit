@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
+	"github.com/elchi-dev/conduit/modules/internal/mention"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/modules/internal/tlspin"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -81,7 +82,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "unread", Title: "Unread", Description: "Conversations with unread messages, with unread and mention counts.", Risk: sdk.RiskRead, Sensitive: true},
 			{Name: "messages", Title: "Recent messages", Description: "Recent messages in an allowed conversation, oldest first. Doesn't mark them read.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation"],"properties":{` + conv + `,"limit":{"type":"integer","default":30,"minimum":1,"maximum":100}}}`)},
-			{Name: "send_message", Title: "Send a message", Description: "Sends a message (Markdown) to an allowed conversation, optionally as a reply. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
+			{Name: "send_message", Title: "Send a message", Description: "Sends a message (Markdown) to an allowed conversation, optionally as a reply. The preview names everyone mentioned; wildcard mentions (@all, @here) and /commands are refused. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation","text"],"properties":{` + conv + `,"text":{"type":"string","maxLength":32000},"replyTo":{"type":"integer","minimum":1,"description":"Message id being replied to"}}}`)},
 			{Name: "delete_message", Title: "Delete a message", Description: "Deletes a message in an allowed conversation for everyone (Talk allows it for 6 hours, and for moderators). The preview names the conversation and message id, not its text.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation","id"],"properties":{` + conv + `,"id":{"type":"integer","minimum":1,"description":"Message id"}}}`)},
@@ -389,6 +390,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if p.ReplyTo < 0 {
 			return sdk.Result{}, errors.New("replyTo is a message id")
 		}
+		if strings.HasPrefix(text, "/") {
+			// Talk runs /commands (bots, /help, admin-defined commands).
+			return sdk.Result{}, errors.New("a message starting with / is a Talk command, which Conduit doesn't run; start it with something else")
+		}
+		found := mention.Find(text)
+		if found.Wildcard != "" {
+			return sdk.Result{}, fmt.Errorf("%s notifies everyone in the conversation; wildcard mentions (@all, @here) aren't sent from Conduit", found.Wildcard)
+		}
 		r, err := c.conversation(ctx, p.Conversation)
 		if err != nil {
 			return sdk.Result{}, err
@@ -398,7 +407,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		if call.DryRun {
 			after, _ := json.Marshal(map[string]any{"text": text, "replyTo": p.ReplyTo})
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Send a message to %s, a %s conversation", r.label(), kind(r.Type)),
+			sum := fmt.Sprintf("Send a message to %s, a %s conversation", r.label(), kind(r.Type))
+			if pv := found.Preview(); pv != "" {
+				sum += "; " + pv
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: sum,
 				Changes: []sdk.Change{{Target: r.Token, Op: "create", After: after}}}}, nil
 		}
 		body := map[string]any{"message": text}

@@ -41,9 +41,13 @@ including inside `$expr`, `$facet` and `$lookup`: `$where`, `$function`
 and `$accumulator` (server-side JavaScript), `$code` (JavaScript values),
 `$out` and `$merge` (they write a collection) and `$changeStream` (it
 doesn't end). System collections (`system.users`, `system.profile`, ...)
-can't be read, also not through `$lookup`, `$graphLookup` or `$unionWith`,
-and a pipeline can't name another database. Database and collection names
-are checked, input is at most 64 KB and 32 levels deep.
+can't be read, also not through `$lookup`, `$graphLookup` or `$unionWith`
+(in its object form or as a plain string, `{"$unionWith": "system.users"}`),
+and a pipeline can't name another database. The check runs on the decoded
+BSON that is sent, every element of it, and JSON with the same key twice in
+one object (which a JSON map would collapse, while the server sees both) is
+refused outright. Database and collection names are checked, input is at
+most 64 KB and 32 levels deep.
 
 Tests: query building and checking run in every build; the module runs
 against a real MongoDB with `go test -tags mongointegration` (see

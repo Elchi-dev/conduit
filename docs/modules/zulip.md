@@ -20,7 +20,7 @@ certificate, enter its SHA-256 `fingerprint`.
 | `streams` | read | Subscribed streams with id, whether each is private or muted, and whether it's allowed (`true`, `false` or `"some topics"`). |
 | `unread` | read, sensitive | Unread message counts by stream, with a per-topic breakdown only for allowed streams and topics, and the number of unread direct messages (never their senders or text). Counts the newest 1000 unread messages. |
 | `messages` | read, sensitive | Recent messages in an allowed `stream`, or one `topic` in it (`limit` default 30, at most 100), oldest first: id, sender, topic, time and the Markdown source. A stream where only some topics are allowed needs a `topic`. |
-| `send_message` | write, sensitive | Sends `content` (Markdown, at most 10000 bytes) to `topic` in an allowed `stream`. The preview names the stream and topic; undo deletes the message. |
+| `send_message` | write, sensitive | Sends `content` (Markdown, at most 10000 bytes) to `topic` in an allowed `stream`. Wildcard mentions (`@**all**`, `@**everyone**`, `@**channel**`, `@**stream**`, `@**topic**`, silent ones too), which notify the whole stream or topic, are refused; there's no way to send those from Conduit. The preview names the stream and topic and everyone mentioned (people and `@*groups*`); undo deletes the message. |
 | `delete_message` | destructive | Deletes message `id` for everyone, if it's in an allowed stream or topic (the organization's settings decide whose messages the account may delete, and for how long). The preview names its author, time and stream, not its text. Can't be undone. |
 
 **Security.** The email and key are sent as HTTP basic authentication and

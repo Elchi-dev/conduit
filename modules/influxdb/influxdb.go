@@ -82,7 +82,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["flux"],"properties":{"flux":{"type":"string","x-multiline":true,"description":"e.g. from(bucket: \"telegraf\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"cpu\") |> limit(n: 10)"}}}`)},
 			{Name: "tasks", Title: "Tasks", Description: "Tasks with status (active or inactive), schedule and the last run's time and status.", Risk: sdk.RiskRead},
 			{Name: "task_runs", Title: "Task runs", Description: "A task's recent runs with status and times.", Risk: sdk.RiskRead, Input: sdk.Schema(task)},
-			{Name: "enable_task", Title: "Enable a task", Description: "Sets a task active so it runs on its schedule. Undo disables it again.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true, Input: sdk.Schema(task)},
+			{Name: "enable_task", Title: "Enable a task", Description: "Sets a task active so it runs on its schedule. A task is Flux the server runs on its own, unchecked by Conduit (it can write with to() or reach other servers), so this is destructive. Undo disables it again.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true, Input: sdk.Schema(task)},
 			{Name: "disable_task", Title: "Disable a task", Description: "Sets a task inactive so it stops running on its schedule (a run in progress finishes). Undo enables it again.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true, Input: sdk.Schema(task)},
 		},
 	}
@@ -455,31 +455,14 @@ var allowedImports = map[string]bool{
 	"experimental/query": true, "experimental/date/boundaries": true, "date/boundaries": true,
 }
 
-var (
-	importRe = regexp.MustCompile(`^import\s+(?:[A-Za-z_][A-Za-z0-9_]*\s+)?"([^"\\]*)"$`)
-	wordRe   = regexp.MustCompile(`(^|[^A-Za-z0-9_])import([^A-Za-z0-9_]|$)`)
-	// deniedFlux is matched against the query with strings and comments
-	// blanked: to() (also as experimental.to or through an alias), and from()
-	// or other functions pointed at another host or given a token.
-	deniedFlux = []struct {
-		name string
-		re   *regexp.Regexp
-	}{
-		{"experimental.to", regexp.MustCompile(`experimental\s*\.\s*to\b`)},
-		{"http.post", regexp.MustCompile(`\bhttp\s*\.`)},
-		{"sql.to", regexp.MustCompile(`\bsql\s*\.`)},
-		{"secrets", regexp.MustCompile(`\bsecrets\s*\.`)},
-	}
-	// namedArg finds host: and token: arguments, which point from(),
-	// buckets() and the schema functions at another server.
-	toWord   = regexp.MustCompile(`\bto\b`)
-	namedArg = regexp.MustCompile(`(^|[^A-Za-z0-9_.])(host|token)\s*:`)
-)
-
 // CheckFlux accepts a Flux query whose imports are all on the allow list
-// and which calls no function that writes or reaches outside. Strings and
-// comments are blanked before looking for calls, and string interpolation
-// (${…}), which would hide an expression inside a string, is refused.
+// and which calls no function that writes or reaches outside. The query is
+// lexed the way Flux does (strings with escapes, regular expression
+// literals, comments, durations) and the checks look at its identifiers,
+// so nothing inside a string, a regex or a comment can hide a call, and
+// nothing that is code can pass for one of those. String interpolation
+// (${…}), which would hide an expression inside a string, is refused, and
+// so is a regex holding " or // (whose reading would be ambiguous).
 func CheckFlux(q string) error {
 	if strings.TrimSpace(q) == "" {
 		return errors.New("enter a Flux query")
@@ -487,113 +470,251 @@ func CheckFlux(q string) error {
 	if len(q) > maxFlux {
 		return errors.New("the query is too long")
 	}
-	code, imports, err := stripFlux(q)
+	toks, err := lexFlux(q)
 	if err != nil {
 		return err
 	}
-	for _, line := range imports {
-		m := importRe.FindStringSubmatch(line)
-		if m == nil {
-			return fmt.Errorf("can't read the import %q", line)
+	// Imports: import [alias] "path", at the top.
+	i := 0
+	for i < len(toks) && toks[i].kind == tIdent && toks[i].text == "import" {
+		j := i + 1
+		if j < len(toks) && toks[j].kind == tIdent {
+			j++
 		}
-		if !allowedImports[m[1]] {
-			return fmt.Errorf("the %q package isn't allowed here (it can write, reach other servers or read secrets)", m[1])
+		if j >= len(toks) || toks[j].kind != tString {
+			return errors.New("can't read an import: it's import \"package\" or import alias \"package\"")
 		}
-	}
-	if wordRe.MatchString(code) {
-		return errors.New("imports go at the top of the query, one per line")
-	}
-	for _, d := range deniedFlux {
-		if d.re.MatchString(code) {
-			return fmt.Errorf("%s isn't allowed here", d.name)
+		path, ok := plainString(toks[j].text)
+		if !ok {
+			return fmt.Errorf("can't read the import %s", toks[j].text)
 		}
-	}
-	// to() writes; it's refused wherever the name is used as a value
-	// (to(…), universe.to, an alias such as w = to), not as a record key.
-	for _, m := range toWord.FindAllStringIndex(code, -1) {
-		if !strings.HasPrefix(strings.TrimLeft(code[m[1]:], " \t\r\n"), ":") {
-			return errors.New("to() (writing) isn't allowed here")
+		if !allowedImports[path] {
+			return fmt.Errorf("the %q package isn't allowed here (it can write, reach other servers or read secrets)", path)
 		}
+		i = j + 1
 	}
-	// host: and token: as a function's argument (inside parentheses) are
-	// refused; as a record's field (inside braces: {r with host: …}) they
-	// are fine.
-	for _, m := range namedArg.FindAllStringSubmatchIndex(code, -1) {
-		if innermostOpen(code[:m[4]]) == '(' {
-			return fmt.Errorf("the %s: argument (querying another server) isn't allowed here", code[m[4]:m[5]])
+	var stack []byte
+	for k := i; k < len(toks); k++ {
+		t := toks[k]
+		var prev, next *fluxToken
+		if k > 0 {
+			prev = &toks[k-1]
+		}
+		if k+1 < len(toks) {
+			next = &toks[k+1]
+		}
+		if t.kind == tPunct {
+			switch t.text {
+			case "(", "[", "{":
+				stack = append(stack, t.text[0])
+			case ")", "]", "}":
+				if len(stack) > 0 {
+					stack = stack[:len(stack)-1]
+				}
+			}
+			continue
+		}
+		if t.kind != tIdent {
+			continue
+		}
+		dotNext := next != nil && next.kind == tPunct && next.text == "."
+		colonNext := next != nil && next.kind == tPunct && next.text == ":"
+		dotPrev := prev != nil && prev.kind == tPunct && prev.text == "."
+		switch t.text {
+		case "import":
+			return errors.New("imports go at the top of the query")
+		case "http", "sql", "secrets":
+			if dotNext {
+				return fmt.Errorf("%s isn't allowed here", t.text)
+			}
+		case "to":
+			// to() writes; it's refused wherever the name is used as a
+			// value (to(…), universe.to, experimental.to, an alias such as
+			// w = to), not as a record key or argument name.
+			if !colonNext {
+				if dotPrev && k >= 2 && toks[k-2].kind == tIdent && toks[k-2].text == "experimental" {
+					return errors.New("experimental.to isn't allowed here")
+				}
+				return errors.New("to() (writing) isn't allowed here")
+			}
+		case "host", "token":
+			// host: and token: as a function's argument (inside
+			// parentheses) point from(), buckets() and the schema
+			// functions at another server; as a record's field (inside
+			// braces: {r with host: …}) they are fine.
+			if colonNext && !dotPrev && len(stack) > 0 && stack[len(stack)-1] == '(' {
+				return fmt.Errorf("the %s: argument (querying another server) isn't allowed here", t.text)
+			}
 		}
 	}
 	return nil
 }
 
-// innermostOpen returns the innermost bracket still open at the end of s,
-// or 0.
-func innermostOpen(s string) byte {
-	var stack []byte
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '(', '{', '[':
-			stack = append(stack, s[i])
-		case ')', '}', ']':
-			if len(stack) > 0 {
-				stack = stack[:len(stack)-1]
-			}
-		}
-	}
-	if len(stack) == 0 {
-		return 0
-	}
-	return stack[len(stack)-1]
+type fluxKind int
+
+const (
+	tIdent fluxKind = iota
+	tString
+	tRegex
+	tNumber // integers, floats and durations
+	tPunct  // operators and brackets
+)
+
+type fluxToken struct {
+	kind fluxKind
+	text string
 }
 
-// stripFlux returns the query with comments removed and string contents
-// blanked, plus the import lines at its top (taken out of the code).
-func stripFlux(q string) (string, []string, error) {
-	var b strings.Builder
-	var imports []string
-	lines := strings.Split(q, "\n")
-	// Leading import lines, with blank and comment lines between them.
-	start := 0
-	for ; start < len(lines); start++ {
-		l := strings.TrimSpace(lines[start])
-		if l == "" || strings.HasPrefix(l, "//") {
-			continue
+// keywords that an operand follows: a / after them starts a regex.
+var fluxOperandKeywords = map[string]bool{
+	"and": true, "or": true, "not": true, "return": true, "if": true, "then": true, "else": true,
+	"exists": true, "with": true, "import": true, "package": true, "option": true, "builtin": true, "testcase": true,
+}
+
+// fluxDurationUnits, longest first.
+var fluxDurationUnits = []string{"mo", "ms", "us", "µs", "ns", "y", "w", "d", "h", "m", "s"}
+
+func isIdentStart(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
+}
+
+func isIdentChar(c byte) bool { return isIdentStart(c) || (c >= '0' && c <= '9') }
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// lexFlux splits a query into Flux tokens, comments and whitespace left
+// out. A / starts a regular expression where an operand starts (at the
+// start, after an operator, an opening bracket, a comma, a colon or a
+// keyword) and is division after an operand (a name, a literal, a closing
+// bracket). After a } both readings are possible (a record or a block
+// ends), so there it's read as division and refused if the regex reading
+// would hide anything (a " or //).
+func lexFlux(q string) ([]fluxToken, error) {
+	var toks []fluxToken
+	operandEnd := func() bool {
+		if len(toks) == 0 {
+			return false
 		}
-		if strings.HasPrefix(l, "import") && (len(l) == len("import") || l[len("import")] == ' ' || l[len("import")] == '\t') {
-			if i := strings.Index(l, "//"); i >= 0 && strings.Count(l[:i], `"`)%2 == 0 {
-				l = strings.TrimSpace(l[:i])
-			}
-			imports = append(imports, l)
-			continue
+		t := toks[len(toks)-1]
+		switch t.kind {
+		case tIdent:
+			return !fluxOperandKeywords[t.text]
+		case tString, tRegex, tNumber:
+			return true
 		}
-		break
+		return t.text == ")" || t.text == "]" || t.text == "}"
 	}
-	rest := strings.Join(lines[start:], "\n")
-	for i := 0; i < len(rest); i++ {
-		ch := rest[i]
+	for i := 0; i < len(q); {
+		c := q[i]
 		switch {
-		case ch == '/' && i+1 < len(rest) && rest[i+1] == '/':
-			for i < len(rest) && rest[i] != '\n' {
-				i++
-			}
-			b.WriteByte('\n')
-		case ch == '"':
+		case c == ' ' || c == '\t' || c == '\r' || c == '\n':
 			i++
-			for i < len(rest) && rest[i] != '"' {
-				if rest[i] == '\\' {
-					i++
-				} else if rest[i] == '$' && i+1 < len(rest) && rest[i+1] == '{' {
-					return "", nil, errors.New("string interpolation (${…}) isn't allowed here")
-				}
+		case c == '/' && i+1 < len(q) && q[i+1] == '/':
+			for i < len(q) && q[i] != '\n' {
 				i++
 			}
-			if i >= len(rest) {
-				return "", nil, errors.New("a string isn't closed")
+		case c == '"':
+			j := i + 1
+			for ; j < len(q) && q[j] != '"'; j++ {
+				if q[j] == '\\' {
+					j++
+				} else if q[j] == '$' && j+1 < len(q) && q[j+1] == '{' {
+					return nil, errors.New("string interpolation (${…}) isn't allowed here")
+				}
 			}
-			b.WriteString(`""`)
+			if j >= len(q) {
+				return nil, errors.New("a string isn't closed")
+			}
+			toks = append(toks, fluxToken{tString, q[i : j+1]})
+			i = j + 1
+		case c == '/':
+			end, closed := regexEnd(q, i)
+			if !operandEnd() {
+				if !closed {
+					return nil, errors.New("a regular expression (/…/) isn't closed on its line")
+				}
+				body := q[i+1 : end]
+				if strings.Contains(body, `"`) || strings.Contains(body, "//") {
+					return nil, errors.New(`a regular expression holding " or // isn't allowed here (write \x22 or [/][/])`)
+				}
+				toks = append(toks, fluxToken{tRegex, q[i : end+1]})
+				i = end + 1
+				continue
+			}
+			if toks[len(toks)-1].text == "}" && closed {
+				body := q[i+1 : end]
+				if strings.Contains(body, `"`) || strings.Contains(body, "//") {
+					return nil, errors.New("a / after } that could start a regular expression holding \" or // isn't allowed here")
+				}
+			}
+			toks = append(toks, fluxToken{tPunct, "/"})
+			i++
+		case isDigit(c) || (c == '.' && i+1 < len(q) && isDigit(q[i+1])):
+			j := i
+			for {
+				for j < len(q) && (isDigit(q[j]) || q[j] == '.') {
+					j++
+				}
+				unit := ""
+				for _, u := range fluxDurationUnits {
+					if strings.HasPrefix(q[j:], u) {
+						unit = u
+						break
+					}
+				}
+				if unit == "" {
+					break
+				}
+				j += len(unit)
+				if j >= len(q) || !isDigit(q[j]) {
+					break
+				}
+			}
+			toks = append(toks, fluxToken{tNumber, q[i:j]})
+			i = j
+		case isIdentStart(c):
+			j := i
+			for j < len(q) && isIdentChar(q[j]) {
+				j++
+			}
+			toks = append(toks, fluxToken{tIdent, q[i:j]})
+			i = j
 		default:
-			b.WriteByte(ch)
+			n := 1
+			if i+1 < len(q) {
+				switch q[i : i+2] {
+				case "=~", "!~", "==", "!=", "<=", ">=", "|>", "<-", "=>", "??":
+					n = 2
+				}
+			}
+			toks = append(toks, fluxToken{tPunct, q[i : i+n]})
+			i += n
 		}
 	}
-	return b.String(), imports, nil
+	return toks, nil
+}
+
+// regexEnd finds the / closing a regular expression that starts at q[i]:
+// the next unescaped / on the same line.
+func regexEnd(q string, i int) (int, bool) {
+	for j := i + 1; j < len(q); j++ {
+		switch q[j] {
+		case '\\':
+			j++
+		case '/':
+			return j, true
+		case '\n':
+			return j, false
+		}
+	}
+	return len(q), false
+}
+
+// plainString returns a string literal's contents when it has no escapes.
+func plainString(lit string) (string, bool) {
+	s := lit[1 : len(lit)-1]
+	if strings.ContainsAny(s, "\\\"\n") {
+		return "", false
+	}
+	return s, true
 }

@@ -39,6 +39,9 @@ const (
 	MaxRows      = 1000
 	MaxBytes     = 8 << 20
 	maxQuery     = 64 << 10
+	// MaxMemory caps the memory one query may use on the server, so a
+	// read (a huge GROUP BY or JOIN) can't exhaust it.
+	MaxMemory = 2 << 30
 )
 
 type conn struct {
@@ -137,6 +140,7 @@ func Settings(database string, params map[string]string) string {
 	q.Set("max_execution_time", strconv.Itoa(int(QueryTimeout.Seconds())))
 	q.Set("max_result_rows", strconv.Itoa(MaxRows))
 	q.Set("max_result_bytes", strconv.Itoa(MaxBytes))
+	q.Set("max_memory_usage", strconv.Itoa(MaxMemory))
 	q.Set("result_overflow_mode", "break")
 	q.Set("wait_end_of_query", "1")
 	for k, v := range params {

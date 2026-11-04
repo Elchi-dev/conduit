@@ -20,7 +20,7 @@ SHA-256 `fingerprint`.
 | `channels` | read | Channels and private groups the account is in (name, type, display name, archived) and whether each is allowed. Direct messages aren't listed. |
 | `unread` | read, sensitive | Rooms with unread messages, with unread and mention counts and the total. Direct messages are named after the other person, so the output stays out of the audit log. |
 | `messages` | read, sensitive | Recent messages in an allowed `room` (`limit` default 30, at most 100), oldest first: id, sender, time, text, thread; system messages (joins, topic changes) are marked by type. |
-| `send_message` | write, sensitive | Sends `text` (Markdown, at most 5000 characters) to an allowed `room`, in a `thread` when given. The preview names the room; undo deletes the message. |
+| `send_message` | write, sensitive | Sends `text` (Markdown, at most 5000 characters) to an allowed `room`, in a `thread` when given; the thread's first message must be in the same room (checked with `chat.getMessage`), since a thread id from another room would post there. Wildcard mentions (`@all`, `@here`, `@channel`, `@everyone`), which notify the whole room, are refused; there's no way to send those from Conduit. The preview names the room, whose thread it replies in and everyone mentioned; undo deletes the message. |
 | `delete_message` | destructive | Deletes message `id` in an allowed `room` for everyone (others' messages only if the account may). The message must be in that room. The preview names its author and time, not its text. Can't be undone. |
 
 **Security.** The token goes in `X-Auth-Token` and the client won't follow a

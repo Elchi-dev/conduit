@@ -24,6 +24,7 @@ import (
 	"unicode"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
+	"github.com/elchi-dev/conduit/modules/internal/mention"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/modules/internal/tlspin"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -84,7 +85,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "unread", Title: "Unread", Description: "Unread message counts by stream, with topics for allowed streams, and the number of unread direct messages.", Risk: sdk.RiskRead, Sensitive: true},
 			{Name: "messages", Title: "Recent messages", Description: "Recent messages in an allowed stream, or one topic in it, oldest first.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["stream"],"properties":{` + where + `,"limit":{"type":"integer","default":30,"minimum":1,"maximum":100}}}`)},
-			{Name: "send_message", Title: "Send a message", Description: "Sends a message (Markdown) to a topic in an allowed stream. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
+			{Name: "send_message", Title: "Send a message", Description: "Sends a message (Markdown) to a topic in an allowed stream. The preview names everyone mentioned; wildcard mentions (@**all**, @**everyone**, @**channel**, @**topic**) are refused. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["stream","topic","content"],"properties":{` + where + `,"content":{"type":"string","maxLength":10000}}}`)},
 			{Name: "delete_message", Title: "Delete a message", Description: "Deletes a message in an allowed stream for everyone (the organization's settings decide whose messages the account may delete). The preview names its author and time, not its text.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"integer","minimum":1,"description":"Message id"}}}`)},
@@ -459,6 +460,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if len(content) > maxContent {
 			return sdk.Result{}, fmt.Errorf("the message is longer than Zulip allows (%d bytes)", maxContent)
 		}
+		found := mention.Find(content)
+		if found.Wildcard != "" {
+			return sdk.Result{}, fmt.Errorf("%s notifies everyone in the stream or topic; wildcard mentions (@**all**, @**everyone**, @**channel**, @**topic**) aren't sent from Conduit", found.Wildcard)
+		}
 		st, tp, err := c.where(p.Stream, p.Topic, true)
 		if err != nil {
 			return sdk.Result{}, err
@@ -466,7 +471,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		target := label(st, tp)
 		if call.DryRun {
 			after, _ := json.Marshal(map[string]string{"content": content})
-			return sdk.Result{Plan: &sdk.Plan{Summary: "Send a message to " + target, Changes: []sdk.Change{{Target: target, Op: "create", After: after}}}}, nil
+			sum := "Send a message to " + target
+			if pv := found.Preview(); pv != "" {
+				sum += "; " + pv
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: target, Op: "create", After: after}}}}, nil
 		}
 		var r struct {
 			ID int64 `json:"id"`

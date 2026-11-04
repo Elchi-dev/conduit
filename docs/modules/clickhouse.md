@@ -26,7 +26,8 @@ forbids changing (`readonly = 2` in the profile works).
 **The server enforces read-only.** Every request carries
 `readonly=1` (placed after the limits, so it can't be undone by anything in
 the request), `max_execution_time=10`, `max_result_rows=1000`,
-`max_result_bytes`, `result_overflow_mode=break` and
+`max_result_bytes`, `max_memory_usage` (2 GB, so one read can't exhaust
+the server's memory), `result_overflow_mode=break` and
 `wait_end_of_query=1`. With `readonly=1` ClickHouse refuses writes, schema
 changes and changing settings, whatever the statement says. Values for
 `tables` and `slow_queries` are passed as query parameters, never pasted

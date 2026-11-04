@@ -222,3 +222,21 @@ func TestZulipRefusesRedirect(t *testing.T) {
 		t.Fatalf("%+v %q", h, leaked)
 	}
 }
+
+// Wildcard mentions are refused before anything is sent; the preview names
+// the people and groups mentioned.
+func TestZulipMentions(t *testing.T) {
+	m, f := setup(t, Config{APIKey: "secret://z", Allowed: []string{"general"}})
+	for _, c := range []string{"@**all** deploy", "@**everyone**", "cc @**channel**", "@**topic** done", "@**stream**", "@_**all**"} {
+		if _, err := invoke(m, "send_message", `{"stream":"general","topic":"t","content":"`+c+`"}`, false); err == nil || !strings.Contains(err.Error(), "wildcard") {
+			t.Fatalf("sent %q: %v", c, err)
+		}
+	}
+	if len(f.msgs) != 0 {
+		t.Fatal(f.msgs)
+	}
+	r, err := invoke(m, "send_message", `{"stream":"general","topic":"t","content":"thanks @**Kim Lee** and @*support*"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Send a message to #general > t; mentions @**Kim Lee**, @*support* (they're notified)" {
+		t.Fatal(r.Plan, err)
+	}
+}

@@ -225,3 +225,31 @@ func TestRocketChatRefusesRedirect(t *testing.T) {
 		t.Fatalf("%+v %q", h, leaked)
 	}
 }
+
+// A thread must be in the room sent to; wildcard mentions are refused and
+// the preview names who is mentioned.
+func TestRocketChatThreadRoomAndMentions(t *testing.T) {
+	m, f := setup(t, Config{Token: "secret://rc", AllowedRooms: []string{"general", "ops"}})
+	f.posts["opsthread1"] = opsID + "|x"
+	f.posts["genthread1"] = genID + "|y"
+	if _, err := invoke(m, "send_message", `{"room":"general","text":"x","thread":"opsthread1"}`, false); err == nil || !strings.Contains(err.Error(), "isn't in #general") {
+		t.Fatal("replied in another room's thread", err)
+	}
+	if _, err := invoke(m, "send_message", `{"room":"general","text":"x","thread":"nosuchmsg1"}`, true); err == nil {
+		t.Fatal("replied to a missing thread")
+	}
+	r, err := invoke(m, "send_message", `{"room":"general","text":"thanks @kim and @sam","thread":"genthread1"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Reply in conduit-bot's thread in #general; mentions @kim, @sam (they're notified)" {
+		t.Fatal(r.Plan, err)
+	}
+	for _, text := range []string{"@all deploy", "hey @here", "@channel", "@everyone"} {
+		if _, err := invoke(m, "send_message", `{"room":"general","text":"`+text+`"}`, false); err == nil || !strings.Contains(err.Error(), "wildcard") {
+			t.Fatalf("sent %q: %v", text, err)
+		}
+	}
+	for _, s := range f.seen {
+		if strings.Contains(s, "chat.sendMessage") {
+			t.Fatalf("a refused message was sent: %v", f.seen)
+		}
+	}
+}

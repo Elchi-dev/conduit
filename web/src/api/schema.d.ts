@@ -122,7 +122,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Change password and sign out every other session */
+        /** Change password, sign out every other session and remove your passkeys */
         post: operations["changePassword"];
         delete?: never;
         options?: never;
@@ -211,7 +211,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Set a new password for someone else and end their sessions (signed-in people only) */
+        /** Set a new password for someone else, end their sessions and remove their passkeys (signed-in people only) */
         post: operations["resetUserPassword"];
         delete?: never;
         options?: never;
@@ -1589,6 +1589,138 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/passkeys/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether passkeys can be used at the address this request came to
+         * @description WebAuthn doesn't allow IP addresses, so passkeys are only available when the daemon is opened under a host name (localhost, *.localhost, *.local or a name in CONDUIT_ALLOWED_HOSTS), not at 127.0.0.1 (the desktop app) or through remote access. The RP ID is that host name without the port.
+         */
+        get: operations["passkeysAvailable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkeys/login/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start signing in with a passkey (no email address needed); answers options for navigator.credentials.get
+         * @description The ceremony lasts 5 minutes and works once, at the address it was started at. User verification (PIN or biometrics) is required.
+         */
+        post: operations["beginPasskeyLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkeys/login/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish signing in with a passkey; starts a session
+         * @description A passkey counts as both factors, so accounts with two-factor sign-in aren't asked for a code. Failures count toward the per-source sign-in limit. Switched-off accounts are refused.
+         */
+        post: operations["finishPasskeyLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your passkeys (signed-in people only) */
+        get: operations["listPasskeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/passkeys/register/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start adding a passkey (needs your password); answers options for navigator.credentials.create
+         * @description Signed-in people only, not API keys or agents. At most 20 passkeys per account. The passkey works only at the host name it is added at.
+         */
+        post: operations["beginPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/passkeys/register/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish adding a passkey */
+        post: operations["finishPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/passkeys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove one of your passkeys */
+        delete: operations["deletePasskey"];
+        options?: never;
+        head?: never;
+        /** Rename one of your passkeys */
+        patch: operations["renamePasskey"];
+        trace?: never;
+    };
     "/remote/discover": {
         parameters: {
             query?: never;
@@ -1851,10 +1983,151 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/networks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** WireGuard networks module instances can be attached to (admins) */
+        get: operations["listNetworks"];
+        put?: never;
+        /**
+         * Add a network from a wg-quick file or fields (people only)
+         * @description Raw keys (the interface private key, peer preshared keys) are moved into the vault under networks/<id>/ and only referenced (secret://) from then on. Audited as network_created.
+         */
+        post: operations["createNetwork"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/networks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One network (keys are references, never values) */
+        get: operations["getNetwork"];
+        /**
+         * Change a network (people only); its tunnel restarts on next use
+         * @description An empty privateKey keeps the current key. Audited as network_saved.
+         */
+        put: operations["updateNetwork"];
+        post?: never;
+        /** Remove a network and the keys Conduit stored for it (people only) */
+        delete: operations["deleteNetwork"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/networks/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the tunnel is up, and each peer's last handshake and traffic */
+        get: operations["networkStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/networks/{id}/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take the tunnel down and bring it up again (people only) */
+        post: operations["restartNetwork"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        NetworkPeer: {
+            name?: string;
+            /** @description Base64 WireGuard public key */
+            publicKey: string;
+            /** @description secret:// reference (on input also a raw key, moved into the vault) */
+            presharedKey?: string;
+            /** @description host:port; names are resolved when the tunnel starts */
+            endpoint?: string;
+            /** @description CIDR ranges carried through the tunnel */
+            allowedIPs: string[];
+            /** @description Seconds */
+            persistentKeepalive?: number;
+        };
+        Network: {
+            id: string;
+            name: string;
+            /** @description secret:// reference to the interface's private key */
+            privateKey: string;
+            /** @description Derived from the private key; add it on the other side */
+            publicKey?: string;
+            addresses: string[];
+            dns?: string[];
+            mtu?: number;
+            listenPort?: number;
+            peers: components["schemas"]["NetworkPeer"][];
+            /** @description Instances attached to it */
+            instances?: string[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        NetworkInput: {
+            name?: string;
+            /** @description A wg-quick .conf file; replaces the fields below */
+            conf?: string;
+            /** @description A raw key (moved into the vault) or a secret:// reference; empty on a change keeps the current key */
+            privateKey?: string;
+            /** @description Make a new private key */
+            generateKey?: boolean;
+            addresses?: string[];
+            dns?: string[];
+            mtu?: number;
+            listenPort?: number;
+            peers?: components["schemas"]["NetworkPeer"][];
+        };
+        NetworkStatus: {
+            id: string;
+            running: boolean;
+            error?: string;
+            /** Format: date-time */
+            since?: string;
+            peers: {
+                publicKey?: string;
+                name?: string;
+                endpoint?: string;
+                /** Format: date-time */
+                lastHandshake?: string;
+                /** @description -1 before the first handshake */
+                handshakeAgeSeconds?: number;
+                rxBytes?: number;
+                txBytes?: number;
+            }[];
+        };
         VaultFolder: {
             /** @description e.g. finance/ */
             prefix: string;
@@ -1954,6 +2227,26 @@ export interface components {
         RecoveryCodes: {
             /** @description Ten one-time codes; shown only now */
             recoveryCodes: string[];
+        };
+        Passkey: {
+            id: string;
+            name: string;
+            /** @description The host name the passkey works at */
+            rpId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastUsedAt?: string;
+        };
+        PasskeyCeremony: {
+            /** @description Pass back to the matching finish call; lasts 5 minutes and works once */
+            ceremony: string;
+            options: {
+                /** @description WebAuthn options as JSON (base64url fields) */
+                publicKey: {
+                    [key: string]: unknown;
+                };
+            };
         };
         OIDCSettings: {
             enabled?: boolean;
@@ -2231,6 +2524,8 @@ export interface components {
                 [key: string]: unknown;
             };
             enabled: boolean;
+            /** @description The network its outbound connections go through (absent for none) */
+            network?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2245,6 +2540,8 @@ export interface components {
                 [key: string]: unknown;
             };
             enabled?: boolean;
+            /** @description Attach to a network ("" detaches); left out it stays */
+            network?: string;
         };
         Change: {
             target: string;
@@ -5151,7 +5448,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description To the provider's sign-in page */
+            /** @description To the provider's sign-in page, or to /?signin_error=<code> */
             302: {
                 headers: {
                     [name: string]: unknown;
@@ -5172,7 +5469,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description To / with a session cookie */
+            /** @description To / with a session cookie, or to /?signin_error=<code> */
             302: {
                 headers: {
                     [name: string]: unknown;
@@ -5344,6 +5641,263 @@ export interface operations {
                 content?: never;
             };
             403: components["responses"]["Forbidden"];
+        };
+    };
+    passkeysAvailable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        available: boolean;
+                        /** @description The host name passkeys are bound to here */
+                        rpId?: string;
+                        /** @description Why not */
+                        reason?: string;
+                    };
+                };
+            };
+        };
+    };
+    beginPasskeyLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyCeremony"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Too many failed sign-ins */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    finishPasskeyLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ceremony: string;
+                    /** @description Shown in the session list */
+                    device?: string;
+                    /** @description The PublicKeyCredential as JSON (base64url fields) */
+                    response: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Signed in */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description The ceremony expired */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Too many failed sign-ins; see Retry-After */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listPasskeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"][];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    beginPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyCeremony"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            /** @description Too many passkeys */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many wrong passwords */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    finishPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ceremony: string;
+                    /** @description Defaults to "Passkey" */
+                    name?: string;
+                    /** @description The PublicKeyCredential as JSON (base64url fields) */
+                    response: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            /** @description This passkey is already registered */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deletePasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    renamePasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Renamed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     discoverDaemons: {
@@ -5950,6 +6504,186 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listNetworks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Network"][];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Network"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Network"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Network"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Instances are still attached to it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    networkStatus: {
+        parameters: {
+            query?: {
+                /** @description 1 starts a stopped tunnel first */
+                connect?: "1";
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    restartNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkStatus"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

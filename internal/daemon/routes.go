@@ -51,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 	routes = append(routes, s.ambientRoutes()...)
 	routes = append(routes, s.phoneRoutes()...)
 	routes = append(routes, s.twoFactorRoutes()...)
+	routes = append(routes, s.passkeyRoutes()...)
 	routes = append(routes, s.backupRoutes()...)
 	routes = append(routes, s.tileRoutes()...)
 	routes = append(routes, s.discoverRoutes()...)
@@ -86,12 +87,7 @@ func (s *Server) Handler() http.Handler {
 // check are exempt: they carry no session and hooks are authenticated by
 // their token.
 func (s *Server) hostGuard(h http.Handler) http.Handler {
-	extra := map[string]bool{}
-	for _, v := range strings.Split(os.Getenv("CONDUIT_ALLOWED_HOSTS"), ",") {
-		if v = strings.ToLower(strings.TrimSpace(v)); v != "" {
-			extra[v] = true
-		}
-	}
+	extra := extraHosts()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.RemoteAddr == "relay" || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/hooks/") || allowedHost(r.Host, extra) {
 			h.ServeHTTP(w, r)
@@ -99,6 +95,17 @@ func (s *Server) hostGuard(h http.Handler) http.Handler {
 		}
 		writeErr(w, http.StatusMisdirectedRequest, "this daemon isn't served under the name "+strconv.Quote(r.Host)+"; add it to CONDUIT_ALLOWED_HOSTS")
 	})
+}
+
+// extraHosts reads CONDUIT_ALLOWED_HOSTS.
+func extraHosts() map[string]bool {
+	extra := map[string]bool{}
+	for _, v := range strings.Split(os.Getenv("CONDUIT_ALLOWED_HOSTS"), ",") {
+		if v = strings.ToLower(strings.TrimSpace(v)); v != "" {
+			extra[v] = true
+		}
+	}
+	return extra
 }
 
 func allowedHost(host string, extra map[string]bool) bool {
@@ -374,9 +381,13 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	keys := s.Auth.PasskeyCount(r.Context(), p.User.ID)
 	if err := s.Auth.ChangePassword(r.Context(), p.User.ID, req.Current, req.New, p.Session.ID); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if keys > 0 {
+		s.auditConfig(r, "passkeys_removed", "", map[string]any{"user": p.User.ID, "count": keys, "reason": "password_changed"})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -509,11 +520,15 @@ func (s *Server) resetUserPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "only the owner can reset an admin's password")
 		return
 	}
+	keys := s.Auth.PasskeyCount(r.Context(), id)
 	if err := s.Auth.ResetPassword(r.Context(), id, req.Password); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.auditConfig(r, "user_password_reset", id, nil)
+	if keys > 0 {
+		s.auditConfig(r, "passkeys_removed", id, map[string]any{"user": id, "count": keys, "reason": "password_reset"})
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

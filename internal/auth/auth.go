@@ -263,8 +263,9 @@ func (s *Service) SetDisabled(ctx context.Context, id string, off bool) error {
 	return err
 }
 
-// ResetPassword sets a new password for someone else and ends their
-// sessions. The owner's password can only be changed by the owner.
+// ResetPassword sets a new password for someone else, ends their sessions
+// and removes their passkeys. The owner's password can only be changed by
+// the owner.
 func (s *Service) ResetPassword(ctx context.Context, id, password string) error {
 	if len(password) < 10 {
 		return errors.New("password must be at least 10 characters")
@@ -275,6 +276,9 @@ func (s *Service) ResetPassword(ctx context.Context, id, password string) error 
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errors.New("no such account, or it's the owner")
+	}
+	if err := s.deletePasskeys(ctx, id); err != nil {
+		return err
 	}
 	_, err = s.RevokeSessions(ctx, id, "")
 	return err
@@ -319,7 +323,9 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Use
 	return s.GetUser(ctx, id)
 }
 
-// ChangePassword sets a new password and signs out every other session.
+// ChangePassword sets a new password, signs out every other session and
+// removes the account's passkeys (someone who had the old password could
+// have added one).
 func (s *Service) ChangePassword(ctx context.Context, userID, oldPw, newPw, keepSession string) error {
 	var hash string
 	if err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash); err != nil {
@@ -332,6 +338,9 @@ func (s *Service) ChangePassword(ctx context.Context, userID, oldPw, newPw, keep
 		return errors.New("password must be at least 10 characters")
 	}
 	if _, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, HashPassword(newPw), userID); err != nil {
+		return err
+	}
+	if err := s.deletePasskeys(ctx, userID); err != nil {
 		return err
 	}
 	_, err := s.RevokeSessions(ctx, userID, keepSession)

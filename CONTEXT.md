@@ -54,7 +54,9 @@ owner and a company equally; never tailor it to one setup.
   (the APK won't install, installs don't see updates, no F-Droid repo); the
   APK hasn't been tried on a device; the repository is private, so the
   Android update check (GitHub API) can't see releases until it's public;
-  daemon passkeys aren't possible on the desktop app's IP-address origin.
+  daemon passkeys work only under a host name (a browser at localhost, or
+  a name in CONDUIT_ALLOWED_HOSTS), not in the desktop app, which opens
+  127.0.0.1 (WebAuthn refuses IP addresses), nor through the relay.
 - **Settings added since v0.1.0:** `CONDUIT_ALLOWED_HOSTS` (daemon, extra
   host names), `CONDUIT_HUB_TRUST_PROXY` (hub behind a reverse proxy).
 - **Working method:** independent pieces (modules, site pages, installers,

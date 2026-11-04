@@ -33,11 +33,7 @@ Failed sign-ins are limited to 20 per source address and 10 per account in
 15 minutes (429 with `Retry-After`); a successful sign-in clears the
 account's count. At most a few Argon2id hashes run at once.
 
-Passkeys are a hub feature for now (see the hub protocol). The desktop app
-opens the daemon at `http://127.0.0.1:7600`, and WebAuthn doesn't accept IP
-addresses as a relying party, so daemon passkeys would need the app to move
-to a host name such as `localhost` first; the phone's relay client has no
-stable origin of its own either.
+Passkeys (WebAuthn) are available too; see Passkeys below.
 
 ### Two-factor sign-in
 
@@ -66,6 +62,50 @@ implemented in `internal/totp`.
 - Single sign-on leaves the second factor to the identity provider. API
   keys and agents don't sign in, so two-factor sign-in doesn't apply to
   them.
+
+### Passkeys
+
+People can add passkeys (Settings, Passkeys) and sign in with one instead
+of their email address and password (`internal/daemon/passkeys.go`, stored
+in `user_passkeys` by `internal/auth/passkeys.go`, using
+`github.com/go-webauthn/webauthn` like the hub).
+
+- **Relying party:** the RP ID is the host name the request came to,
+  without the port, and the only accepted origin is the request's own
+  origin (`https` when the daemon serves TLS, or when the browser's `Origin`
+  is `https` at the same host, behind a reverse proxy). WebAuthn refuses IP
+  addresses, so passkeys are offered only under a host name: `localhost`,
+  `*.localhost`, `*.local`, or a name in `CONDUIT_ALLOWED_HOSTS`. At
+  `127.0.0.1` (the desktop app) and through remote access (relay) they
+  aren't offered; `GET /api/v1/auth/passkeys/available` says so, and the UI
+  hides them. A passkey works only at the name it was added at (stored as
+  `rpId`), so open the daemon at `http://localhost:<port>` in a browser to
+  use one locally. Browsers allow WebAuthn only in a secure context: `https`,
+  or `localhost`.
+- **Adding** needs a signed-in person (not an API key or an agent) and the
+  password again, since a passkey outlives sessions. At most 20 per
+  account. Registration asks for a discoverable credential with user
+  verification. Rename and remove your own under `/api/v1/me/passkeys`.
+- **Sign-in** is usernameless: `POST /api/v1/auth/passkeys/login/begin`,
+  then `…/finish` with the browser's answer starts an ordinary session
+  (device name ending in "(passkey)"). Switched-off accounts are refused, and
+  a signature counter that goes backwards (a possibly copied key) is refused.
+- **Second factor:** a passkey counts as both factors, because the
+  authenticator must verify the person (PIN or biometrics; user
+  verification is required). Accounts with two-factor sign-in on are not
+  asked for an authenticator code when they sign in with a passkey.
+- **Challenges** are kept in memory for 5 minutes, work once, and are bound
+  to the ceremony type (registration or sign-in), the relying party they
+  were started for, and, for registration, the account. A restart only means
+  a ceremony in progress starts again.
+- **Limits:** failed passkey sign-ins count toward the same 20-per-source
+  limit as wrong passwords; wrong passwords when adding one count toward the
+  account limit.
+- **Password resets:** changing your password, or an owner or admin setting
+  it, removes all of that person's passkeys, so whoever sets the new
+  password takes the account back from anyone who planted one.
+- **Audit:** `passkey_added`, `passkey_removed`, `passkeys_removed` (by a
+  password change or reset) and `passkey_login`.
 
 ### Single sign-on
 

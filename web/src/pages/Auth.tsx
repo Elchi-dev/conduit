@@ -4,6 +4,7 @@ import { api, ok } from "../api/client";
 import { forgetRelay, pairFromCode, relayProfile, routeLabel } from "../lib/connection";
 import { fingerprint } from "../lib/relay";
 import { isMobileApp, scanQR } from "../lib/native";
+import { getPasskey, passkeyError, passkeysSupported } from "../lib/passkeys";
 import { t } from "../i18n";
 import "../components/shell.css";
 
@@ -90,6 +91,22 @@ export function Login() {
   // Single sign-on is a browser redirect, so it works only on the daemon's own address.
   const sso = useQuery({ queryKey: ["auth", "oidc"], queryFn: () => ok(api.GET("/auth/oidc")), enabled: !relay, retry: false });
   const ssoError = new URLSearchParams(window.location.search).get("signin_error");
+  // Passkeys need a host name (WebAuthn refuses IP addresses), so they're
+  // offered at localhost but not at the desktop app's 127.0.0.1.
+  const pkAvail = useQuery({ queryKey: ["passkeys", "available"], queryFn: () => ok(api.GET("/auth/passkeys/available")), enabled: !relay, retry: false });
+  const passkey = useMutation({
+    mutationFn: async () => {
+      const begin = await ok(api.POST("/auth/passkeys/login/begin"));
+      let response;
+      try {
+        response = await getPasskey(begin.options.publicKey);
+      } catch (e) {
+        throw new Error(passkeyError(e));
+      }
+      return ok(api.POST("/auth/passkeys/login/finish", { body: { ceremony: begin.ceremony, device: "Browser", response } }));
+    },
+    onSuccess: () => qc.invalidateQueries(),
+  });
   // With two-factor sign-in on, the password answers a challenge and a code
   // from the authenticator app (or a recovery code) finishes the sign-in.
   const [challenge, setChallenge] = useState<string | null>(null);
@@ -195,6 +212,13 @@ export function Login() {
           <button className="btn primary" disabled={m.isPending}>
             {t("Sign in")}</button>
         </form>
+        {!relay && pkAvail.data?.available && passkeysSupported() && (
+          <div className="stack" style={{ gap: 8 }}>
+            <button className="btn" onClick={() => passkey.mutate()} disabled={passkey.isPending}>
+              {t("Sign in with a passkey")}</button>
+            {passkey.error && <div className="error">{passkey.error.message}</div>}
+          </div>
+        )}
         {!relay && sso.data?.enabled && (
           <a className="btn" href="/api/v1/auth/oidc/start">
             {t("Sign in with")}{" "}{sso.data.label}

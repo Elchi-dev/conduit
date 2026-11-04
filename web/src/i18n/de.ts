@@ -1116,6 +1116,23 @@ const de: Record<string, string> = {
   "Direct (no network)": "Direkt (kein Netzwerk)",
   "Add a WireGuard network under Networks to reach servers inside it.": "Füge unter Netzwerke ein WireGuard-Netzwerk hinzu, um Server darin zu erreichen.",
   "Connections to the network's addresses go through its WireGuard tunnel.": "Verbindungen zu den Adressen des Netzwerks gehen durch seinen WireGuard-Tunnel.",
+  "No passkey was created.": "Es wurde kein Passkey erstellt.",
+  "No passkey was chosen.": "Es wurde kein Passkey ausgewählt.",
+  "The passkey request was cancelled or timed out.": "Die Passkey-Anfrage wurde abgebrochen oder ist abgelaufen.",
+  "This device already has a passkey for your account.": "Dieses Gerät hat schon einen Passkey für dein Konto.",
+  "Passkeys don't work at this address. Open Conduit at localhost or its host name.": "Passkeys funktionieren unter dieser Adresse nicht. Öffne Conduit unter localhost oder seinem Hostnamen.",
+  "Sign in with a passkey": "Mit einem Passkey anmelden",
+  "Passkeys": "Passkeys",
+  "Passkeys need Conduit opened at a host name such as localhost, not an IP address like 127.0.0.1. Open it in a browser at http://localhost and its port to add one.": "Passkeys brauchen Conduit unter einem Hostnamen wie localhost, nicht unter einer IP-Adresse wie 127.0.0.1. Öffne es im Browser unter http://localhost mit seinem Port, um einen hinzuzufügen.",
+  "Sign in with your fingerprint, face or device PIN instead of your password. A passkey counts as both factors, so it skips the code from your authenticator app. Changing your password removes all your passkeys.": "Melde dich mit Fingerabdruck, Gesicht oder Geräte-PIN statt mit deinem Passwort an. Ein Passkey zählt als beide Faktoren, daher entfällt der Code aus deiner Authenticator-App. Wenn du dein Passwort änderst, werden alle deine Passkeys entfernt.",
+  "Passkey name": "Name des Passkeys",
+  "Last used {when}": "Zuletzt benutzt {when}",
+  "Added {when}, not used yet": "Hinzugefügt {when}, noch nicht benutzt",
+  "Rename": "Umbenennen",
+  "Remove the passkey {name}? It stops working for signing in.": "Den Passkey {name} entfernen? Mit ihm kann man sich dann nicht mehr anmelden.",
+  "Add a passkey": "Passkey hinzufügen",
+  "New passkeys can only be added when Conduit is opened at a host name such as localhost.": "Neue Passkeys lassen sich nur hinzufügen, wenn Conduit unter einem Hostnamen wie localhost geöffnet ist.",
+  "For example: Laptop": "Zum Beispiel: Laptop",
 };
 
 export default de;

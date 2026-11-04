@@ -7,6 +7,7 @@ import { RemoteAccess } from "./RemoteAccess";
 import { SsoSection } from "./Sso";
 import { BackupSection } from "./Backup";
 import { SyncSection } from "./Sync";
+import { PasskeysSection } from "./Passkeys";
 import { TwoFactorSection } from "./TwoFactor";
 import { Webhooks } from "./Webhooks";
 import { languages, t, useLang } from "../i18n";
@@ -147,6 +148,8 @@ export function Settings() {
       </section>
 
       <TwoFactorSection />
+
+      <PasskeysSection />
 
       <section className="spread">
         <span className="xs muted">

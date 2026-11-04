@@ -160,7 +160,7 @@ paths:
     post:
       operationId: changePassword
       tags: [auth]
-      summary: Change password and sign out every other session
+      summary: Change password, sign out every other session and remove your passkeys
       requestBody:
         required: true
         content:
@@ -237,7 +237,7 @@ paths:
     post:
       operationId: resetUserPassword
       tags: [auth]
-      summary: Set a new password for someone else and end their sessions (signed-in people only)
+      summary: Set a new password for someone else, end their sessions and remove their passkeys (signed-in people only)
       parameters: [{ $ref: "#/components/parameters/Id" }]
       requestBody:
         required: true
@@ -1307,6 +1307,125 @@ paths:
       responses:
         "204": { description: Reset }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /auth/passkeys/available:
+    get:
+      operationId: passkeysAvailable
+      tags: [auth]
+      summary: Whether passkeys can be used at the address this request came to
+      description: WebAuthn doesn't allow IP addresses, so passkeys are only available when the daemon is opened under a host name (localhost, *.localhost, *.local or a name in CONDUIT_ALLOWED_HOSTS), not at 127.0.0.1 (the desktop app) or through remote access. The RP ID is that host name without the port.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available]
+                properties:
+                  available: { type: boolean }
+                  rpId: { type: string, description: The host name passkeys are bound to here }
+                  reason: { type: string, description: Why not, when not available }
+  /auth/passkeys/login/begin:
+    post:
+      operationId: beginPasskeyLogin
+      tags: [auth]
+      summary: Start signing in with a passkey (no email address needed); answers options for navigator.credentials.get
+      description: The ceremony lasts 5 minutes and works once, at the address it was started at. User verification (PIN or biometrics) is required.
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { description: Too many failed sign-ins, or too many in progress; see Retry-After }
+  /auth/passkeys/login/finish:
+    post:
+      operationId: finishPasskeyLogin
+      tags: [auth]
+      summary: Finish signing in with a passkey; starts a session
+      description: A passkey counts as both factors, so accounts with two-factor sign-in aren't asked for a code. Failures count toward the per-source sign-in limit. Switched-off accounts are refused.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, response]
+              properties:
+                ceremony: { type: string }
+                device: { type: string, description: Shown in the session list }
+                response: { type: object, additionalProperties: true, description: The PublicKeyCredential as JSON (base64url fields) }
+      responses:
+        "200": { description: Signed in, content: { application/json: { schema: { $ref: "#/components/schemas/SessionResponse" } } } }
+        "400": { description: The ceremony expired, was already used, or was started at another address }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Too many failed sign-ins; see Retry-After }
+  /me/passkeys:
+    get:
+      operationId: listPasskeys
+      tags: [auth]
+      summary: Your passkeys (signed-in people only)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Passkey" } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /me/passkeys/register/begin:
+    post:
+      operationId: beginPasskeyRegistration
+      tags: [auth]
+      summary: Start adding a passkey (needs your password); answers options for navigator.credentials.create
+      description: Signed-in people only, not API keys or agents. At most 20 passkeys per account. The passkey works only at the host name it is added at.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Too many passkeys }
+        "429": { description: Too many wrong passwords }
+  /me/passkeys/register/finish:
+    post:
+      operationId: finishPasskeyRegistration
+      tags: [auth]
+      summary: Finish adding a passkey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, response]
+              properties:
+                ceremony: { type: string }
+                name: { type: string, maxLength: 60, description: "Defaults to \"Passkey\"" }
+                response: { type: object, additionalProperties: true, description: The PublicKeyCredential as JSON (base64url fields) }
+      responses:
+        "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/Passkey" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: This passkey is already registered }
+  /me/passkeys/{id}:
+    patch:
+      operationId: renamePasskey
+      tags: [auth]
+      summary: Rename one of your passkeys
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 60 } } } } }
+      responses:
+        "200": { description: Renamed, content: { application/json: { schema: { $ref: "#/components/schemas/Passkey" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deletePasskey
+      tags: [auth]
+      summary: Remove one of your passkeys
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /remote/discover:
     get:
       operationId: discoverDaemons
@@ -1851,6 +1970,25 @@ components:
       required: [recoveryCodes]
       properties:
         recoveryCodes: { type: array, items: { type: string }, description: Ten one-time codes; shown only now }
+    Passkey:
+      type: object
+      required: [id, name, rpId, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        rpId: { type: string, description: The host name the passkey works at }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+    PasskeyCeremony:
+      type: object
+      required: [ceremony, options]
+      properties:
+        ceremony: { type: string, description: Pass back to the matching finish call; lasts 5 minutes and works once }
+        options:
+          type: object
+          required: [publicKey]
+          properties:
+            publicKey: { type: object, additionalProperties: true, description: WebAuthn options as JSON (base64url fields) }
     OIDCSettings:
       type: object
       properties:

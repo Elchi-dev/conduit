@@ -13,7 +13,9 @@ tamper-evident record of who changed what.
    ([sso.md](../api/sso.md)). New colleagues from your domain get an account
    as members on first sign-in. Owners and admins link their account
    themselves.
-3. Two-factor sign-in with an authenticator app is under **Settings**.
+3. Two-factor sign-in with an authenticator app, and passkeys, are under
+   **Settings**. Passkeys need the daemon opened at a host name (such as
+   `localhost` or your reverse proxy's name), not an IP address.
 
 ## 2. Rules for agents
 

@@ -73,6 +73,10 @@ recommended policies.
 | OpenAI-compatible server | [openaicompat.md](openaicompat.md) | developer |
 | LiteLLM | [litellm.md](litellm.md) | developer |
 | OpenRouter | [openrouter.md](openrouter.md) | developer |
+| Anthropic | [anthropic.md](anthropic.md) | developer |
+| OpenAI | [openai.md](openai.md) | developer |
+| Mistral AI | [mistral.md](mistral.md) | developer |
+| Groq | [groq.md](groq.md) | developer |
 | ComfyUI | [comfyui.md](comfyui.md) | developer, gamer |
 | Hugging Face | [huggingface.md](huggingface.md) | developer |
 | Replicate | [replicate.md](replicate.md) | developer |

@@ -7,6 +7,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/adguard"
 	"github.com/elchi-dev/conduit/modules/alertmanager"
 	"github.com/elchi-dev/conduit/modules/amp"
+	"github.com/elchi-dev/conduit/modules/anthropic"
 	"github.com/elchi-dev/conduit/modules/appwrite"
 	"github.com/elchi-dev/conduit/modules/argocd"
 	"github.com/elchi-dev/conduit/modules/argoworkflows"
@@ -94,6 +95,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/gotify"
 	"github.com/elchi-dev/conduit/modules/grafana"
 	"github.com/elchi-dev/conduit/modules/grocy"
+	"github.com/elchi-dev/conduit/modules/groq"
 	"github.com/elchi-dev/conduit/modules/growthbook"
 	"github.com/elchi-dev/conduit/modules/gumroad"
 	"github.com/elchi-dev/conduit/modules/harbor"
@@ -156,6 +158,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mikrotik"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/miniflux"
+	"github.com/elchi-dev/conduit/modules/mistral"
 	"github.com/elchi-dev/conduit/modules/monday"
 	"github.com/elchi-dev/conduit/modules/mongodb"
 	"github.com/elchi-dev/conduit/modules/monica"
@@ -187,6 +190,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/omada"
 	"github.com/elchi-dev/conduit/modules/onepassword"
+	"github.com/elchi-dev/conduit/modules/openai"
 	"github.com/elchi-dev/conduit/modules/openaicompat"
 	"github.com/elchi-dev/conduit/modules/openrouter"
 	"github.com/elchi-dev/conduit/modules/openwrt"
@@ -532,6 +536,10 @@ func builtins(app *App) []sdk.Module {
 		openxbl.New(),
 		litellm.New(),
 		openrouter.New(),
+		anthropic.New(),
+		openai.New(),
+		mistral.New(),
+		groq.New(),
 		comfyui.New(),
 		huggingface.New(),
 		replicate.New(),

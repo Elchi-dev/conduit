@@ -193,6 +193,10 @@ recommended policies.
 | Mailgun | [mailgun.md](mailgun.md) | developer, team |
 | SendGrid | [sendgrid.md](sendgrid.md) | developer, team |
 | Postmark | [postmark.md](postmark.md) | developer, team |
+| Mailchimp | [mailchimp.md](mailchimp.md) | team |
+| Brevo | [brevo.md](brevo.md) | team |
+| Kit | [kit.md](kit.md) | team |
+| Buttondown | [buttondown.md](buttondown.md) | team, developer |
 | Zendesk | [zendesk.md](zendesk.md) | team |
 | Freshdesk | [freshdesk.md](freshdesk.md) | team |
 | Chatwoot | [chatwoot.md](chatwoot.md) | team |

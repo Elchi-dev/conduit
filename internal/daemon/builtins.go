@@ -24,7 +24,9 @@ import (
 	"github.com/elchi-dev/conduit/modules/bitwardensm"
 	"github.com/elchi-dev/conduit/modules/bluesky"
 	"github.com/elchi-dev/conduit/modules/bookstack"
+	"github.com/elchi-dev/conduit/modules/brevo"
 	"github.com/elchi-dev/conduit/modules/buildkite"
+	"github.com/elchi-dev/conduit/modules/buttondown"
 	"github.com/elchi-dev/conduit/modules/caddy"
 	"github.com/elchi-dev/conduit/modules/calcom"
 	"github.com/elchi-dev/conduit/modules/calendar"
@@ -111,6 +113,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/keycloak"
 	"github.com/elchi-dev/conduit/modules/kick"
 	"github.com/elchi-dev/conduit/modules/kimai"
+	"github.com/elchi-dev/conduit/modules/kit"
 	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/komga"
 	"github.com/elchi-dev/conduit/modules/kopia"
@@ -126,6 +129,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/litellm"
 	"github.com/elchi-dev/conduit/modules/loki"
 	"github.com/elchi-dev/conduit/modules/mail"
+	"github.com/elchi-dev/conduit/modules/mailchimp"
 	"github.com/elchi-dev/conduit/modules/mailgun"
 	"github.com/elchi-dev/conduit/modules/mastodon"
 	"github.com/elchi-dev/conduit/modules/matrix"
@@ -438,6 +442,10 @@ func builtins(app *App) []sdk.Module {
 		mailgun.New(),
 		sendgrid.New(),
 		postmark.New(),
+		mailchimp.New(),
+		brevo.New(),
+		kit.New(),
+		buttondown.New(),
 		lemonsqueezy.New(),
 		paddle.New(),
 		shopify.New(),

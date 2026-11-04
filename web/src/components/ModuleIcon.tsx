@@ -57,6 +57,7 @@ const paths: Record<string, string> = {
   battery: "M3 8h15v8H3zM18 10.5h2.5v3H18M6 10.5v3M9 10.5v3",
   plug: "M9 3.5V8M15 3.5V8M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5v4",
   bookmark: "M6.5 3.5h11v17L12 16l-5.5 4.5z",
+  headset: "M4.5 14v-2a7.5 7.5 0 0 1 15 0v2M4.5 14h3v5h-2a1 1 0 0 1-1-1zM19.5 14h-3v5h2a1 1 0 0 0 1-1zM18.5 19c0 1.2-2 2-5 2",
 };
 
 /** Synonyms a module author might reasonably use for a glyph above. */
@@ -105,6 +106,8 @@ const aliases: Record<string, string> = {
   tv: "video",
   audio: "music",
   sound: "music",
+  support: "headset",
+  helpdesk: "headset",
 };
 
 /** The glyph for each category, for icon names the set doesn't know. */

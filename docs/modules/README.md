@@ -107,6 +107,7 @@ recommended policies.
 | UptimeRobot | [uptimerobot.md](uptimerobot.md) | developer, homelab, team |
 | Healthchecks.io | [healthchecks.md](healthchecks.md) | developer, homelab, team |
 | Better Stack Uptime | [betterstack.md](betterstack.md) | developer, team |
+| PostHog | [posthog.md](posthog.md) | team, developer |
 | Frigate | [frigate.md](frigate.md) | homelab |
 | Mealie | [mealie.md](mealie.md) | homelab |
 | MQTT | [mqtt.md](mqtt.md) | homelab |
@@ -124,6 +125,10 @@ recommended policies.
 | Matrix | [matrix.md](matrix.md) | homelab, team |
 | Signal (signal-cli-rest-api) | [signal.md](signal.md) | homelab |
 | listmonk | [listmonk.md](listmonk.md) | team, homelab |
+| Zendesk | [zendesk.md](zendesk.md) | team |
+| Freshdesk | [freshdesk.md](freshdesk.md) | team |
+| Chatwoot | [chatwoot.md](chatwoot.md) | team |
+| Zammad | [zammad.md](zammad.md) | team |
 | Ghost | [ghost.md](ghost.md) | team |
 | BookStack | [bookstack.md](bookstack.md) | homelab, team |
 | Outline | [outline.md](outline.md) | team, developer |

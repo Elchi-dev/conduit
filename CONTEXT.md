@@ -12,66 +12,55 @@ owner and a company equally; never tailor it to one setup.
 
 ## Current state
 
-- **Released:** v0.1.0 (~03:55 CET) and v0.2.0 (~20:45 CET) on
-  2026-11-03. v0.2.0 has no macOS or Windows desktop installers yet (no
-  runners; see BUILD_LOG.md phase 22); re-run its failed jobs to add them. https://github.com/Elchi-dev/conduit/releases
-- **v0.2.0 (phases 17–21, see BUILD_LOG.md):** 7 more modules (27 in all),
-  signed outgoing webhooks, password-manager CSV import, one-line
-  installers that check a signed SHA256SUMS, changelog and API reference
-  pages, hub passkeys, daemon OIDC single sign-on (accounts follow the
-  provider's `sub`; owners and admins link explicitly), a People page, sync
-  between daemons (hub or peers), phone notifications through ntfy, an
-  F-Droid repository with signed releases, and the fixes from a second
-  independent security review.
-- **Since v0.2.0 (phases 23–33, unreleased):** 26 more modules (53), the
-  app in German, fixes from a third security review,
-  encrypted backups, two-factor sign-in, the `conduit` CLI, a hub operator
-  console, mDNS discovery, home tiles, guides, browser tests and an
-  accessibility pass in CI, installing signed modules from a hub,
-  restricted vault folders for teams.
-- **Released v1.0.0 (Wed 4 Nov, 05:49 CET):** 105 modules, signed builds
-  for every platform (39 files), owner tests it now.
-- **Now:** toward v1.1 before Thu 00:00: 325 modules, reviews through 44
-  fixed (review 45 and a risk sweep of all modules running) (BUILD_LOG.md). More batches and their reviews in progress. A
-  v1.0.1 (the brief fix, review 12) and v1.1 both wait for Actions.
-- **CI is down** since 06:43 on 4 Nov: GitHub Actions doesn't start jobs
-  (probably the private repository's minutes; the owner was told). Verify
-  everything locally before pushing (`go test -race ./...`, web and site
-  builds and i18n, `make daemon && cd web && pnpm test:e2e`). Releases
-  also need Actions.
-- **Backlog** (take the next item when a phase ends; the build runs until
-  Thu 2026-11-05 00:00 CET):
-  1. Daemon passkeys (serve the desktop app on localhost, which WebAuthn
-     allows).
-  2. Translate the website (after the app).
-  3. More modules (in progress: Grafana, GitHub Actions, Portainer,
-     Immich, Paperless-ngx); after that: Home Assistant automations,
-     Backblaze B2, Synology DSM, Mattermost.
-  4. Mobile: home tiles as an Android widget; quick approve from the
-     notification.
-  5. A fourth review of whatever lands after v0.3.0; v0.4.0 before the end.
-- **Upgrades:** `scripts/upgrade_test.sh` (CI job `upgrade`) builds every
-  earlier release, sets it up, then starts the current daemon on its data.
+- **Released:** v0.1.0 and v0.2.0 (3 Nov), v0.3.0 and v0.3.1 (the first
+  signed release), and **v1.0.0 (Wed 4 Nov, 05:49 CET)** with 105 modules
+  and signed builds for every platform (39 files).
+  https://github.com/Elchi-dev/conduit/releases
+- **Ready for v1.1.0 (on main, not released):** 325 built-in modules,
+  security reviews 8–45 and two sweeps of every module fixed (see
+  BUILD_LOG.md). Notes are in `docs/releases/v1.1.0.md`. Main passes the
+  full local check (Go race tests, web and site builds with i18n, 51
+  browser tests, upgrades from every release including v1.0.0).
+- **To release v1.1.0:** GitHub Actions has started no jobs since 06:43 CET
+  on 4 Nov (every job ends with zero steps; the repository is private, so
+  almost certainly its Actions minutes). Make the repository public or
+  raise the Actions spending limit, then run the release workflow by hand
+  with tag `v1.1.0` (it tags the commit it runs on). Notes come from
+  `docs/releases/v1.1.0.md`. There is no separate v1.0.1: its fix (nested
+  calls run as the caller, review 12) is in 1.1.
+- **Until Actions works:** verify locally before pushing: `gofmt -l .`,
+  `go vet ./...`, `go test -race ./...`, `pnpm build` and `pnpm test:i18n`
+  in web and site, `CI=true make daemon && cd web && pnpm test:e2e`, and
+  `scripts/upgrade_test.sh`.
 - **Releasing:** push a `v*` tag, or run the release workflow by hand with
-  a tag name (it creates the tag on the commit it runs on; the build
-  environment can't push tags). Notes come from `docs/releases/<tag>.md`.
-- **Known gaps:** macOS CI jobs stopped getting runners on the afternoon
-  of 3 Nov (queued 15 minutes, then cancelled), probably the private
-  repository's Actions minutes; Linux and Windows run. Releases are unsigned until the signing secrets are set
-  (the APK won't install, installs don't see updates, no F-Droid repo); the
-  APK hasn't been tried on a device; the repository is private, so the
-  Android update check (GitHub API) can't see releases until it's public;
-  daemon passkeys work only under a host name (a browser at localhost, or
-  a name in CONDUIT_ALLOWED_HOSTS), not in the desktop app, which opens
-  127.0.0.1 (WebAuthn refuses IP addresses), nor through the relay.
+  a tag name. The F-Droid step is allowed to fail (its repo_url must end in
+  /repo).
+- **Known gaps:**
+  - Many modules were built against vendors' documented APIs with fake
+    servers only; each page's Notes names what wasn't confirmed live.
+  - `vault.set` and `vault.import_env` replace existing secrets with no
+    undo (core vault code; modules such as `github.set_secret` treat the
+    same thing as destructive).
+  - Daemon passkeys work only under a host name, not in the desktop app
+    (127.0.0.1) or through the relay.
+  - The APK hasn't been tried on a device; the Android update check can't
+    see releases while the repository is private.
+  - Cloudflare `set_record` can still overwrite records other than DNS
+    control names; ambient status lists down connections.
 - **Settings added since v0.1.0:** `CONDUIT_ALLOWED_HOSTS` (daemon, extra
   host names), `CONDUIT_HUB_TRUST_PROXY` (hub behind a reverse proxy).
-- **Working method:** independent pieces (modules, site pages, installers,
-  passkeys, SSO) were built by parallel helper agents in separate folders,
-  then reviewed, registered and committed here. Check with `pnpm build` (it
-  runs `tsc -b`), not `tsc --noEmit -p .`, which misses errors.
-- **Screenshots:** a headless-Chrome script reviews UI changes; keep using it
-  (Chrome is at /usr/bin/google-chrome in the build environment).
+- **Working method:** modules are built by parallel helper agents in their
+  own folders, then an independent helper reviews each batch, and every
+  commit is verified in a clean worktree (`git worktree add /tmp/wt HEAD`,
+  apply the staged diff, build and test there) before pushing. The disk
+  allowance is small: `go clean -cache` when it fills.
+- **Conventions every module follows:** credentials only as `secret://`
+  references; `sdk.HTTPClient` with `rest.SameHostOnly`; inputs checked
+  before any request; server text redacted before it is shortened;
+  previews on risky actions; destructive money and send actions take the
+  values their preview showed and refuse if the target changed; critical
+  devices (locks, doors, alarms, heating) need a separate destructive
+  action; `internal/daemon/risk_lint_test.go` enforces names and undo rules.
 
 **License:** MIT for everything (owner's decision, 4 Nov).
 

@@ -16,6 +16,25 @@ and why.
   follows branch pagination.
 - **Review 34:** identity admin and self refusals fail closed: every
   Kanidm `*_admins` group, LLDAP self by e-mail, every page of Auth0 roles.
+- **Modules 287–302:** web analytics (Google Analytics, Search Console,
+  Matomo, Fathom), online stores (WooCommerce, Gumroad, Printful,
+  BigCommerce), security operations (CrowdSec, Wazuh, DefectDojo,
+  Dependency-Track) and home energy (Tibber, SolarEdge, Victron,
+  HomeWizard).
+- **Review 35:** TeamCity refuses `%references%` in trigger values (they
+  could pull in a password) and refspec-like branch names.
+- **Review 36 and a follow-up across modules:** destructive money and send
+  actions take the values their preview showed (expected total, refunded,
+  status, balance or a sha256) and refuse if the target changed. Applied
+  to WooCommerce, BigCommerce, Printful, Shopify, Stripe, Lemon Squeezy,
+  Paddle, Invoice Ninja, listmonk and the newsletters. **Decision:** this
+  changes the inputs of v1.0 actions; the stability policy allows it as a
+  security fix, and the v1.1.0 notes explain it.
+- **Review 37:** CrowdSec ban guards resolve a named Local API host and
+  check NAT64 forms; DefectDojo close keeps its flags.
+- **Shared:** `rest` keeps server error messages to one line of 500 bytes,
+  cut after redaction.
+
 
 ## 2026-11-04 · After 1.0, late afternoon (262 modules, reviews 25–29)
 

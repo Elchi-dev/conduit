@@ -63,10 +63,13 @@ const paths: Record<string, string> = {
   rss: "M5 4.5A14.5 14.5 0 0 1 19.5 19M5 10.5a8.5 8.5 0 0 1 8.5 8.5M6 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z",
   search: "M10.5 17.5a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM15.5 15.5l5 5",
   weather: "M8.5 3.5V5M3.5 8.5H5M4.9 4.9l1 1M12.1 4.9l-1 1M6.2 10.6a3 3 0 1 1 5.4-2.4M8 19.5a3.5 3.5 0 0 1-.3-7A5 5 0 0 1 17.2 13a3.25 3.25 0 0 1-.2 6.5Z",
+  archive: "M3.5 4.5h17v4h-17zM5 8.5v11h14v-11M10 12h4",
 };
 
 /** Synonyms a module author might reasonably use for a glyph above. */
 const aliases: Record<string, string> = {
+  backup: "archive",
+  backups: "archive",
   gamepad2: "gamepad",
   controller: "gamepad",
   games: "game",

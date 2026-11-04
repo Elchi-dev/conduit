@@ -44,6 +44,7 @@ var riskLintAllow = map[string]string{
 	"kodi.stop":        "stops media playback on a player",
 	"spotify.pause":    "pauses playback; undo resumes it",
 	"spotify.transfer": "moves playback to another of the user's devices",
+	"vlc.pause":        "pauses playback; undo resumes it",
 
 	// Pausing one monitor is write with an undo that resumes it (pausing all
 	// of them isn't offered): it silences one check, it stops no work.

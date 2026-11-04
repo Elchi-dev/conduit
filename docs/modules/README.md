@@ -29,6 +29,10 @@ recommended policies.
 | OBS Studio | [obs.md](obs.md) | gamer |
 | Game servers (Minecraft, Source) | [gameservers.md](gameservers.md) | gamer, homelab |
 | Twitch | [twitch.md](twitch.md) | gamer |
+| Kick | [kick.md](kick.md) | gamer |
+| YouTube | [youtube.md](youtube.md) | gamer, team |
+| StreamElements | [streamelements.md](streamelements.md) | gamer |
+| Streamer.bot | [streamerbot.md](streamerbot.md) | gamer |
 | Jellyfin | [jellyfin.md](jellyfin.md) | homelab, gamer |
 | Pi-hole | [pihole.md](pihole.md) | homelab |
 | AdGuard Home | [adguard.md](adguard.md) | homelab |
@@ -37,6 +41,8 @@ recommended policies.
 | PagerDuty | [pagerduty.md](pagerduty.md) | team, developer |
 | Sentry | [sentry.md](sentry.md) | developer, team |
 | Tailscale | [tailscale.md](tailscale.md) | homelab, developer, team |
+| Headscale | [headscale.md](headscale.md) | homelab, developer |
+| NetBird | [netbird.md](netbird.md) | homelab, team, developer |
 | Hetzner Cloud | [hetzner.md](hetzner.md) | developer, homelab |
 | DigitalOcean | [digitalocean.md](digitalocean.md) | developer |
 | Linode (Akamai Cloud) | [linode.md](linode.md) | developer, homelab |
@@ -77,6 +83,8 @@ recommended policies.
 | n8n | [n8n.md](n8n.md) | homelab, developer, team |
 | Synology DSM | [synology.md](synology.md) | homelab |
 | Backblaze B2 | [backblaze.md](backblaze.md) | homelab, developer |
+| restic | [restic.md](restic.md) | homelab, developer |
+| Kopia | [kopia.md](kopia.md) | homelab, developer |
 | Mattermost | [mattermost.md](mattermost.md) | team, developer |
 | OPNsense | [opnsense.md](opnsense.md) | homelab |
 | Woodpecker CI | [woodpecker.md](woodpecker.md) | developer, homelab |
@@ -85,6 +93,7 @@ recommended policies.
 | Nginx Proxy Manager | [npm.md](npm.md) | homelab |
 | Traefik | [traefik.md](traefik.md) | homelab, developer |
 | authentik | [authentik.md](authentik.md) | homelab, team |
+| Zitadel | [zitadel.md](zitadel.md) | team, homelab |
 | Todoist | [todoist.md](todoist.md) | developer, team |
 | Trello | [trello.md](trello.md) | team, developer |
 | Notion | [notion.md](notion.md) | team, developer |
@@ -138,6 +147,7 @@ recommended policies.
 | Navidrome (Subsonic) | [navidrome.md](navidrome.md) | homelab |
 | Audiobookshelf | [audiobookshelf.md](audiobookshelf.md) | homelab |
 | Kodi | [kodi.md](kodi.md) | homelab |
+| VLC | [vlc.md](vlc.md) | gamer |
 | Syncthing | [syncthing.md](syncthing.md) | homelab, developer |
 | wg-easy | [wgeasy.md](wgeasy.md) | homelab |
 | Philips Hue | [hue.md](hue.md) | homelab, gamer |

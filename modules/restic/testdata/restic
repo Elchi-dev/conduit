@@ -1,0 +1,78 @@
+#!/bin/sh
+# A stand-in for restic in tests: it answers the commands the module runs
+# with canned output, logs its arguments and environment to $HOME, and
+# insists on the password arriving through RESTIC_PASSWORD.
+echo "$*" >> "$HOME/args.log"
+env > "$HOME/env.log"
+if [ -f "$HOME/slow" ]; then
+	sleep 5
+fi
+if [ "$RESTIC_PASSWORD" != "s3cr3t-pass" ]; then
+	echo "Fatal: wrong password or no key found" >&2
+	exit 12
+fi
+if [ "$RESTIC_REPOSITORY" != "sftp:backup@nas:/srv/restic" ]; then
+	echo "Fatal: repository does not exist: unable to open config file" >&2
+	exit 10
+fi
+snap1='{"time":"2026-11-03T02:00:00Z","paths":["/home"],"hostname":"nas","username":"root","excludes":["/home/LEAKME"],"tags":["daily"],"id":"1111111111aaaaaaaaaa1111111111aaaaaaaaaa1111111111aaaaaaaaaa1111","short_id":"11111111","summary":{"files_new":3,"files_changed":1,"data_added":2048,"total_files_processed":100,"total_bytes_processed":4096}}'
+snap2='{"time":"2026-11-02T02:00:00Z","paths":["/home"],"hostname":"nas","username":"root","tags":["daily"],"id":"2222222222bbbbbbbbbb2222222222bbbbbbbbbb2222222222bbbbbbbbbb2222","short_id":"22222222"}'
+snap3='{"time":"2026-10-01T02:00:00Z","paths":["/etc"],"hostname":"web","username":"root","id":"3333333333cccccccccc3333333333cccccccccc3333333333cccccccccc3333","short_id":"33333333"}'
+case "$1" in
+snapshots)
+	if [ -f "$HOME/big" ]; then
+		i=0
+		while [ $i -lt 2000 ]; do echo "$snap1"; i=$((i+1)); done
+		exit 0
+	fi
+	case "$*" in
+	*--host=web*) echo "[$snap3]" ;;
+	*) echo "[$snap1,$snap2,$snap3]" ;;
+	esac
+	;;
+stats)
+	echo '{"total_size":123456,"total_uncompressed_size":234567,"compression_ratio":1.9,"compression_space_saving":47.4,"total_file_count":100,"total_blob_count":250,"snapshots_count":3}'
+	;;
+check)
+	echo "using temporary cache in /tmp/restic-check-cache"
+	echo "load indexes"
+	echo "check all packs"
+	echo "check snapshots, trees and blobs"
+	if [ -f "$HOME/broken" ]; then
+		echo "error for tree 4bba301e: id 4bba301e not found in repository" >&2
+		echo "Fatal: repository contains errors" >&2
+		exit 1
+	fi
+	echo "no errors were found"
+	;;
+forget)
+	case "$*" in
+	*--json*)
+		echo "[{\"tags\":null,\"host\":\"nas\",\"paths\":[\"/home\"],\"keep\":[$snap1],\"remove\":[$snap2],\"reasons\":[]},{\"tags\":null,\"host\":\"web\",\"paths\":[\"/etc\"],\"keep\":[$snap3],\"remove\":[],\"reasons\":[]}]"
+		;;
+	*)
+		echo "removed snapshot $2"
+		;;
+	esac
+	;;
+prune)
+	cat <<'OUT'
+loading indexes...
+loading all snapshots...
+finding data that is still in use for 2 snapshots
+searching used packs...
+collecting packs for deletion and repacking
+
+to repack:            12 blobs / 1.5 MiB
+this removes:          8 blobs / 1.1 MiB
+to delete:            34 blobs / 12.3 MiB
+total prune:          42 blobs / 13.4 MiB
+remaining:           120 blobs / 45.6 MiB
+unused size after prune: 1.2 MiB (2.63% of remaining size)
+OUT
+	;;
+*)
+	echo "unknown command $1" >&2
+	exit 1
+	;;
+esac

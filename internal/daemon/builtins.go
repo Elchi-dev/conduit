@@ -56,6 +56,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/grocy"
 	"github.com/elchi-dev/conduit/modules/harbor"
 	"github.com/elchi-dev/conduit/modules/hashivault"
+	"github.com/elchi-dev/conduit/modules/headscale"
 	"github.com/elchi-dev/conduit/modules/healthchecks"
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
@@ -70,8 +71,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/jira"
 	"github.com/elchi-dev/conduit/modules/karakeep"
 	"github.com/elchi-dev/conduit/modules/keycloak"
+	"github.com/elchi-dev/conduit/modules/kick"
 	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/komga"
+	"github.com/elchi-dev/conduit/modules/kopia"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/lemmy"
 	"github.com/elchi-dev/conduit/modules/lemonsqueezy"
@@ -96,6 +99,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
 	"github.com/elchi-dev/conduit/modules/navidrome"
+	"github.com/elchi-dev/conduit/modules/netbird"
 	"github.com/elchi-dev/conduit/modules/netbox"
 	"github.com/elchi-dev/conduit/modules/netlify"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
@@ -132,6 +136,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/render"
 	"github.com/elchi-dev/conduit/modules/resend"
+	"github.com/elchi-dev/conduit/modules/restic"
 	"github.com/elchi-dev/conduit/modules/rocketchat"
 	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/scaleway"
@@ -150,6 +155,8 @@ import (
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
 	"github.com/elchi-dev/conduit/modules/steam"
+	"github.com/elchi-dev/conduit/modules/streamelements"
+	"github.com/elchi-dev/conduit/modules/streamerbot"
 	"github.com/elchi-dev/conduit/modules/stripe"
 	"github.com/elchi-dev/conduit/modules/supabase"
 	"github.com/elchi-dev/conduit/modules/syncthing"
@@ -176,15 +183,18 @@ import (
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/vikunja"
+	"github.com/elchi-dev/conduit/modules/vlc"
 	"github.com/elchi-dev/conduit/modules/vultr"
 	"github.com/elchi-dev/conduit/modules/wallabag"
 	"github.com/elchi-dev/conduit/modules/weather"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
+	"github.com/elchi-dev/conduit/modules/youtube"
 	"github.com/elchi-dev/conduit/modules/zammad"
 	"github.com/elchi-dev/conduit/modules/zendesk"
 	"github.com/elchi-dev/conduit/modules/zigbee2mqtt"
+	"github.com/elchi-dev/conduit/modules/zitadel"
 	"github.com/elchi-dev/conduit/modules/zulip"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -384,6 +394,16 @@ func builtins(app *App) []sdk.Module {
 		clickhouse.New(),
 		influxdb.New(),
 		meilisearch.New(),
+		headscale.New(),
+		netbird.New(),
+		zitadel.New(),
+		restic.New(),
+		kopia.New(),
+		youtube.New(),
+		kick.New(),
+		streamelements.New(),
+		streamerbot.New(),
+		vlc.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

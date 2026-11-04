@@ -525,7 +525,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 						var msgs []string
 						for _, is := range r.Issues {
 							if is.Type == "error" && len(msgs) < 5 {
-								msgs = append(msgs, clip(is.Message, 500))
+								msgs = append(msgs, clip(rest.Redact(is.Message), 500))
 							}
 						}
 						e["messages"] = msgs

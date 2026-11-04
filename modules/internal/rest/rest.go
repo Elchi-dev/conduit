@@ -39,6 +39,10 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 
+// HTTPStatus is the response's status code. Conduit's engine uses it to
+// record only "failed (HTTP <status>)" for a sensitive action's error.
+func (e *Error) HTTPStatus() int { return e.Status }
+
 // IsStatus reports whether err is an API error with this status.
 func IsStatus(err error, status int) bool {
 	var e *Error
@@ -81,7 +85,7 @@ func (c *Client) Do(ctx context.Context, method, path string, q url.Values, body
 	}
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, TransportError(err)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))

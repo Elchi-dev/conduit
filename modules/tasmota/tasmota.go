@@ -182,7 +182,7 @@ func (c *conn) send(ctx context.Context, command cmd) (map[string]json.RawMessag
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))

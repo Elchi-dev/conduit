@@ -261,7 +261,8 @@ func (c *conn) rpc(ctx context.Context, method string, params, out any) error {
 		if auth != "" {
 			req.Header.Set("Authorization", auth)
 		}
-		return c.http.Do(req)
+		res, err := c.http.Do(req)
+		return res, rest.TransportError(err)
 	}
 	res, err := send("")
 	if err != nil {

@@ -177,7 +177,7 @@ func (c *conn) fromMetrics(ctx context.Context) ([]Monitor, error) {
 	req.SetBasicAuth("", key)
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized {

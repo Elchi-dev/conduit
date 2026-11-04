@@ -428,7 +428,7 @@ func (c *conn) buckets(ctx context.Context) (sdk.Result, error) {
 	aws.Sign(req, nil, aws.Credentials{AccessKeyID: c.accessKey, SecretAccessKey: strings.TrimSpace(secret)}, c.region, "s3", c.now())
 	res, err := c.http.Do(req)
 	if err != nil {
-		return sdk.Result{}, err
+		return sdk.Result{}, rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))

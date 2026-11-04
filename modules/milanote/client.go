@@ -32,6 +32,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 )
 
 // WireVersion dates the snapshot of Milanote's web API this file speaks.
@@ -162,7 +164,7 @@ func (c *client) send(ctx context.Context, method, rawURL string, body []byte, c
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Milanote did not answer: %w", err)
+		return nil, fmt.Errorf("Milanote did not answer: %w", rest.TransportError(err))
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, maxBody))

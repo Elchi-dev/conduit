@@ -219,8 +219,12 @@ func (t *totals) row() map[string]any {
 	return map[string]any{"coverage": t.Coverage.out(), "files": t.Files, "lines": t.Lines, "hits": t.Hits, "misses": t.Misses, "partials": t.Partials}
 }
 
+// firstLine is the first line of free text the server passes on (a commit
+// message, a step's error), with anything that looks like a credential
+// redacted (rest.Redact) and cut to 200 characters.
 func firstLine(s string) string {
 	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+	s = rest.Redact(s)
 	if r := []rune(s); len(r) > 200 {
 		s = string(r[:200]) + "…"
 	}

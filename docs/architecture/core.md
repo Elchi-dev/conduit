@@ -61,6 +61,20 @@ event, and the daemon's `GET /api/v1/approvals` routes for anyone who isn't a
 signed-in person with `approvals:*:decide`. The web app's approval page uses
 those routes with the person's session, so whoever can approve sees the diff.
 
+### Errors
+
+A failed call's error goes in the audit log, the `action.error` event (and
+so webhooks) and automation runs, but the caller always gets the full
+error. For a sensitive action only its class is kept: `failed (HTTP 404)`
+(from an error with an `HTTPStatus()` method, like the modules' REST
+client's), `failed (timeout)`, `failed (connection error)`, `failed
+(canceled)` or `failed`, since the text may quote what the action carries
+(an address in a request URL, a server echoing a filter). Every other error
+is kept with `SanitizeErrorText` applied: each URL in it loses its
+userinfo, query and fragment. Denials and approval outcomes are sanitised
+the same way. An automation run stores a sensitive step's output as the
+audit log does (redacted); later steps of the run still see it.
+
 ## Policy
 
 Actors are `user`, `agent`, `key`, `automation` or `system`. Rules match on

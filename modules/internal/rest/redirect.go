@@ -8,7 +8,25 @@ import (
 
 // ErrCrossHostRedirect is returned when a server redirects a request that
 // carries credentials to a different host.
+// The error SameHostRedirects returns is a *RedirectError naming only the
+// target host, which matches it with errors.Is.
 var ErrCrossHostRedirect = errors.New("refusing redirect to another host")
+
+// ErrInsecureRedirect is returned when an https request is redirected to
+// http on the same host.
+var ErrInsecureRedirect = errors.New("refusing redirect from https to http")
+
+// RedirectError is a refused cross-host redirect. It names only the host it
+// pointed to: the Location may be a signed URL (a log in object storage)
+// whose query is a credential.
+type RedirectError struct{ Host string }
+
+func (e *RedirectError) Error() string {
+	return ErrCrossHostRedirect.Error() + " (" + e.Host + ")"
+}
+
+// Is matches ErrCrossHostRedirect.
+func (e *RedirectError) Is(target error) bool { return target == ErrCrossHostRedirect }
 
 // SameHostRedirects is an http.Client CheckRedirect that follows redirects
 // only to the same scheme and host (port included) as the original request.
@@ -27,10 +45,10 @@ func SameHostRedirects(req *http.Request, via []*http.Request) error {
 	}
 	first := via[0].URL
 	if !strings.EqualFold(req.URL.Host, first.Host) {
-		return ErrCrossHostRedirect
+		return &RedirectError{Host: req.URL.Host}
 	}
 	if first.Scheme == "https" && req.URL.Scheme != "https" {
-		return errors.New("refusing redirect from https to http")
+		return ErrInsecureRedirect
 	}
 	return nil
 }

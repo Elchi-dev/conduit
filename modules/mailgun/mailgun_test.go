@@ -238,3 +238,20 @@ func TestMailgunRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v", h)
 	}
 }
+
+// A dropped connection must not quote the recipient filter in the error.
+func TestMailgunTransportErrorHidesQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, _, _ := w.(http.Hijacker).Hijack()
+		c.Close()
+	}))
+	defer srv.Close()
+	m := &Module{Base: srv.URL, HTTP: srv.Client()}
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://k": "key-0123456789abcdef0123"}), "m", json.RawMessage(`{"key":"secret://k","domain":"mg.example.com"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := m.Invoke(context.Background(), sdk.Call{Instance: "m", Action: "events", Input: json.RawMessage(`{"recipient":"victim@example.org"}`)})
+	if err == nil || strings.Contains(err.Error(), "victim") {
+		t.Fatalf("error: %v", err)
+	}
+}

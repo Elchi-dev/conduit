@@ -21,6 +21,7 @@ import (
 	"github.com/emersion/go-webdav"
 	"github.com/emersion/go-webdav/caldav"
 
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -229,7 +230,7 @@ func (m *Module) events(ctx context.Context, a *account, from time.Time, days in
 		}
 		res, err := m.http.Do(req)
 		if err != nil {
-			return nil, err
+			return nil, rest.TransportError(err)
 		}
 		defer res.Body.Close()
 		if res.StatusCode != http.StatusOK {

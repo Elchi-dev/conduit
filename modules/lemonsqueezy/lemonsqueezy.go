@@ -610,10 +610,18 @@ func (m *Module) cancel(ctx context.Context, c *conn, call sdk.Call, p input) (s
 		if !a.Cancelled && a.Status != "cancelled" {
 			return sdk.JSON(map[string]any{"subscription": id, "note": "it isn't cancelled"})
 		}
-		if a.EndsAt != nil && *a.EndsAt != "" {
-			if t, err := time.Parse(time.RFC3339, *a.EndsAt); err == nil && !t.After(m.now()) {
-				return sdk.Result{}, fmt.Errorf("subscription %s ended on %s; it can't be resumed", id, *a.EndsAt)
-			}
+		// A cancelled subscription can be resumed only until it ends; when
+		// that date is missing or unreadable, refuse rather than risk
+		// billing a customer whose subscription is over.
+		if a.EndsAt == nil || *a.EndsAt == "" {
+			return sdk.Result{}, fmt.Errorf("subscription %s has no end date; it can't be resumed safely", id)
+		}
+		t, err := time.Parse(time.RFC3339, *a.EndsAt)
+		if err != nil {
+			return sdk.Result{}, fmt.Errorf("subscription %s has an end date Conduit can't read; it can't be resumed safely", id)
+		}
+		if !t.After(m.now()) {
+			return sdk.Result{}, fmt.Errorf("subscription %s ended on %s; it can't be resumed", id, *a.EndsAt)
 		}
 		if call.DryRun {
 			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Resume subscription %s (%s) of customer %d: it renews and bills again instead of ending", id, a.ProductName, a.CustomerID),

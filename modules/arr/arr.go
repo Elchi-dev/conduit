@@ -245,7 +245,8 @@ func (c *conn) send(ctx context.Context, method, path string, q url.Values, body
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return c.http.Do(req)
+	res, err := c.http.Do(req)
+	return res, rest.TransportError(err)
 }
 
 // request is send that turns an error status into an *apiError.

@@ -150,7 +150,7 @@ func (c *conn) appToken(ctx context.Context, client *http.Client) (string, error
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	var out struct {

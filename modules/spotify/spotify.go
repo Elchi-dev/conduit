@@ -224,7 +224,7 @@ func (c *conn) token(ctx context.Context) (string, error) {
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(c.cfg.ClientID+":"+secret)))
 	res, err := c.http.Do(req)
 	if err != nil {
-		return "", err
+		return "", rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
@@ -337,7 +337,7 @@ func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, 
 		}
 		res, err := c.http.Do(req)
 		if err != nil {
-			return err
+			return rest.TransportError(err)
 		}
 		raw, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
 		res.Body.Close()

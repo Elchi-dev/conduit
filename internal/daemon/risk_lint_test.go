@@ -12,16 +12,20 @@ import (
 // approved only for write must not do: delete, stop or abort running work,
 // run or ship code, apply infrastructure, move money, change access, blind
 // monitoring, interrupt, cancel, suspend or pause running work, scale it to
-// zero, or reveal a secret. A verb counts only as the whole name or its
+// zero, reveal a secret, run work again (rerun, rebuild, retry: it runs the
+// code with its credentials once more), promote a build to production,
+// bring back billing or access (reactivate, resume_subscription) or let mail
+// reach an address again (unsuppress). A verb counts only as the whole name or its
 // first word (stop, stop_build), so listings such as deployments or deploys
 // don't match.
 var destructiveName = regexp.MustCompile(`^(` +
 	`deploy|redeploy|rollback|restart|stop|delete|remove|purge|drain|revoke|deactivate|` +
 	`refund|apply|merge|approve|transfer|shutdown|reboot|poweroff|wipe|terminate|kill|` +
-	`unseal|seal|dispatch|reveal|interrupt|abort|cancel|suspend|pause|scale_to_zero` +
+	`unseal|seal|dispatch|reveal|interrupt|abort|cancel|suspend|pause|scale_to_zero|` +
+	`rerun|rebuild|retry|promote|reactivate|unsuppress` +
 	`)(_|$)|^(` +
 	`cancel_build|cancel_run|stop_pipeline|disable_user|enable_client|activate_user|` +
-	`set_secret|run_pipeline|trigger_build|trigger_deploy|queue_plan` +
+	`set_secret|run_pipeline|trigger_build|trigger_deploy|queue_plan|resume_subscription` +
 	`)$|^scale(_[a-z]+)*_to_zero$`)
 
 // riskLintAllow lists the genuine exceptions, as "module.action", each with
@@ -107,6 +111,9 @@ func TestRiskLintPattern(t *testing.T) {
 		"interrupt": true, "abort_job": true, "cancel": true, "cancel_queued": true, "suspend_vm": true, "pause": true,
 		"pause_monitor": true, "scale_to_zero": true, "scale_endpoint_to_zero": true, "interrupted": false, "paused": false, "unpause": false,
 		"cancellations": false, "suspended_users": false, "resume": false,
+		"rerun": true, "rerun_job": true, "rebuild": true, "retry_job": true, "promote_deploy": true, "reactivate_user": true,
+		"resume_subscription": true, "unsuppress": true, "unsuppress_address": true, "reruns": false, "retrying": false,
+		"promotions": false, "resume_subscriptions": false,
 	} {
 		if got := destructiveName.MatchString(name); got != want {
 			t.Errorf("%s: %v", name, got)

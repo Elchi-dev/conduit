@@ -148,7 +148,7 @@ func (c *conn) bearer(ctx context.Context) (string, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	res, err := c.http.Do(req)
 	if err != nil {
-		return "", err
+		return "", rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	var t struct {

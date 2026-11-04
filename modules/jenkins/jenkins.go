@@ -203,7 +203,7 @@ func (c *conn) send(ctx context.Context, method, path string, q url.Values, form
 	}
 	res, err := hc.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, rest.TransportError(err)
 	}
 	if res.StatusCode >= ok {
 		raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
@@ -847,7 +847,7 @@ func (c *conn) build(ctx context.Context, p input) (sdk.Result, error) {
 			if len(id) > 12 {
 				id = id[:12]
 			}
-			changes = append(changes, map[string]any{"commit": id, "author": it.Author.FullName, "message": clip(strings.SplitN(it.Msg, "\n", 2)[0], 200)})
+			changes = append(changes, map[string]any{"commit": id, "author": it.Author.FullName, "message": clip(rest.Redact(strings.SplitN(it.Msg, "\n", 2)[0]), 200)})
 		}
 	}
 	e["changes"] = changes

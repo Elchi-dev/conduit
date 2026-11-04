@@ -180,7 +180,7 @@ func (c *conn) do(ctx context.Context, method, path string, q url.Values, idem s
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -652,7 +653,16 @@ func init() {
 				m := toMap(raw)
 				checks = append(checks, map[string]any{"name": m["name"], "status": m["status"], "conclusion": m["conclusion"], "url": m["html_url"], "started": m["started_at"], "completed": m["completed_at"]})
 			}
-			return sdk.JSON(map[string]any{"checkRuns": checks, "combinedState": st.State, "statuses": slimAll(st.Statuses)})
+			// A status's description is free text from the CI server.
+			statuses := slimAll(st.Statuses)
+			for _, x := range statuses {
+				if m, ok := x.(map[string]any); ok {
+					if d, ok := m["description"].(string); ok {
+						m["description"] = rest.Redact(d)
+					}
+				}
+			}
+			return sdk.JSON(map[string]any{"checkRuns": checks, "combinedState": st.State, "statuses": statuses})
 		})
 }
 
@@ -822,7 +832,7 @@ func (c ghCommit) row() map[string]any {
 	if c.Author != nil && c.Author.Login != "" {
 		who = c.Author.Login
 	}
-	return map[string]any{"sha": c.SHA, "message": c.Commit.Message, "author": who, "date": c.Commit.Author.Date, "url": c.HTMLURL}
+	return map[string]any{"sha": c.SHA, "message": rest.Redact(c.Commit.Message), "author": who, "date": c.Commit.Author.Date, "url": c.HTMLURL}
 }
 
 type ghFile struct {

@@ -3,6 +3,7 @@ package automation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -162,5 +163,67 @@ func TestValidation(t *testing.T) {
 	a2, _ := s.Save(ctx, a, person)
 	if a2.HookURL != a.HookURL {
 		t.Fatal("hook URL must stay stable across edits")
+	}
+}
+
+// secretMod has a sensitive read that answers, and one that fails quoting
+// its input.
+type secretMod struct{}
+
+func (secretMod) Manifest() sdk.Manifest {
+	return sdk.Manifest{ID: "sec", Name: "Secret", Actions: []sdk.ActionSpec{
+		{Name: "reveal", Risk: sdk.RiskRead, Sensitive: true},
+		{Name: "lookup", Risk: sdk.RiskRead, Sensitive: true},
+	}}
+}
+func (secretMod) Configure(context.Context, sdk.Host, string, json.RawMessage) error { return nil }
+func (secretMod) Health(context.Context, string) sdk.Health                          { return sdk.Health{Status: "ok"} }
+func (secretMod) Close(string) error                                                 { return nil }
+func (secretMod) Invoke(_ context.Context, c sdk.Call) (sdk.Result, error) {
+	if c.Action == "lookup" {
+		return sdk.Result{}, errors.New(`Get "https://api.example.com/x?email=victim@example.org": EOF`)
+	}
+	return sdk.JSON(map[string]string{"value": "hunter2-private"})
+}
+
+// A run is stored and published: a sensitive step keeps only what the
+// audit log keeps, its output redacted and its error reduced to a class.
+func TestSensitiveStepNotStoredInRun(t *testing.T) {
+	s, rec, inst, ctx := setup(t)
+	_ = s.engine.Register(secretMod{})
+	sec, _ := s.engine.SaveInstance(ctx, core.Instance{Module: "sec", Name: "Sec", Enabled: true})
+	events, stop := s.engine.Bus.Subscribe("automation.run.", 8)
+	defer stop()
+	a, err := s.Save(ctx, Automation{Name: "Private", Enabled: true, Trigger: Trigger{Kind: "manual"}, Steps: []Step{
+		{Instance: sec.ID, Action: "reveal", Input: json.RawMessage(`{}`)},
+		{Instance: inst, Action: "note", Input: json.RawMessage(`{"v":"{{steps.0.output.value}}"}`)},
+		{Instance: sec.ID, Action: "lookup", Input: json.RawMessage(`{"email":"victim@example.org"}`)},
+	}}, person)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := s.Run(ctx, a.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Later steps still get the output: the author chose to pass it on.
+	if calls := rec.all(); len(calls) != 1 || calls[0] != `note:{"v":"hunter2-private"}` {
+		t.Fatalf("calls = %v", calls)
+	}
+	runs, _ := s.Runs(ctx, a.ID, 10)
+	b, _ := json.Marshal(runs)
+	if strings.Contains(string(b), "hunter2-private") || strings.Contains(string(b), "victim") {
+		t.Fatalf("stored run holds private data: %s", b)
+	}
+	if run.Steps[2].Error != "failed" {
+		t.Fatalf("step error %q", run.Steps[2].Error)
+	}
+	select {
+	case ev := <-events:
+		if strings.Contains(string(ev.Data), "victim") {
+			t.Fatalf("event holds the error: %s", ev.Data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no event")
 	}
 }

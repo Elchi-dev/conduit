@@ -438,19 +438,24 @@ func (s *Service) Run(ctx context.Context, id string, trigger json.RawMessage) (
 		sctx, cancel := context.WithTimeout(ctx, 20*time.Minute) // includes waiting for an approval
 		out, err := s.engine.Invoke(sctx, actor, sdk.Call{Instance: st.Instance, Action: st.Action, Input: input}, core.InvokeOptions{})
 		cancel()
+		// A run is stored and published, so a sensitive step keeps only
+		// what the audit log keeps of it; later steps still see its output.
 		res := StepResult{Action: st.Action, Status: "ok", Output: out.Result.Output, Audit: out.Audit.Seq}
+		if out.Sensitive {
+			res.Output = out.Audit.Output
+		}
 		var outVal any
 		_ = json.Unmarshal(out.Result.Output, &outVal)
 		scope["steps"] = append(scope["steps"].([]any), map[string]any{"output": outVal})
 		if err != nil {
-			res.Status, res.Error = "error", err.Error()
+			res.Status, res.Error = "error", core.ErrorText(out.Sensitive, err)
 			if errors.Is(err, core.ErrForbidden) || errors.Is(err, core.ErrDenied) {
 				res.Status = "denied"
 			}
 		}
 		run.Steps = append(run.Steps, res)
 		if err != nil && !st.ContinueOnError {
-			run.Status, run.Error = res.Status, fmt.Sprintf("step %d (%s): %s", i+1, st.Action, err)
+			run.Status, run.Error = res.Status, fmt.Sprintf("step %d (%s): %s", i+1, st.Action, res.Error)
 			break
 		}
 	}

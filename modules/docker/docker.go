@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/internal/sshx"
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -193,7 +194,7 @@ func (e *endpoint) do(ctx context.Context, method, path string, out any) error {
 	}
 	res, err := e.http.Do(req)
 	if err != nil {
-		return err
+		return rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 && res.StatusCode != http.StatusNotModified {
@@ -532,7 +533,7 @@ func (e *endpoint) logs(ctx context.Context, id string, lines int) (string, erro
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, apiPrefix+"/containers/"+url.PathEscape(id)+"/logs?stdout=1&stderr=1&timestamps=1&tail="+strconv.Itoa(lines), nil)
 	res, err := e.http.Do(req)
 	if err != nil {
-		return "", err
+		return "", rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {

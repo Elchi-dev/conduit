@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -84,6 +85,9 @@ func init() {
 				return sdk.Result{}, err
 			}
 			out := slim(pick(run, "id", "name", "display_title", "head_branch", "head_sha", "event", "status", "conclusion", "run_attempt", "run_started_at", "updated_at", "html_url", "actor")).(map[string]any)
+			if t, ok := out["display_title"].(string); ok {
+				out["display_title"] = rest.Redact(t) // the commit message's subject for a push
+			}
 			out["jobs"] = slimAll(jobs)
 			return sdk.JSON(out)
 		})

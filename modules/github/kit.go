@@ -265,7 +265,7 @@ func (a *account) raw(ctx context.Context, method, target string, q url.Values, 
 	}
 	res, err := a.api.HTTP.Do(req)
 	if err != nil {
-		return rawResp{}, err
+		return rawResp{}, rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	out := rawResp{Status: res.StatusCode, Header: res.Header}

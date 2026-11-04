@@ -228,3 +228,34 @@ func TestBuildkiteRisks(t *testing.T) {
 		}
 	}
 }
+
+// A log redirected to a signed storage URL is refused with an error that
+// names only the host, never the signed URL, and the token stays home.
+func TestBuildkiteLogRedirectErrorNamesOnlyHost(t *testing.T) {
+	var leaked string
+	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("log"))
+	}))
+	defer store.Close()
+	const job = "0190a1b2-c3d4-4e5f-8a9b-0c1d2e3f4a5b"
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/log.txt") {
+			http.Redirect(w, r, store.URL+"/logs/x?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=deadbeefcafebabe0123456789", http.StatusFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"number": 5, "state": "passed", "jobs": []any{map[string]any{"id": job, "type": "script", "name": "test"}}})
+	}))
+	defer api.Close()
+	m := &Module{Base: api.URL, HTTP: api.Client()}
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://bk": "bktok"}), "b", json.RawMessage(`{"organization":"acme","token":"secret://bk"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := m.Invoke(context.Background(), sdk.Call{Instance: "b", Action: "job_log", Input: json.RawMessage(`{"pipeline":"app","number":5,"job":"` + job + `"}`)})
+	if leaked != "" {
+		t.Fatal("token reached the storage host")
+	}
+	if err == nil || strings.Contains(err.Error(), "X-Amz") || strings.Contains(err.Error(), "/logs/x") || !strings.Contains(err.Error(), strings.TrimPrefix(store.URL, "http://")) {
+		t.Fatalf("error: %v", err)
+	}
+}

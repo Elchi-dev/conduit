@@ -426,7 +426,7 @@ func Sign(key string, body []byte) string {
 func (m *Module) do(req *http.Request) error {
 	res, err := m.http.Do(req)
 	if err != nil {
-		return err
+		return rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {

@@ -206,10 +206,14 @@ func took(start, end int64) string {
 	return (time.Duration(end-start) * time.Second).String()
 }
 
+// firstLine is the first line of free text the server passes on (a commit
+// message, a step's error), with anything that looks like a credential
+// redacted (rest.Redact) and cut to 200 characters.
 func firstLine(s string) string {
 	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
-	if len(s) > 200 {
-		s = s[:200] + "…"
+	s = rest.Redact(s)
+	if r := []rune(s); len(r) > 200 {
+		s = string(r[:200]) + "…"
 	}
 	return s
 }
@@ -340,11 +344,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 					row["exitCode"] = s.ExitCode
 				}
 				if s.Error != "" {
-					row["error"] = s.Error
+					row["error"] = rest.Redact(s.Error)
 				}
 				steps = append(steps, row)
 			}
-			wfs = append(wfs, map[string]any{"name": w.Name, "state": w.State, "error": w.Error, "steps": steps})
+			wfs = append(wfs, map[string]any{"name": w.Name, "state": w.State, "error": rest.Redact(w.Error), "steps": steps})
 		}
 		out["workflows"] = wfs
 		return sdk.JSON(out)

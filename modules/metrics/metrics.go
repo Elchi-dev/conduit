@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -157,7 +158,7 @@ func (m *Module) get(ctx context.Context, s *stack, grafana bool, path string, q
 	}
 	res, err := m.http.Do(req)
 	if err != nil {
-		return err
+		return rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))

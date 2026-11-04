@@ -307,6 +307,10 @@ type Outcome struct {
 	Decision Decision   `json:"decision"`
 	Audit    Entry      `json:"audit"`
 	Approval *Approval  `json:"approval,omitempty"`
+	// Sensitive is set when the module ran a sensitive action: whoever
+	// keeps the outcome (an automation run) stores Audit's redacted output
+	// and ErrorText's class, never Result or the error itself.
+	Sensitive bool `json:"-"`
 }
 
 // Invoke runs one action for actor. It is the only path into a module.
@@ -334,7 +338,7 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 
 	if e.Guard != nil {
 		if err := e.Guard(ctx, actor, in, call); err != nil {
-			base.Status, base.Error, base.Decision = "denied", err.Error(), Deny
+			base.Status, base.Error, base.Decision = "denied", SanitizeErrorText(err.Error()), Deny
 			out := Outcome{Decision: Decision{Effect: Deny, Reason: err.Error()}}
 			out.Audit, _ = e.Audit.Append(ctx, base)
 			return out, fmt.Errorf("%w: %s", ErrForbidden, err.Error())
@@ -395,7 +399,7 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 			return out, ErrPending
 		}
 		if err := e.Approvals.Wait(ctx, appr.ID); err != nil {
-			base.Status, base.Error = "denied", err.Error()
+			base.Status, base.Error = "denied", SanitizeErrorText(err.Error())
 			out.Audit, _ = e.Audit.Append(ctx, base)
 			return out, err
 		}
@@ -430,7 +434,7 @@ func (e *Engine) deniesAnyRead(ctx context.Context, actor Actor, mf sdk.Manifest
 func (e *Engine) runWhenApproved(actor Actor, m sdk.Module, spec sdk.ActionSpec, in Instance, call sdk.Call, base Entry, appr Approval) {
 	ctx := context.Background()
 	if err := e.Approvals.Wait(ctx, appr.ID); err != nil {
-		base.Status, base.Error = "denied", err.Error()
+		base.Status, base.Error = "denied", SanitizeErrorText(err.Error())
 		_, _ = e.Audit.Append(ctx, base)
 		return
 	}
@@ -473,9 +477,12 @@ func (e *Engine) run(ctx context.Context, m sdk.Module, spec sdk.ActionSpec, in 
 		res.Plan = RedactPlan(spec.Name, res.Plan)
 	}
 	out.Result = res
+	out.Sensitive = spec.Sensitive
 	switch {
 	case err != nil:
-		base.Status, base.Error = "error", err.Error()
+		// A sensitive action's error may quote what it carries, so only
+		// its class is kept; the caller still gets err itself.
+		base.Status, base.Error = "error", ErrorText(spec.Sensitive, err)
 	case call.DryRun:
 		base.Status = "planned"
 		if res.Plan != nil {

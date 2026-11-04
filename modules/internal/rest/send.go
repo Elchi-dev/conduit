@@ -35,7 +35,7 @@ func (c *Client) Send(ctx context.Context, method, path string, q url.Values, bo
 	}
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, TransportError(err)
 	}
 	if res.StatusCode >= 400 {
 		raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))

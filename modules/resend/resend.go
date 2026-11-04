@@ -216,7 +216,7 @@ func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, 
 		}
 		res, err := c.http.Do(req)
 		if err != nil {
-			return err
+			return rest.TransportError(err)
 		}
 		raw, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
 		res.Body.Close()

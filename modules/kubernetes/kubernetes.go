@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
+	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -169,7 +170,7 @@ func (c *conn) do(ctx context.Context, method, path string, q url.Values, ct str
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))

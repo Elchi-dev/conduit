@@ -23,6 +23,7 @@ type fakeLS struct {
 	bodies    []string
 	refunded  int64
 	cancelled bool
+	endsAt    any // the cancelled subscription's ends_at, when set
 }
 
 func (f *fakeLS) order() map[string]any {
@@ -43,6 +44,9 @@ func (f *fakeLS) sub() map[string]any {
 		"renews_at": "2026-12-01T00:00:00.000000Z", "ends_at": nil, "card_brand": "visa", "card_last_four": "4242", "urls": map[string]any{"customer_portal": "https://store.lemonsqueezy.com/billing?signature=secret"}, "created_at": "2026-01-01T00:00:00.000000Z"}
 	if f.cancelled {
 		a["status"], a["cancelled"], a["ends_at"] = "cancelled", true, "2026-12-01T00:00:00.000000Z"
+		if f.endsAt != nil {
+			a["ends_at"] = f.endsAt
+		}
 	}
 	return map[string]any{"type": "subscriptions", "id": "301", "attributes": a}
 }
@@ -256,6 +260,16 @@ func TestLemonSqueezyCancel(t *testing.T) {
 	if _, err := invoke(m, "resume_subscription", `{"subscription":"301"}`, false); err == nil || !strings.Contains(err.Error(), "can't be resumed") {
 		t.Fatal(err)
 	}
+	// An end date that's missing or doesn't parse is refused, not taken
+	// as "still running".
+	m.Now = nil
+	for _, ends := range []any{"", "soon", "2026-12-01"} {
+		f.endsAt = ends
+		n := len(f.bodies)
+		if _, err := invoke(m, "resume_subscription", `{"subscription":"301"}`, false); err == nil || !strings.Contains(err.Error(), "can't be resumed safely") || len(f.bodies) != n || !f.cancelled {
+			t.Fatalf("ends_at %v: %v", ends, err)
+		}
+	}
 }
 
 func TestLemonSqueezyValidation(t *testing.T) {
@@ -315,5 +329,23 @@ func TestLemonSqueezyRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "l"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// A dropped connection on the sensitive orders listing must not quote the
+// request URL's filter[user_email] in the error.
+func TestLemonSqueezyTransportErrorHidesQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, _, _ := w.(http.Hijacker).Hijack()
+		c.Close()
+	}))
+	defer srv.Close()
+	m := &Module{Base: srv.URL, HTTP: srv.Client()}
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://ls": goodKey}), "l", json.RawMessage(`{"key":"secret://ls"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := invoke(m, "orders", `{"email":"victim@example.org"}`, false)
+	if err == nil || strings.Contains(err.Error(), "victim") || strings.Contains(err.Error(), "filter") {
+		t.Fatalf("error: %v", err)
 	}
 }

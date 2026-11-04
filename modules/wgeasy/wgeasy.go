@@ -597,7 +597,7 @@ func (c *conn) configText(ctx context.Context, id string) (string, error) {
 		}
 		res, err := c.api.HTTP.Do(req)
 		if err != nil {
-			return 0, "", err
+			return 0, "", rest.TransportError(err)
 		}
 		defer res.Body.Close()
 		b, err := io.ReadAll(io.LimitReader(res.Body, 64<<10))

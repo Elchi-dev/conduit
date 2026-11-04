@@ -69,6 +69,7 @@ func (c *conn) actions(ctx context.Context, call sdk.Call, repo, rp string, in a
 			}
 			return r, err
 		}
+		r.Title = rest.Redact(r.Title) // a push's commit message
 		return r, nil
 	}
 	switch call.Action {
@@ -204,7 +205,7 @@ func (c *conn) raw(ctx context.Context, path string) (string, error) {
 	}
 	res, err := c.api.HTTP.Do(req)
 	if err != nil {
-		return "", err
+		return "", rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {

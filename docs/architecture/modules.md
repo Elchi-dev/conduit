@@ -40,6 +40,13 @@ to a room, chat or channel the instance's settings allow (Matrix
 channel) stays `write`. Previews of such actions name everyone they reach:
 the accounts mentioned, the author replied to, the destination collection.
 
+The daemon's risk lint (`internal/daemon/risk_lint_test.go`) fails any
+built-in action whose name, or its first word, is a destructive verb
+(delete, stop, deploy, merge, refund, cancel, pause, reveal, rerun,
+rebuild, retry, promote, reactivate, unsuppress, and whole names such as
+`trigger_build` or `resume_subscription`) and whose risk is lower, unless
+it's in the lint's allow list with a reason.
+
 ## Sensitive actions
 
 Actions marked `sensitive` carry secret or private material. Conduit never
@@ -76,6 +83,13 @@ when the old value is lost, the action is `destructive`. The daemon's risk
 lint (`internal/daemon/risk_lint_test.go`) checks every sensitive,
 reversible built-in action against this.
 
+Errors follow the same rule: for a sensitive action the engine records
+only the error's class (`failed (HTTP 404)`, `failed (timeout)`,
+`failed (connection error)`), and for any action strips URLs' queries
+and userinfo from the error it records (see
+[core](core.md#errors)). Modules still shouldn't put secrets or personal
+data in their errors, since the caller sees them.
+
 Revealing a credential is destructive: it can't be taken back. Modules whose
 job is holding credentials (Conduit's vault, HashiCorp Vault) return only
 names and metadata from read actions, and values from a separate `reveal…`
@@ -99,6 +113,16 @@ connections with `sdk.DialContext(host)`. An instance can be attached to one
 of the daemon's [networks](networks.md) (userspace WireGuard), and these
 helpers send its connections there; with no network, or a host that doesn't
 implement the optional `sdk.NetHost`, they behave like Go's defaults.
+
+Go's HTTP client quotes the full request URL in its errors, and a query
+often holds an API key, a signed URL or personal data (an email filter).
+`modules/internal/rest`'s `Do` and `Send` pass transport errors through
+`rest.TransportError`, which cuts the URL to `scheme://host/path` and
+redacts the message; a module calling an `http.Client` itself should do
+the same. A redirect refused by `rest.SameHostRedirects` comes back as a
+fixed error naming only the target host, never the `Location`. Free text a
+server produces (commit messages, a CI step's error, check output) goes
+through `rest.Redact` before a module returns it.
 
 ## Instances
 

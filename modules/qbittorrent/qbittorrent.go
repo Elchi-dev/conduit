@@ -195,7 +195,8 @@ func (c *conn) send(ctx context.Context, method, path string, body io.Reader, ct
 	for _, ck := range cookies {
 		req.AddCookie(&http.Cookie{Name: ck.Name, Value: ck.Value})
 	}
-	return c.http.Do(req)
+	res, err := c.http.Do(req)
+	return res, rest.TransportError(err)
 }
 
 // login signs in and keeps the session cookie. Callers hold c.mu.

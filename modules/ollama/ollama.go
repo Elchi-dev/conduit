@@ -271,7 +271,7 @@ func (m *Module) pull(ctx context.Context, c *conn, model string) (sdk.Result, e
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return sdk.Result{}, err
+		return sdk.Result{}, rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {

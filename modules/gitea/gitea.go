@@ -297,6 +297,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if len(r.Runs) > limit {
 			r.Runs = r.Runs[:limit]
 		}
+		for i := range r.Runs {
+			r.Runs[i].Title = rest.Redact(r.Runs[i].Title) // a push's commit message
+		}
 		return sdk.JSON(r)
 
 	case "run", "job_log", "rerun", "dispatch_workflow":

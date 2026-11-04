@@ -203,7 +203,7 @@ func (c *conn) post(ctx context.Context, api string, version int, method string,
 	req.Header.Set("User-Agent", "Conduit")
 	res, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return rest.TransportError(err)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))

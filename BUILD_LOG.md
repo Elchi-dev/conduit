@@ -3,20 +3,35 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
-## 2026-11-04 · After 1.0, afternoon (195 modules, review 16)
+## 2026-11-04 · After 1.0, afternoon (219 modules, reviews 16–19)
 
-- **Modules 186–195:** creators and streaming (YouTube, Kick,
-  StreamElements, Streamer.bot, VLC) and VPN, identity and backups
-  (Headscale, NetBird, Zitadel, restic, Kopia). restic runs the restic
-  program with a fresh, allow-listed environment and no shell; Kopia
-  loads the server's page once for its session cookie and CSRF token.
-- **Decision:** NetBird has no disable call, so `disable_peer` requires
-  approval again; if the server ignores it the action fails rather than
-  claiming success.
-- **In progress:** review 16 of these ten; downloads and monitoring
-  (Transmission, Deluge, SABnzbd, Netdata, Zabbix), business (Shopify,
-  HubSpot, Paddle, Twilio, Cal.com) and self-hosted platforms (Coolify,
-  Dokploy, CapRover, Nginx Proxy Manager, Gotify).
+- **Modules 186–219:** creators and streaming (YouTube, Kick,
+  StreamElements, Streamer.bot, VLC); VPN, identity and backups
+  (Headscale, NetBird, Zitadel, restic, Kopia); self-hosted platforms
+  (Coolify, Dokploy, CapRover, Gotify); downloads and monitoring
+  (Transmission, Deluge, SABnzbd, Netdata, Zabbix); business (Shopify,
+  HubSpot, Paddle, Twilio, Cal.com); observability (Alertmanager, Loki,
+  Beszel, Checkmk, Gatus); project management (Asana, ClickUp,
+  monday.com, Plane, YouTrack).
+- **Decisions:** NetBird `disable_peer` requires approval again (there is
+  no disable call). Nginx Proxy Manager and Prometheus were already covered
+  (`npm`, `metrics`), so Gatus took Prometheus's place. Pausing downloads,
+  acknowledging Zabbix and Checkmk problems, silences and downtimes are
+  destructive because they stop work or alerts.
+- **Review 16:** VLC hides logins inside IPTV stream URLs; restic refuses
+  plain SAS tokens and backend settings that run programs, and an
+  unreachable backend no longer reads as a damaged repository.
+- **Review 17:** Dokploy start can't cut a multi-replica app to one;
+  CapRover scales with a partial update instead of sending decrypted
+  repository credentials back, and stops retrying a wrong password (which
+  would lock the owner out); Gotify undo only when it can really delete.
+- **Review 18:** SABnzbd job names no longer show indexer keys; strict
+  Transmission add entries; errors redacted before being shortened.
+- **Review 19:** Shopify refunds in the customer's currency; exact Twilio
+  SMS part counts; HubSpot stage ids win over labels.
+- **Open:** a shared rule for download clients fetching agent-supplied
+  URLs on the local network; Twilio without an allow-list can text any
+  number (Twilio's Geo Permissions are the remedy, noted in the docs).
 
 ## 2026-11-04 · After 1.0, continued (185 modules, reviews 12–15)
 

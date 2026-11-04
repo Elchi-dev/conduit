@@ -37,7 +37,7 @@ func (f *fakeSE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/site/123456/overview":
 		io.WriteString(w, `{"overview":{"lastUpdateTime":"2026-11-04 12:00:00","lifeTimeData":{"energy":7619857.5,"revenue":946.134},"lastYearData":{"energy":3000000},"lastMonthData":{"energy":120500},"lastDayData":{"energy":8250},"currentPower":{"power":2431.27},"measuredBy":"INVERTER"}}`)
 	case "/site/123456/energyDetails":
-		io.WriteString(w, `{"energyDetails":{"timeUnit":"DAY","unit":"Wh","meters":[{"type":"Production","values":[{"date":"2026-11-03 00:00:00","value":8000},{"date":"2026-11-04 00:00:00","value":8250}]},{"type":"FeedIn","values":[{"date":"2026-11-03 00:00:00","value":3000},{"date":"2026-11-04 00:00:00"}]}]}}`)
+		io.WriteString(w, `{"energyDetails":{"timeUnit":"DAY","unit":"Wh","meters":[{"type":"Production","values":[{"date":"2026-11-03 00:00:00","value":8000},{"date":"2026-11-04 00:00:00","value":8250}]},{"type":"FeedIn","values":[{"date":"2026-11-03 00:00:00","value":3000},{"date":"2026-11-04 00:00:00"}]},{"type":"LEAKME-x","values":[{"date":"LEAKME"}]}]}}`)
 	case "/site/123456/inventory":
 		io.WriteString(w, `{"Inventory":{"meters":[{"name":"Production Meter","manufacturer":"WattNode","model":"WNC-3Y","firmwareVersion":"3.3","SN":"LEAKME-SN","type":"Production"}],"sensors":[],"gateways":[],"batteries":[{"name":"Battery 1","manufacturer":"LG","model":"RESU10H","nameplateCapacity":9800,"SN":"LEAKME-SN"}],"inverters":[{"name":"Inverter 1","manufacturer":"SolarEdge","model":"SE7K","communicationMethod":"ETHERNET","cpuVersion":"4.14.110","SN":"LEAKME-SN","connectedOptimizers":24}]}}`)
 	default:

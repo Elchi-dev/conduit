@@ -26,6 +26,10 @@ won't follow a redirect to another host or from https to http.
 Installation ids are checked as numbers before they reach a request path.
 The user's name and e-mail, the people an alarm notifies, and an
 installation's location, phone number and notes are never decoded.
+`all: true` leaves out GPS values (latitude, longitude, altitude: a boat's
+or camper's position, or the house) and anything naming a serial, a MAC or
+IP address, a remote support port or another identifier; the remaining
+values are redacted and clipped.
 
 **Notes.** Values are as fresh as the GX device's last upload to VRM
 (usually every few minutes); `loggedAt` says when. Installations without a

@@ -50,7 +50,12 @@ func (f *fakeVRM) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{"idSite":4242,"timestamp":1793800100,"Device":"Gateway","instance":0,"description":"Grid L1","dbusServiceType":"system","dbusPath":"/Ac/Grid/L1/Power","code":"g1","formattedValue":"-200 W","rawValue":-200},
 			{"idSite":4242,"timestamp":1793800100,"Device":"Gateway","instance":0,"description":"Grid L2","dbusServiceType":"system","dbusPath":"/Ac/Grid/L2/Power","code":"g2","formattedValue":"50 W","rawValue":50},
 			{"idSite":4242,"timestamp":1793800050,"Device":"Gateway","instance":0,"description":"AC Consumption L1","dbusServiceType":"system","dbusPath":"/Ac/Consumption/L1/Power","code":"a1","formattedValue":"900 W","rawValue":900},
-			{"idSite":4242,"timestamp":1793800100,"Device":"Battery Monitor","instance":279,"description":"Voltage","dbusServiceType":"battery","dbusPath":"/Dc/0/Voltage","code":"V","formattedValue":"52.1 V","rawValue":52.1}]}`)
+			{"idSite":4242,"timestamp":1793800100,"Device":"Battery Monitor","instance":279,"description":"Voltage","dbusServiceType":"battery","dbusPath":"/Dc/0/Voltage","code":"V","formattedValue":"52.1 V","rawValue":52.1},
+			{"idSite":4242,"timestamp":1793800100,"Device":"GPS","instance":0,"description":"Latitude","dbusServiceType":"gps","dbusPath":"/Position/Latitude","code":"lt","formattedValue":"LEAKME 52.3731","rawValue":52.3731},
+			{"idSite":4242,"timestamp":1793800100,"Device":"GPS","instance":0,"description":"Longitude","dbusServiceType":"gps","dbusPath":"/Position/Longitude","code":"lg","formattedValue":"LEAKME 4.8922","rawValue":4.8922},
+			{"idSite":4242,"timestamp":1793800100,"Device":"Gateway","instance":0,"description":"Serial number","dbusServiceType":"settings","dbusPath":"/Serial","code":"sn","formattedValue":"LEAKME-HQ2207ABCDE","rawValue":"x"},
+			{"idSite":4242,"timestamp":1793800100,"Device":"Gateway","instance":0,"description":"Remote support IP and port","dbusServiceType":"settings","dbusPath":"/Rs","code":"rs","formattedValue":"LEAKME 10.0.0.2:22","rawValue":"x"},
+			{"idSite":4242,"timestamp":1793800100,"Device":"Gateway","instance":0,"description":"Note","dbusServiceType":"settings","dbusPath":"/Note","code":"nt","formattedValue":"key=abcdefghijklmnop","rawValue":"x"}]}`)
 	case "/installations/4242/alarms":
 		io.WriteString(w, `{"success":true,"alarms":[{"idDataAttribute":51,"instance":0,"lowAlarm":"20","highAlarm":null,"enabled":1,"notifyAfterSeconds":60}],
 			"attributes":[{"idDataAttribute":51,"code":"bs","description":"Battery SOC"}],"users":[{"idUser":77,"email":"leakme@example.com","name":"LEAKME"}],"devices":[]}`)
@@ -86,11 +91,12 @@ func TestVictron(t *testing.T) {
 		{"installations", `{}`, `[{"alarm":true,"generator":false,"kind":"boat","lastReport":"2026-11-04T13:46:40Z","mains":true,"name":"Boat","site":4242,"timezone":"Europe/Amsterdam"}]`},
 		{"summary", `{}`, `{"battery":{"powerW":-120,"socPercent":84,"state":"discharging"},"consumptionW":900,"gridW":-150,"loggedAt":"2026-11-04T13:48:20Z","pv":{"acW":300,"dcW":1500,"totalW":1800},"site":4242}`},
 		{"summary", `{"site":4242,"all":true}`, `{"code":"V","description":"Voltage","device":"Battery Monitor","instance":279,"value":"52.1 V"}`},
+		{"summary", `{"site":4242,"all":true}`, `{"code":"nt","description":"Note","device":"Gateway","instance":0,"value":"[redacted]"}`},
 		{"alarms", `{}`, `{"active":true,"rules":[{"attribute":51,"enabled":true,"instance":0,"low":20,"notifyAfterSeconds":60,"watches":"Battery SOC"}],"site":4242}`},
 	} {
 		r, err := invoke(m, c.action, c.in)
 		out := string(r.Output)
-		if err != nil || !strings.Contains(out, c.want) || strings.Contains(out, "LEAKME") || strings.Contains(strings.ToLower(out), "leakme") || strings.Contains(out, "vrm_good") {
+		if err != nil || !strings.Contains(out, c.want) || strings.Contains(out, "LEAKME") || strings.Contains(strings.ToLower(out), "leakme") || strings.Contains(out, "vrm_good") || strings.Contains(out, "52.37") || strings.Contains(out, "abcdefghijklmnop") {
 			t.Fatalf("%s: %s %v", c.action, out, err)
 		}
 	}

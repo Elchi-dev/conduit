@@ -323,12 +323,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		out := []map[string]any{}
 		for _, h := range hs {
-			e := map[string]any{"id": h.ID, "type": strings.ToLower(h.Type), "timeZone": h.TimeZone, "realTimeData": h.Features != nil && h.Features.RealTime}
+			e := map[string]any{"id": h.ID, "type": strings.ToLower(h.Type), "timeZone": clip(h.TimeZone, 64), "realTimeData": h.Features != nil && h.Features.RealTime}
 			if h.AppNickname != "" {
-				e["nickname"] = h.AppNickname
+				e["nickname"] = clip(h.AppNickname, 120)
 			}
 			if h.CurrentSubscription != nil {
-				e["subscription"] = h.CurrentSubscription.Status
+				e["subscription"] = clip(h.CurrentSubscription.Status, 40)
 			} else {
 				e["subscription"] = "none"
 			}

@@ -262,6 +262,19 @@ func (c *conn) overview(ctx context.Context) (sdk.Result, error) {
 	return sdk.JSON(out)
 }
 
+// meterNames are the meters energyDetails reports, by their lowercase type.
+var meterNames = map[string]string{"production": "production", "consumption": "consumption", "selfconsumption": "selfConsumption", "feedin": "feedIn", "purchased": "purchased"}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && s[n]&0xc0 == 0x80 {
+		n--
+	}
+	return s[:n]
+}
+
 func (c *conn) energy(ctx context.Context, start, end, unit string) (sdk.Result, error) {
 	tu, limit := "DAY", maxDays
 	switch unit {
@@ -328,10 +341,10 @@ func (c *conn) energy(ctx context.Context, start, end, unit string) (sdk.Result,
 	meters := map[string]any{}
 	totals := map[string]any{}
 	for _, mt := range r.EnergyDetails.Meters {
-		if mt.Type == "" || len(meters) >= 10 {
+		name, ok := meterNames[strings.ToLower(mt.Type)]
+		if !ok {
 			continue
 		}
-		name := strings.ToLower(mt.Type[:1]) + mt.Type[1:] // selfConsumption, feedIn
 		vals := mt.Values
 		if len(vals) > maxValues {
 			vals = vals[:maxValues]
@@ -339,7 +352,7 @@ func (c *conn) energy(ctx context.Context, start, end, unit string) (sdk.Result,
 		list := []map[string]any{}
 		sum := 0.0
 		for _, v := range vals {
-			row := map[string]any{"date": v.Date}
+			row := map[string]any{"date": clip(v.Date, 19)}
 			if v.Value != nil {
 				row["kWh"] = math.Round(*v.Value/div*1000) / 1000
 				sum += *v.Value / div

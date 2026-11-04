@@ -334,6 +334,27 @@ func summarize(ds []diag) map[string]any {
 	return out
 }
 
+// privateWords mark a diagnostic value that locates the installation or
+// identifies a device or a network: a GX device with a GPS logs its
+// latitude and longitude (a boat's or a camper's position, or the house),
+// and gateways log serials, MAC and IP addresses and remote support ports.
+var privateWords = []string{"gps", "latitude", "longitude", "altitude", "position", "location", "satellite",
+	"serial", "mac address", "ip address", "ipv4", "ipv6", "remote support", "vrm id", "portal id", "identifier", "phone", "e-mail", "email", "ssid", "password"}
+
+// private says whether a diagnostic is left out of all: true.
+func private(d diag) bool {
+	if strings.EqualFold(d.Service, "gps") {
+		return true
+	}
+	text := strings.ToLower(d.Device + " " + d.Description + " " + d.Path)
+	for _, w := range privateWords {
+		if strings.Contains(text, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // Invoke implements sdk.Module.
 func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) {
 	c, err := m.set.Get(call.Instance)
@@ -358,7 +379,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		out := []map[string]any{}
 		for _, s := range ss {
-			e := map[string]any{"site": s.ID, "name": clip(s.Name, maxTextLength), "timezone": s.Timezone, "alarm": truthy(s.Alarm)}
+			e := map[string]any{"site": s.ID, "name": clip(s.Name, maxTextLength), "timezone": clip(s.Timezone, 64), "alarm": truthy(s.Alarm)}
 			if s.HasMains != nil {
 				e["mains"] = truthy(s.HasMains)
 			}
@@ -369,7 +390,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				e["lastReport"] = t
 			}
 			if s.DeviceIcon != "" {
-				e["kind"] = s.DeviceIcon
+				e["kind"] = clip(s.DeviceIcon, 40)
 			}
 			out = append(out, e)
 		}
@@ -399,12 +420,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				}
 				return r.Records[i].Description < r.Records[j].Description
 			})
-			for i, d := range r.Records {
-				if i >= maxRecords {
+			for _, d := range r.Records {
+				if private(d) {
+					continue
+				}
+				if len(list) >= maxRecords {
 					out["truncated"] = true
 					break
 				}
-				e := map[string]any{"device": clip(d.Device, maxTextLength), "description": clip(d.Description, maxTextLength), "value": clip(d.Formatted, maxTextLength)}
+				e := map[string]any{"device": clip(d.Device, maxTextLength), "description": clip(d.Description, maxTextLength), "value": clip(rest.Redact(d.Formatted), maxTextLength)}
 				if d.Code != "" {
 					e["code"] = clip(d.Code, 20)
 				}

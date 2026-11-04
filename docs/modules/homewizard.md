@@ -25,14 +25,23 @@ and turn on Local API. Enter the device's address on your network, such as
 
 Both switching actions are refused when the socket's switch lock (set in the
 app) is on, and for devices that aren't an Energy Socket. The new state is
-read back from the socket, so a switch that didn't happen is reported.
+read back from the socket (from the switch's answer, or with a second read
+when the answer doesn't carry it), so a switch that didn't happen is
+reported.
 
 Health reports the product, serial, firmware and power now, and reads a
 measurement, so it checks the token as well.
 
-**Security.** The address must be on your network (a private, loopback or
-link-local IP address, a single-label name, or a `.local`, `.lan` or
-`.home.arpa` name) and can't carry a user, query or fragment. Only fixed
+**Security.** The address must be on your network (a private, loopback,
+link-local or Tailscale/NetBird (100.64.0.0/10) IP address, a single-label name, or a `.local`, `.lan` or
+`.home.arpa` name) and can't carry a user, query or fragment. A name whose
+last label is a number (`134744072`, `0x8080808`, `8.8.8.010`) is refused,
+since a proxy or libc resolver reads it as an address. Names aren't
+resolved when the settings are saved: the answer could differ from what the
+connection (through a proxy or Conduit's network) later reaches, and a
+check at that time wouldn't hold against DNS rebinding; API v1 sends no
+credentials, and API v2's token only goes to a certificate that passes
+verification or the pinned fingerprint. Only fixed
 paths are called. With API v2 the token goes in the `Authorization` header
 over https, and the client won't follow a redirect to another host or from
 https to http. Meter ids and the Wi-Fi name are left out of measurements.

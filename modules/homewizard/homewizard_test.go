@@ -22,6 +22,7 @@ type fakeHW struct {
 	on      bool
 	lock    bool
 	ignore  bool // the socket doesn't switch
+	quiet   bool // the PUT answers {} (the state is read back)
 	writes  []string
 	seen    int
 }
@@ -57,6 +58,10 @@ func (f *fakeHW) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(b, &s)
 		if s.PowerOn != nil && !f.lock && !f.ignore {
 			f.on = *s.PowerOn
+		}
+		if f.quiet {
+			io.WriteString(w, `{}`)
+			return
 		}
 		fmt.Fprintf(w, `{"power_on":%t}`, f.on)
 	default:
@@ -214,13 +219,19 @@ func TestHomeWizardSettings(t *testing.T) {
 		{URL: "http://192.168.1.50", InsecureSkipVerify: true}, // TLS setting on http
 		{URL: "https://192.168.1.50", Token: "secret://hw", Fingerprint: "nope"},
 		{URL: "http://[2001:db8::1]"},
+		{URL: "http://134744072"}, // 8.8.8.8 to inet_aton
+		{URL: "http://0x8080808"}, // the same in hex
+		{URL: "http://8.8.8.010"}, // octal, not a name
+		{URL: "http://[::ffff:8.8.8.8]"},
+		{URL: "http://0.0.0.0"},
+		{URL: "http://evil.example.com."},
 	} {
 		raw, _ := json.Marshal(c)
 		if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err == nil {
 			t.Fatalf("accepted %+v", c)
 		}
 	}
-	for _, u := range []string{"http://192.168.1.50", "http://10.0.0.7:80", "http://energysocket-1a2b3c.local", "http://p1meter", "http://[fd00::5]", "http://[fe80::1]"} {
+	for _, u := range []string{"http://192.168.1.50", "http://10.0.0.7:80", "http://energysocket-1a2b3c.local", "http://p1meter", "http://[fd00::5]", "http://[fe80::1]", "http://[fe80::1%25eth0]", "http://p1meter.local.", "http://[::ffff:192.168.1.5]"} {
 		raw, _ := json.Marshal(Config{URL: u})
 		if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err != nil {
 			t.Fatalf("refused %s: %v", u, err)
@@ -246,5 +257,32 @@ func TestHomeWizardRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "h"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// A socket whose answer to the switch doesn't carry the state is read back.
+func TestHomeWizardReadBack(t *testing.T) {
+	m, f := setup(t, Config{}, "HWE-SKT")
+	f.quiet, f.ignore = true, true
+	if _, err := invoke(m, "plug_off", false); err == nil || !strings.Contains(err.Error(), "stayed on") {
+		t.Fatal(err)
+	}
+	f.ignore = false
+	r, err := invoke(m, "plug_off", false)
+	if err != nil || f.on || r.Undo == nil || strings.Contains(string(r.Output), "note") {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+}
+
+func TestHomeWizardLANIncludesCGNAT(t *testing.T) {
+	for _, h := range []string{"100.64.0.1", "100.127.255.254"} {
+		if !lanHost(h) {
+			t.Errorf("%s refused", h)
+		}
+	}
+	for _, h := range []string{"100.63.255.255", "100.128.0.1"} {
+		if lanHost(h) {
+			t.Errorf("%s accepted", h)
+		}
 	}
 }

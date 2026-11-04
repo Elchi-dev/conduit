@@ -63,16 +63,21 @@ const socketType = "HWE-SKT"
 
 var labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
+var numericLabel = regexp.MustCompile(`^([0-9]+|0x[0-9a-f]*)$`)
+
 // localSuffixes are names that only resolve inside a network.
 var localSuffixes = []string{".local", ".lan", ".home.arpa", ".internal", ".home", ".localdomain"}
 
-// lanHost says whether host is on the local network: a private, loopback
-// or link-local address, a single-label name, or a name under a local
-// suffix such as .local.
+// cgnat is 100.64.0.0/10, which Tailscale and NetBird give their peers.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// lanHost says whether host is on the local network: a private, loopback,
+// link-local or CGNAT (Tailscale, NetBird) address, a single-label name, or
+// a name under a local suffix such as .local.
 func lanHost(host string) bool {
 	if a, err := netip.ParseAddr(host); err == nil {
 		a = a.Unmap()
-		return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast()
+		return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || cgnat.Contains(a)
 	}
 	h := strings.ToLower(strings.TrimSuffix(host, "."))
 	if h == "" || len(h) > 253 {
@@ -83,6 +88,12 @@ func lanHost(host string) bool {
 		if !labelRe.MatchString(l) {
 			return false
 		}
+	}
+	// A last label that is a number isn't a host name: "134744072",
+	// "0x8080808" or "8.8.8.010" are addresses to inet_aton (a proxy or a
+	// libc resolver), and could be public ones.
+	if numericLabel.MatchString(labels[len(labels)-1]) {
+		return false
 	}
 	if len(labels) == 1 {
 		return true
@@ -294,9 +305,12 @@ func (c *conn) measurements(ctx context.Context) (map[string]any, error) {
 			if i >= maxExternal || e.Value == nil {
 				continue
 			}
-			row := map[string]any{"type": e.Type, "value": *e.Value, "unit": e.Unit}
-			if e.Time != nil {
-				row["timestamp"] = e.Time
+			row := map[string]any{"type": clip(e.Type, 40), "value": *e.Value, "unit": clip(e.Unit, 16)}
+			switch t := e.Time.(type) {
+			case float64:
+				row["timestamp"] = t
+			case string:
+				row["timestamp"] = clip(t, 40)
 			}
 			list = append(list, row)
 		}
@@ -331,6 +345,16 @@ func (c *conn) socket(ctx context.Context) (info, state, error) {
 		return i, st, errors.New("unexpected answer from the socket")
 	}
 	return i, st, nil
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && s[n]&0xc0 == 0x80 {
+		n--
+	}
+	return s[:n] + "…"
 }
 
 func onOff(b bool) string { return map[bool]string{true: "on", false: "off"}[b] }
@@ -438,10 +462,20 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err := c.do(ctx, http.MethodPut, "/api/v1/state", map[string]bool{"power_on": want}, &after); err != nil {
 			return sdk.Result{}, err
 		}
+		out := map[string]any{"socket": i.Serial, "on": want, "changed": true}
+		if after.PowerOn == nil {
+			// The answer didn't say: read the state back.
+			var now state
+			if err := c.do(ctx, http.MethodGet, "/api/v1/state", nil, &now); err == nil && now.PowerOn != nil {
+				after = now
+			} else {
+				out["note"] = "the socket accepted the switch but its state couldn't be read back; check it with plug"
+			}
+		}
 		if after.PowerOn != nil && *after.PowerOn != want {
 			return sdk.Result{}, fmt.Errorf("%s stayed %s", name, onOff(*after.PowerOn))
 		}
-		res, err := sdk.JSON(map[string]any{"socket": i.Serial, "on": want, "changed": true})
+		res, err := sdk.JSON(out)
 		// Undo puts back what it was. Switching a critical socket back off
 		// isn't something Conduit does, so that has no undo.
 		if want && !c.critical {

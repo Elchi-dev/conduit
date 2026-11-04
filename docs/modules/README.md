@@ -87,6 +87,11 @@ recommended policies.
 | HCP Terraform | [terraformcloud.md](terraformcloud.md) | developer, team |
 | Nomad | [nomad.md](nomad.md) | homelab, developer, team |
 | Datadog | [datadog.md](datadog.md) | developer, team |
+| HashiCorp Vault (OpenBao) | [hashivault.md](hashivault.md) | homelab, developer, team |
+| Consul | [consul.md](consul.md) | homelab, developer, team |
+| Keycloak | [keycloak.md](keycloak.md) | homelab, team |
+| Harbor | [harbor.md](harbor.md) | homelab, developer, team |
+| SonarQube (SonarCloud) | [sonarqube.md](sonarqube.md) | developer, team |
 | Frigate | [frigate.md](frigate.md) | homelab |
 | Mealie | [mealie.md](mealie.md) | homelab |
 | MQTT | [mqtt.md](mqtt.md) | homelab |

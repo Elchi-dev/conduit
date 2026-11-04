@@ -187,3 +187,12 @@ func TestReplicateRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+func TestReplicateErrorRedactedBeforeCut(t *testing.T) {
+	// A token that straddles the cut must not survive as a short prefix.
+	p := prediction{Error: strings.Repeat("a ", 245) + "token r8_SECRETSECRETSECRETSECRET"}
+	got, _ := p.summary()["error"].(string)
+	if strings.Contains(got, "r8_") || !strings.Contains(got, "[red") {
+		t.Fatalf("%q", got)
+	}
+}

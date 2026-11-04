@@ -21,13 +21,14 @@ type fake struct {
 	intended  map[string]string
 	destroyed map[string]bool
 	refuse    bool
+	bid       bool
 }
 
 func (f *fake) inst(id string) string {
 	return fmt.Sprintf(`{"id":%s,"label":"llm-%s","actual_status":%q,"intended_status":%q,"cur_state":%q,"gpu_name":"RTX 4090","num_gpus":2,"dph_total":0.85,"storage_cost":0.15,
-		"disk_space":100,"cpu_cores_effective":16,"cpu_ram":65536,"image_uuid":"pytorch/pytorch:latest","geolocation":"Norway, NO","start_date":1762200000.5,"gpu_util":87.5,"is_bid":false,
+		"disk_space":100,"cpu_cores_effective":16,"cpu_ram":65536,"image_uuid":"pytorch/pytorch:latest","geolocation":"Norway, NO","start_date":1762200000.5,"gpu_util":87.5,"is_bid":%t,
 		"ssh_host":"ssh4.vast.ai","ssh_port":12345,"jupyter_token":"LEAKME","extra_env":[["HF_TOKEN","LEAKME"]],"onstart":"export KEY=LEAKME","instance_api_key":"LEAKME"}`,
-		id, id, map[string]string{"running": "running", "stopped": "exited"}[f.intended[id]], f.intended[id], f.intended[id])
+		id, id, map[string]string{"running": "running", "stopped": "exited"}[f.intended[id]], f.intended[id], f.intended[id], f.bid)
 }
 
 func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -201,5 +202,23 @@ func TestVastAIRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "v"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestVastStatusRedactedBeforeCut(t *testing.T) {
+	// A key that straddles the cut must not survive as a short prefix.
+	msg := strings.Repeat("a ", 145) + "SECRETSECRETSECRETSECRETSECRET"
+	got, _ := instance{StatusMsg: &msg}.summary()["statusMessage"].(string)
+	if strings.Contains(got, "SECRET") || !strings.Contains(got, "[redacted]") {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestVastBidStartPreviewSaysInterruptible(t *testing.T) {
+	m, f := setup(t, "secret://va")
+	f.bid = true
+	r, err := invoke(m, "start_instance", `{"instance":222}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "$0.850/hr while it runs (interruptible") {
+		t.Fatalf("%+v %v", r.Plan, err)
 	}
 }

@@ -198,7 +198,7 @@ func (p prediction) summary() map[string]any {
 			s = string(b)
 		}
 		if s != "" {
-			out["error"] = rest.Redact(clip(s, 500))
+			out["error"] = clip(rest.Redact(s), 500)
 		}
 	}
 	if p.DataRemoved {
@@ -363,7 +363,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				out["output"] = x.Output
 			}
 			if x.Logs != "" {
-				out["logs"] = rest.Redact(clip(x.Logs, 4000))
+				out["logs"] = clip(rest.Redact(x.Logs), 4000)
 			}
 			return sdk.JSON(out)
 		}

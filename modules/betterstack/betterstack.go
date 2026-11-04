@@ -205,7 +205,7 @@ func shownURL(s string) string {
 
 func incidentOut(r resource[incidentAttrs]) map[string]any {
 	a := r.Attributes
-	out := map[string]any{"id": r.ID, "name": clip(a.Name, 200), "cause": rest.Redact(clip(a.Cause, 300)), "started": a.StartedAt,
+	out := map[string]any{"id": r.ID, "name": clip(a.Name, 200), "cause": clip(rest.Redact(a.Cause), 300), "started": a.StartedAt,
 		"acknowledged": a.AcknowledgedAt != nil, "resolved": a.ResolvedAt != nil}
 	if a.Status != "" {
 		out["status"] = a.Status

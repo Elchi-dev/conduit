@@ -238,7 +238,7 @@ func (r runtime) summary(space string) map[string]any {
 		out["sleepAfterSeconds"] = *r.GCTimeout
 	}
 	if r.ErrorMessage != "" {
-		out["error"] = rest.Redact(clip(r.ErrorMessage, 500))
+		out["error"] = clip(rest.Redact(r.ErrorMessage), 500)
 	}
 	return out
 }
@@ -288,7 +288,7 @@ func (e endpoint) summary() map[string]any {
 		out["url"] = rest.ShortURL(e.Status.URL)
 	}
 	if e.Status.Message != "" {
-		out["message"] = rest.Redact(clip(e.Status.Message, 300))
+		out["message"] = clip(rest.Redact(e.Status.Message), 300)
 	}
 	return out
 }

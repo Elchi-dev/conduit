@@ -11,8 +11,8 @@ needs a read/write key.
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `pods` | read | Each pod: id, name, status, type, GPU type and count, cost per hour, vCPUs, memory, container and volume disk, image, location, uptime. `running` filters. Also the total cost per hour of the running pods. |
-| `start_pod` | destructive | Starts a stopped pod on its GPUs. It's destructive because it spends money by the hour; the preview shows the GPU and the hourly cost. A running pod answers "nothing to change". Undo stops it again. |
-| `stop_pod` | destructive | Stops a running pod: whatever runs on it ends and its container disk is cleared, while the volume stays (billed for storage). The preview names the GPU, the hourly cost and the volume. Undo starts it again. |
+| `start_pod` | destructive | Starts a stopped pod on its GPUs. It's destructive because it spends money by the hour; the preview shows the GPU and the hourly cost. A running pod answers "nothing to change". The result gives the hourly rate RunPod bills after the start. Undo stops it again. |
+| `stop_pod` | destructive | Stops a running pod: whatever runs on it ends and its container disk is cleared, while the volume stays (billed for storage). The preview names the GPU, the hourly cost and the volume. Undo starts it again, except for a spot pod, which needs a bid to start (the preview says so). |
 | `endpoints` | read | Serverless endpoints: GPU types, minimum and maximum workers, idle timeout, scaler and locations. |
 | `balance` | read | Credit left, current spend per hour, the spend limit, and how many hours the balance lasts at this rate. |
 

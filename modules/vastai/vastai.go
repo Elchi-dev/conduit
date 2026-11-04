@@ -185,11 +185,13 @@ func (x instance) summary() map[string]any {
 		out["gpuUtilization"] = *x.GPUUtil
 	}
 	if s := strings.TrimSpace(str(x.StatusMsg)); s != "" {
-		r := []rune(s)
-		if len(r) > 300 {
+		// Redacted before it's cut, so a cut can't shorten a key below
+		// what Redact recognizes.
+		s = rest.Redact(s)
+		if r := []rune(s); len(r) > 300 {
 			s = string(r[:300]) + "…"
 		}
-		out["statusMessage"] = rest.Redact(s)
+		out["statusMessage"] = s
 	}
 	return out
 }
@@ -368,6 +370,9 @@ func (c *conn) power(ctx context.Context, call sdk.Call, id string, x instance) 
 	}
 	if call.DryRun {
 		sum := "Start " + x.label() + " on " + x.gpu() + ", billed " + x.cost() + " while it runs"
+		if x.IsBid {
+			sum += " (interruptible: it stops when someone outbids it)"
+		}
 		if !start {
 			sum = fmt.Sprintf("Stop %s (%s, %s): what runs on it ends; its %g GB disk is kept and still billed, and its GPUs may be rented out meanwhile", x.label(), x.gpu(), x.cost(), x.DiskSpace)
 		}

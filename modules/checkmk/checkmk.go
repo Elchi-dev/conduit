@@ -293,7 +293,7 @@ func when(unix int64) string {
 
 // output passes a check's text on cut short and with anything that looks
 // like a credential redacted: plugins print what they see.
-func output(s string) string { return rest.Redact(clip(s, maxOutput)) }
+func output(s string) string { return clip(rest.Redact(s), maxOutput) }
 
 func clip(s string, n int) string {
 	if len(s) <= n {

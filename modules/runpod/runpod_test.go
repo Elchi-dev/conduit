@@ -21,6 +21,7 @@ type fake struct {
 	status  map[string]string
 	queries []string
 	ignore  bool
+	gqlErr  string
 }
 
 func (f *fake) pod(id string) string {
@@ -55,6 +56,10 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(body, &q)
 	f.queries = append(f.queries, q.Query)
 	id := q.Variables.Input.PodID
+	if f.gqlErr != "" {
+		json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": f.gqlErr}}})
+		return
+	}
 	switch {
 	case strings.HasPrefix(q.Query, "query Pods"):
 		fmt.Fprintf(w, `{"data":{"myself":{"pods":[%s,%s]}}}`, f.pod("abc123"), f.pod("def456"))
@@ -75,7 +80,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !f.ignore {
 			f.status[id] = "RUNNING"
 		}
-		fmt.Fprintf(w, `{"data":{"podResume":{"id":%q,"desiredStatus":%q,"costPerHr":0.69}}}`, id, f.status[id])
+		fmt.Fprintf(w, `{"data":{"podResume":{"id":%q,"desiredStatus":%q,"costPerHr":0.79}}}`, id, f.status[id])
 	case strings.HasPrefix(q.Query, "mutation Stop"):
 		f.status[id] = "EXITED"
 		fmt.Fprintf(w, `{"data":{"podStop":{"id":%q,"desiredStatus":"EXITED"}}}`, id)
@@ -140,7 +145,8 @@ func TestRunPod(t *testing.T) {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	r, err = invoke(m, "start_pod", `{"pod":"def456"}`, false)
-	if err != nil || f.status["def456"] != "RUNNING" || r.Undo == nil || r.Undo.Action != "stop_pod" || string(r.Undo.Input) != `{"pod":"def456"}` {
+	if err != nil || f.status["def456"] != "RUNNING" || r.Undo == nil || r.Undo.Action != "stop_pod" || string(r.Undo.Input) != `{"pod":"def456"}` ||
+		!strings.Contains(string(r.Output), `"costPerHour":0.79`) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	undo := r.Undo
@@ -213,5 +219,32 @@ func TestRunPodRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "p"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+func TestRunPodSpotStopHasNoUndo(t *testing.T) {
+	m, f := setup(t, "secret://rp")
+	f.status["spot1"] = "RUNNING"
+	r, err := invoke(m, "stop_pod", `{"pod":"spot1"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "spot pod") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "stop_pod", `{"pod":"spot1"}`, false)
+	if err != nil || f.status["spot1"] != "EXITED" || r.Undo != nil {
+		t.Fatalf("an undo that start_pod would refuse: %+v %v", r.Undo, err)
+	}
+}
+
+func TestRunPodErrorRedactedBeforeCut(t *testing.T) {
+	m, f := setup(t, "secret://rp")
+	// A key that straddles the cut must not survive as a short prefix.
+	f.gqlErr = strings.Repeat("a ", 145) + "key=" + "rpa_SECRETSECRETSECRETSECRET"
+	_, err := invoke(m, "pods", `{}`, false)
+	if err == nil || strings.Contains(err.Error(), "rpa_") || !strings.Contains(err.Error(), "[redacted]") {
+		t.Fatalf("%v", err)
+	}
+	f.gqlErr = strings.Repeat("x", 1000)
+	if _, err := invoke(m, "pods", `{}`, false); err == nil || len(err.Error()) > 320 {
+		t.Fatalf("not cut: %d", len(err.Error()))
 	}
 }

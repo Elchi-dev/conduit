@@ -617,7 +617,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				if s, ok := e["error"].(string); ok {
 					// The first line says what failed; the rest is a stack trace.
 					s, _, _ = strings.Cut(s, "\n")
-					r["error"] = rest.Redact(clip(s, 300))
+					r["error"] = clip(rest.Redact(s), 300)
 				}
 			}
 			return r

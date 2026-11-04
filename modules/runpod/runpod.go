@@ -138,7 +138,13 @@ func (c *conn) gql(ctx context.Context, query string, vars map[string]any, out a
 		if l := strings.ToLower(msg); strings.Contains(l, "unauthorized") || strings.Contains(l, "not authorized") || strings.Contains(l, "api key") {
 			return errRefused
 		}
-		return errors.New("RunPod: " + rest.Redact(msg))
+		// Redacted before it's cut, so a cut can't shorten a key below
+		// what Redact recognizes.
+		msg = rest.Redact(strings.TrimSpace(msg))
+		if r := []rune(msg); len(r) > 300 {
+			msg = string(r[:300]) + "…"
+		}
+		return errors.New("RunPod: " + msg)
 	}
 	if out != nil && len(res.Data) > 0 {
 		if err := json.Unmarshal(res.Data, out); err != nil {
@@ -176,6 +182,9 @@ func (p pod) label() string {
 	}
 	return p.ID
 }
+
+// spot is whether it's an interruptible pod, which needs a bid to start.
+func (p pod) spot() bool { return strings.EqualFold(p.PodType, "INTERRUPTABLE") }
 
 func (p pod) gpu() string {
 	g := ""
@@ -386,7 +395,7 @@ func (c *conn) power(ctx context.Context, call sdk.Call, id string) (sdk.Result,
 		return sdk.Result{}, fmt.Errorf("the pod %s was terminated; it can't be started or stopped", x.label())
 	case x.DesiredStatus == want:
 		return sdk.JSON(map[string]any{"pod": x.ID, "name": x.label(), "status": x.DesiredStatus, "note": "nothing to change"})
-	case start && strings.EqualFold(x.PodType, "INTERRUPTABLE"):
+	case start && x.spot():
 		return sdk.Result{}, errors.New("this is a spot (interruptible) pod: start it with a bid in the RunPod console")
 	}
 	target := fmt.Sprintf("pod %s (%s, %s)", x.label(), x.gpu(), x.cost())
@@ -398,6 +407,9 @@ func (c *conn) power(ctx context.Context, call sdk.Call, id string) (sdk.Result,
 			sum = "Stop " + x.label() + " (" + x.gpu() + ", " + x.cost() + "): what runs on it ends and its container disk is cleared"
 			if x.VolumeGB > 0 {
 				sum += fmt.Sprintf("; the %g GB volume stays, billed for storage", x.VolumeGB)
+			}
+			if x.spot() {
+				sum += "; it's a spot pod, so starting it again needs a bid in the RunPod console (no undo)"
 			}
 		}
 		before, _ := json.Marshal(map[string]any{"status": x.DesiredStatus})
@@ -424,10 +436,19 @@ func (c *conn) power(ctx context.Context, call sdk.Call, id string) (sdk.Result,
 	if after != nil && after.DesiredStatus != "" && after.DesiredStatus != want {
 		return sdk.Result{}, fmt.Errorf("RunPod left the pod %s %s", x.label(), strings.ToLower(after.DesiredStatus))
 	}
-	res, err := sdk.JSON(map[string]any{"pod": x.ID, "name": x.label(), "status": want, "statusBefore": x.DesiredStatus, "gpu": x.gpu(), "costPerHour": x.CostPerHr})
-	if start {
+	cost := x.CostPerHr
+	if start && after != nil && after.CostPerHr != nil {
+		// What RunPod bills from now on, which may differ from the
+		// rate it showed while the pod was stopped.
+		cost = after.CostPerHr
+	}
+	res, err := sdk.JSON(map[string]any{"pod": x.ID, "name": x.label(), "status": want, "statusBefore": x.DesiredStatus, "gpu": x.gpu(), "costPerHour": cost})
+	switch {
+	case start:
 		res.Undo = sdk.UndoWith("stop_pod", map[string]string{"pod": x.ID}, "Stop "+x.label()+" again")
-	} else {
+	case !x.spot():
+		// A spot pod can't be started here (start_pod refuses it), so
+		// stopping one has no undo.
 		res.Undo = sdk.UndoWith("start_pod", map[string]string{"pod": x.ID}, "Start "+x.label()+" again (its container disk starts empty)")
 	}
 	return res, err

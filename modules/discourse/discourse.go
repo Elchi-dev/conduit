@@ -188,7 +188,7 @@ func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, 
 		case e.ErrorType == "invalid_access" && strings.Contains(strings.Join(e.Errors, " "), "API"):
 			return &rest.Error{Status: res.StatusCode, Message: "the forum refused the API key or username"}
 		case len(e.Errors) > 0:
-			return &rest.Error{Status: res.StatusCode, Message: rest.Redact(clip(strings.Join(e.Errors, "; "), 300))}
+			return &rest.Error{Status: res.StatusCode, Message: clip(rest.Redact(strings.Join(e.Errors, "; ")), 300)}
 		}
 		return &rest.Error{Status: res.StatusCode, Message: res.Status}
 	}

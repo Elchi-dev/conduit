@@ -202,7 +202,7 @@ func (c *conn) do(ctx context.Context, method, path string, q, form url.Values, 
 		}
 		msg := res.Status
 		if e.Msg != "" {
-			msg = rest.Redact(clip(e.Msg, 300))
+			msg = clip(rest.Redact(e.Msg), 300)
 		}
 		return &rest.Error{Status: res.StatusCode, Message: msg}
 	}

@@ -161,7 +161,7 @@ func (c *conn) call(ctx context.Context, method string, form url.Values, out any
 		}
 		msg := "UptimeRobot refused the request"
 		if env.Error != nil && env.Error.Message != "" {
-			msg += ": " + rest.Redact(clip(env.Error.Message, 200))
+			msg += ": " + clip(rest.Redact(env.Error.Message), 200)
 		}
 		return errors.New(msg)
 	}
@@ -291,7 +291,7 @@ func logOut(l logEntry) map[string]any {
 		if l.Reason.Code != nil {
 			code = clip(fmt.Sprint(l.Reason.Code), 20)
 		}
-		out["reason"] = strings.TrimSpace(code + " " + rest.Redact(clip(l.Reason.Detail, 200)))
+		out["reason"] = strings.TrimSpace(code + " " + clip(rest.Redact(l.Reason.Detail), 200))
 	}
 	return out
 }

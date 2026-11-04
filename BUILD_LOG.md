@@ -3,6 +3,15 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · v1.0.0
+
+Released ~09:00 CET from ff2d970: 105 modules, signed for every platform,
+after seven independent reviews and a seventh-review pass that made
+revealing secrets destructive and kept undo working for sensitive actions
+whose undo carries no secret (core.keepUndo). The 1.0 polish: twelve module
+categories, search, icons for every module, eight recommended picks per
+starting set, and ErrorNote's next steps on every error.
+
 ## 2026-11-04 · Phases 39–45 — Passkeys, the website in German, 105 modules, two more reviews
 
 - **Phase 39, website:** every page in English and German (`/de/`), a

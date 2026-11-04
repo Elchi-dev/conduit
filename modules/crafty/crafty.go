@@ -69,7 +69,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "stop", Title: "Stop a server", Description: "Saves and stops it; players are disconnected. Undo starts it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(one)},
 			{Name: "restart", Title: "Restart a server", Description: "Players are disconnected while it restarts.", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(one)},
 			{Name: "kill", Title: "Kill a server", Description: "Ends the process at once, without saving. Undo starts it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(one)},
-			{Name: "backup", Title: "Back up a server", Description: "Runs a backup with the server's backup settings (or the named backup configuration on Crafty 4.4 and later).", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "backup", Title: "Back up a server", Description: "Runs a backup with the server's backup settings (or the named backup configuration on Crafty 4.4 and later). Crafty then deletes the oldest backups beyond the configuration's maximum, and a configuration can shut the server down while it runs; the preview says both.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["server"],"properties":{` + srvProp + `,"backupConfig":{"type":"string","description":"Backup configuration UUID (Crafty 4.4 and later); the default one when left out"}}}`)},
 			{Name: "command", Title: "Run a console command", Description: "Sends one line to the server console. Commands can carry passwords, so this is sensitive. It can't be undone.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["server","command"],"properties":{` + srvProp + `,"command":{"type":"string","maxLength":500}}}`)},
@@ -289,6 +289,121 @@ func checkLine(s string) error {
 	return nil
 }
 
+// backupConf is one backup configuration (Crafty 4.4 and later name them;
+// older ones have a single unnamed one).
+type backupConf struct {
+	ID       string `json:"backup_id"`
+	Name     string `json:"backup_name"`
+	Max      *int   `json:"max_backups"`
+	Shutdown bool   `json:"shutdown"`
+	Default  bool   `json:"default"`
+}
+
+// unwrap returns the data of a {"status":…,"data":…} answer, or the answer
+// itself (some of Crafty's backup routes answer bare).
+func unwrap(raw json.RawMessage) json.RawMessage {
+	var e struct {
+		Status string          `json:"status"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(raw, &e) == nil && e.Status != "" && len(e.Data) > 0 {
+		return e.Data
+	}
+	return raw
+}
+
+// backupConfs reads the server's backup configurations: a map of id to
+// configuration (4.4 and later), a list, or one configuration.
+func (c *conn) backupConfs(ctx context.Context, id string) ([]backupConf, error) {
+	var raw json.RawMessage
+	if _, err := c.api.Do(ctx, http.MethodGet, "/servers/"+id+"/backups", nil, nil, &raw); err != nil {
+		return nil, err
+	}
+	raw = unwrap(raw)
+	var list []backupConf
+	if json.Unmarshal(raw, &list) == nil {
+		return list, nil
+	}
+	var one backupConf
+	if json.Unmarshal(raw, &one) == nil && one.Max != nil {
+		return []backupConf{one}, nil
+	}
+	var byID map[string]backupConf
+	if err := json.Unmarshal(raw, &byID); err != nil {
+		return nil, errors.New("unexpected backup settings from Crafty")
+	}
+	for k, b := range byID {
+		if b.ID == "" {
+			b.ID = k
+		}
+		list = append(list, b)
+	}
+	return list, nil
+}
+
+// backupPlan says what a backup will do: how many backups the
+// configuration keeps and has now (so how many Crafty deletes), and
+// whether it shuts the server down. What can't be read is said plainly.
+func (c *conn) backupPlan(ctx context.Context, srv server, id, cfgID string, st stats) *sdk.Plan {
+	name := "its default backup settings"
+	if cfgID != "" {
+		name = "backup configuration " + cfgID
+	}
+	sum := fmt.Sprintf("Back up %s with %s", srv.Name, name)
+	before := map[string]any{}
+	confs, err := c.backupConfs(ctx, id)
+	var conf *backupConf
+	for i, b := range confs {
+		if (cfgID != "" && strings.EqualFold(b.ID, cfgID)) || (cfgID == "" && (b.Default || len(confs) == 1)) {
+			conf = &confs[i]
+			break
+		}
+	}
+	if err != nil || conf == nil {
+		sum += ". Couldn't read the backup configuration, so how many old backups Crafty deletes, and whether it shuts the server down, is unknown"
+		return plan(sum, "server "+srv.Name, "backup", nil, nil)
+	}
+	if conf.Name != "" {
+		sum = fmt.Sprintf("Back up %s with backup configuration %q", srv.Name, conf.Name)
+	}
+	count := -1
+	if conf.ID != "" && uuidRe.MatchString(strings.ToLower(conf.ID)) {
+		var files struct {
+			Total *int `json:"total"`
+		}
+		var raw json.RawMessage
+		if _, err := c.api.Do(ctx, http.MethodGet, "/servers/"+id+"/backups/backup/"+strings.ToLower(conf.ID)+"/files", nil, nil, &raw); err == nil &&
+			json.Unmarshal(unwrap(raw), &files) == nil && files.Total != nil {
+			count = *files.Total
+		}
+	}
+	keep := 0
+	if conf.Max != nil {
+		keep = *conf.Max
+	}
+	before["maxBackups"] = keep
+	switch {
+	case keep <= 0:
+		sum += "; it keeps every backup (no maximum)"
+	case count >= 0:
+		before["backups"] = count
+		sum += fmt.Sprintf("; it keeps at most %d and has %d now", keep, count)
+		if drop := count + 1 - keep; drop > 0 {
+			sum += fmt.Sprintf(", so Crafty deletes the %d oldest", drop)
+		}
+	default:
+		sum += fmt.Sprintf("; it keeps at most %d (the current count couldn't be read), and Crafty deletes the oldest beyond that", keep)
+	}
+	before["shutdown"] = conf.Shutdown
+	if conf.Shutdown {
+		sum += "; it shuts the server down while backing up"
+		if st.Online > 0 {
+			sum += fmt.Sprintf(", disconnecting %d players", st.Online)
+		}
+	}
+	return plan(sum, "server "+srv.Name, "backup", before, nil)
+}
+
 var actions = map[string]bool{"servers": true, "stats": true, "start": true, "stop": true, "restart": true, "kill": true, "backup": true, "command": true, "logs": true}
 
 // Invoke implements sdk.Module.
@@ -402,11 +517,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 
 	case "backup":
 		if call.DryRun {
-			cfg := "its default backup settings"
-			if p.BackupConfig != "" {
-				cfg = "backup configuration " + p.BackupConfig
-			}
-			return sdk.Result{Plan: plan(fmt.Sprintf("Back up %s with %s", srv.Name, cfg), "server "+srv.Name, "backup", nil, nil)}, nil
+			return sdk.Result{Plan: c.backupPlan(ctx, srv, id, p.BackupConfig, st)}, nil
 		}
 		path := "/servers/" + id + "/action/backup_server"
 		if p.BackupConfig != "" {

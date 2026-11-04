@@ -15,7 +15,7 @@ has full control over Caddy, so never expose it beyond a trusted network.
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `summary` | read | Apps, servers and their listen addresses, every host, route and upstream counts |
-| `routes` | read | Hosts and paths matched, handler types, upstreams, file roots, static status codes; filter by server or host (wildcards match) |
+| `routes` | read, sensitive | Sensitive because matched paths can hold tokens (a secret webhook path). Hosts and paths matched, handler types, upstreams, file roots, static status codes; filter by server or host (wildcards match) |
 | `upstreams` | read | Each upstream's active requests and recent failures |
 | `tls` | read | Automation policies (subjects, issuers, challenge and DNS provider name), names with managed certificates, count of certificates loaded by hand |
 | `pki_ca` | read | The internal CA's root and intermediate names and expiry dates |

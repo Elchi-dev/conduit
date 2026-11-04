@@ -63,6 +63,19 @@ func (f *fakeNB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /api/dcim/interfaces/":
 		reply(map[string]any{"count": 1, "results": []any{map[string]any{"id": 1, "name": "ether1", "type": map[string]string{"value": "1000base-t"}, "enabled": true}}})
 	case "GET /api/ipam/ip-addresses/":
+		if n := r.URL.Query().Get("dns_name__ie"); n != "" {
+			res := []any{}
+			for _, ip := range f.ips {
+				if strings.EqualFold(fmt.Sprint(ip["dns_name"]), n) {
+					res = append(res, ip)
+				}
+			}
+			if strings.EqualFold(n, "mail.example.com") {
+				res = append(res, map[string]any{"id": 9, "address": "10.0.20.25/24", "dns_name": "Mail.example.com", "status": map[string]string{"value": "active"}})
+			}
+			reply(map[string]any{"count": len(res), "results": res})
+			return
+		}
 		reply(map[string]any{"count": 1, "results": []any{map[string]any{"id": 5, "address": "10.0.20.2/24", "status": map[string]string{"value": "active"}, "assigned_object": map[string]any{"name": "ether1", "device": map[string]any{"name": "sw1"}}}}})
 	case "GET /api/ipam/prefixes/":
 		if p := r.URL.Query().Get("prefix"); p != "" && p != "10.0.20.0/24" {
@@ -163,18 +176,18 @@ func TestNetBox(t *testing.T) {
 	}
 
 	// Device status: preview, act, undo.
-	r, err = invoke(m, "set_device_status", `{"name":"sw1","status":"offline"}`, true)
+	r, err = invoke(m, "set_device_status_live", `{"name":"sw1","status":"offline"}`, true)
 	if err != nil || r.Plan == nil || r.Plan.Summary != "Set sw1 from active to offline" || f.status != "active" {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "set_device_status", `{"name":"sw1","status":"offline"}`, false)
-	if err != nil || f.status != "offline" || r.Undo == nil || string(r.Undo.Input) != `{"id":42,"status":"active"}` {
+	r, err = invoke(m, "set_device_status_live", `{"name":"sw1","status":"offline"}`, false)
+	if err != nil || f.status != "offline" || r.Undo == nil || r.Undo.Action != "set_device_status_live" || string(r.Undo.Input) != `{"id":42,"status":"active"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.status != "active" {
 		t.Fatal(err)
 	}
-	if _, err := invoke(m, "set_device_status", `{"name":"nope","status":"offline"}`, false); err == nil || !strings.Contains(err.Error(), "no device") {
+	if _, err := invoke(m, "set_device_status_live", `{"name":"nope","status":"offline"}`, false); err == nil || !strings.Contains(err.Error(), "no device") {
 		t.Fatal(err)
 	}
 }
@@ -220,5 +233,72 @@ func TestNetBoxValidation(t *testing.T) {
 	f.redirect = other.URL
 	if h := m.Health(context.Background(), "nb"); h.Status != "down" || !strings.Contains(h.Message, "another host") || leaked != "" {
 		t.Fatalf("%+v %q", h, leaked)
+	}
+}
+
+// reserve_ip (write) only reserves, with a plain host name nobody else
+// uses; live statuses go through assign_ip (destructive). A device's status
+// moves at write only between pre-production states.
+func TestNetBoxWriteLimits(t *testing.T) {
+	m, f := setup(t, "secret://t")
+	for _, c := range []struct{ action, in, want string }{
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","dns_name":"*.example.com"}`, "host name"},
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","dns_name":"*evil.example.com"}`, "host name"},
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","dns_name":"_acme-challenge.example.com"}`, "host name"},
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","dns_name":"x._domainkey.example.com"}`, "host name"},
+		{"assign_ip", `{"prefix":"10.0.20.0/24","status":"active","dns_name":"*.example.com"}`, "host name"},
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","status":"active"}`, "assign_ip"},
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","status":"dhcp"}`, "assign_ip"},
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","status":"slaac"}`, "assign_ip"},
+		{"assign_ip", `{"prefix":"10.0.20.0/24"}`, "status"},
+		{"reserve_ip", `{"prefix":"10.0.20.0/24","dns_name":"mail.example.com"}`, "already the DNS name"},
+		{"assign_ip", `{"prefix":"10.0.20.0/24","status":"active","dns_name":"MAIL.example.com."}`, "already the DNS name"},
+		{"set_device_status", `{"name":"sw1","status":"offline"}`, "set_device_status_live"},
+		{"set_device_status", `{"name":"sw1","status":"planned"}`, "set_device_status_live"},
+	} {
+		if _, err := invoke(m, c.action, c.in, false); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s %s: %v (want %q)", c.action, c.in, err, c.want)
+		}
+	}
+	if len(f.ips) != 0 || f.status != "active" {
+		t.Fatalf("%v %s", f.ips, f.status)
+	}
+	risk := map[string]sdk.Risk{}
+	for _, a := range New().Manifest().Actions {
+		risk[a.Name] = a.Risk
+	}
+	if risk["reserve_ip"] != sdk.RiskWrite || risk["assign_ip"] != sdk.RiskDestructive || risk["set_device_status"] != sdk.RiskWrite || risk["set_device_status_live"] != sdk.RiskDestructive {
+		t.Fatal(risk)
+	}
+
+	// A name nobody uses is reserved at write; taking it a second time is refused.
+	if _, err := invoke(m, "reserve_ip", `{"prefix":"10.0.20.0/24","dns_name":"nas.lan"}`, false); err != nil || len(f.ips) != 1 {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "reserve_ip", `{"prefix":"10.0.20.0/24","dns_name":"nas.lan"}`, false); err == nil || !strings.Contains(err.Error(), "already the DNS name") {
+		t.Fatal(err)
+	}
+	r, err := invoke(m, "assign_ip", `{"prefix":"10.0.20.0/24","status":"dhcp","dns_name":"printer.lan"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Assign 10.0.20.11/24 in 10.0.20.0/24 (dhcp)" {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "assign_ip", `{"prefix":"10.0.20.0/24","status":"dhcp","dns_name":"printer.lan"}`, false)
+	if err != nil || r.Undo == nil || r.Undo.Action != "delete_ip_address" || !strings.Contains(string(r.Output), `"status":"dhcp"`) {
+		t.Fatalf("%+v %v", r, err)
+	}
+
+	// Pre-production moves are write, with an undo at write.
+	f.mu.Lock()
+	f.status = "planned"
+	f.mu.Unlock()
+	r, err = invoke(m, "set_device_status", `{"id":42,"status":"staged"}`, false)
+	if err != nil || f.status != "staged" || r.Undo == nil || r.Undo.Action != "set_device_status" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := invoke(m, "set_device_status", `{"id":42,"status":"active"}`, false); err == nil || f.status != "staged" {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "set_device_status_live", `{"id":42,"status":"active"}`, false); err != nil || f.status != "active" {
+		t.Fatal(err)
 	}
 }

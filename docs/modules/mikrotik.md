@@ -21,8 +21,8 @@ RouterOS uses a self-signed certificate: copy its SHA-256 fingerprint into
 | `leases` | read | Address, MAC, host name, status, server, expiry |
 | `address_lists` | read | Each list with its number of entries (and how many are dynamic) |
 | `address_list_entries` | read | One list's entries with comments and timeouts |
-| `add_address_list_entry` | destructive | Preview shows the list before and after. Optional comment and timeout. Undo removes it |
-| `remove_address_list_entry` | destructive | Preview first. Undo adds it back with its comment |
+| `add_address_list_entry` | destructive | Preview shows the list before and after. Optional comment, timeout and `disabled`. Undo removes it |
+| `remove_address_list_entry` | destructive | Preview first. Undo adds it back with its comment, its disabled flag and the time it had left |
 | `wireless_clients` | read | Clients per interface from the wifi, wifiwave2, wireless and CAPsMAN registration tables, whichever exist |
 | `reboot` | destructive | Preview names the router. The network behind it is cut off for a minute or two |
 
@@ -32,8 +32,10 @@ canonical form, so `10.1.2.3/8` becomes `10.0.0.0/8`), a range
 gets through, so one call changes one entry. Firewall rules usually match
 on address lists, so adding or removing an entry changes who can reach
 what: both are destructive and need approval under every preset except
-full autonomy. Undoing a removal puts the comment back but not a timeout
-that was counting down.
+full autonomy. Undoing a removal puts the entry back as it was: its
+comment, whether it was disabled, and the time a counting-down timeout had
+left (milliseconds rounded down), so a temporary entry never comes back
+permanent. When the remaining time can't be read, the removal has no undo.
 
 **Secrets stay on the router.** The module only asks for the paths above;
 it never reads `/user`, `/ppp/secret`, wireless security profiles,

@@ -1,7 +1,9 @@
 // Package powerdns works with a PowerDNS Authoritative server through its
-// HTTP API (X-API-Key): zones and their records, adding a record set that
-// doesn't exist yet (undoable), replacing and deleting record sets (with a
-// preview and undo), and sending NOTIFY or rectifying a zone.
+// HTTP API (X-API-Key): zones and their records, adding an address, text
+// or alias record at a fresh name (write, undoable), adding any other record
+// or at a name that already answers (destructive), replacing and deleting
+// record sets (with a preview and undo), and sending NOTIFY or rectifying a
+// zone.
 package powerdns
 
 import (
@@ -59,9 +61,14 @@ var (
 var editable = map[string]bool{"A": true, "AAAA": true, "CNAME": true, "MX": true, "TXT": true, "SRV": true, "NS": true, "CAA": true,
 	"PTR": true, "ALIAS": true, "SSHFP": true, "TLSA": true, "HTTPS": true, "SVCB": true, "NAPTR": true, "DS": true, "LOC": true, "SPF": true}
 
-func types() string {
+// writeTypes are the types add_record (write) may add. Every other type
+// delegates, redirects, takes mail or controls certificates, and goes
+// through add_record_any (destructive).
+var writeTypes = map[string]bool{"A": true, "AAAA": true, "TXT": true, "CNAME": true}
+
+func types(set map[string]bool) string {
 	var ts []string
-	for t := range editable {
+	for t := range set {
 		ts = append(ts, t)
 	}
 	sort.Strings(ts)
@@ -73,7 +80,8 @@ func types() string {
 func (m *Module) Manifest() sdk.Manifest {
 	zone := `"zone":{"type":"string","description":"Zone name, e.g. example.com"}`
 	name := `"name":{"type":"string","description":"Record name: relative (www), @ for the zone itself, or absolute (www.example.com.)"}`
-	typ := `"type":{"type":"string","enum":` + types() + `}`
+	typ := `"type":{"type":"string","enum":` + types(editable) + `}`
+	wtyp := `"type":{"type":"string","enum":` + types(writeTypes) + `}`
 	ttl := `"ttl":{"type":"integer","minimum":30,"maximum":604800}`
 	contents := `"contents":{"type":"array","items":{"type":"string"},"maxItems":50,"description":"Record contents in zone file form, e.g. 192.0.2.10, \"10 mail.example.com.\", \"v=spf1 -all\""}`
 	return sdk.Manifest{
@@ -90,7 +98,9 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "zones", Title: "Zones", Description: "Name, kind (native, primary, secondary), serial and DNSSEC.", Risk: sdk.RiskRead},
 			{Name: "records", Title: "Records", Description: "A zone's record sets, optionally only one name or type.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["zone"],"properties":{` + zone + `,` + name + `,"type":{"type":"string"}}}`)},
-			{Name: "add_record", Title: "Add a record", Description: "Creates a record set that doesn't exist yet; an existing name and type is refused (replace it instead). Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_record", Title: "Add a record", Description: "Creates an A, AAAA, TXT or CNAME record at a new name that nothing answers for yet. Refused: the zone apex, _acme-challenge and _domainkey names, wildcards, names a wildcard covers, names that already have records of any type, and names at or below a delegation (use add_record_any). Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["zone","name","type"],"properties":{` + zone + `,` + name + `,` + wtyp + `,"content":{"type":"string","description":"One record's content"},` + contents + `,` + ttl + `}}`)},
+			{Name: "add_record_any", Title: "Add a record of any type", Description: "Creates a record set of any type (NS, DS, MX, CAA, TLSA, HTTPS, SRV, …) or at a name add_record refuses: these can delegate a subtree, take mail, allow certificates or override a wildcard. The preview says what it overrides. An existing name and type is refused (replace it instead). Undo deletes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","name","type"],"properties":{` + zone + `,` + name + `,` + typ + `,"content":{"type":"string","description":"One record's content"},` + contents + `,` + ttl + `}}`)},
 			{Name: "replace_rrset", Title: "Replace a record set", Description: "Sets every record of a name and type at once. The preview shows the old and new records. Undo puts the old ones back.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","name","type","contents"],"properties":{` + zone + `,` + name + `,` + typ + `,` + contents + `,` + ttl + `}}`)},
@@ -351,6 +361,75 @@ func (z zoneDetail) find(name, typ string) *rrset {
 	return nil
 }
 
+// parent returns the name one label up, or "" at the root.
+func parent(n string) string {
+	if i := strings.Index(n, "."); i >= 0 && i+1 < len(n) {
+		return n[i+1:]
+	}
+	return ""
+}
+
+// overrides lists what adding ch would take over beyond a fresh name: the
+// zone apex, ACME and DKIM names, wildcards, a wildcard at an ancestor that
+// answers for the name today, other record types at the name, and a
+// delegation at or above it. add_record refuses all of these.
+func (z zoneDetail) overrides(ch change) []string {
+	var out []string
+	if ch.name == ch.zone {
+		out = append(out, "it is the zone apex (mail, certificates and delegation hang off it)")
+	}
+	labels := strings.Split(strings.TrimSuffix(strings.TrimSuffix(ch.name, ch.zone), "."), ".")
+	for _, l := range labels {
+		switch {
+		case strings.HasPrefix(l, "_acme-challenge"):
+			out = append(out, "it is an _acme-challenge name (it proves control for certificates)")
+		case l == "_domainkey":
+			out = append(out, "it is a DKIM key name (it lets mail be signed for the domain)")
+		}
+	}
+	if strings.HasPrefix(ch.name, "*.") {
+		out = append(out, "it is a wildcard (it answers for every name below it that doesn't exist)")
+	}
+	types := map[string]bool{}
+	for _, r := range z.RRsets {
+		n := strings.ToLower(r.Name)
+		if n == ch.name && r.Type != ch.typ {
+			types[r.Type] = true
+		}
+	}
+	if len(types) > 0 {
+		var ts []string
+		for t := range types {
+			ts = append(ts, t)
+		}
+		sort.Strings(ts)
+		out = append(out, "the name already has "+strings.Join(ts, ", ")+" records")
+	}
+	// A wildcard answers only for names that have no records at all.
+	for a := parent(ch.name); len(types) == 0 && z.find(ch.name, ch.typ) == nil && a != "" && (a == ch.zone || strings.HasSuffix(a, "."+ch.zone)); a = parent(a) {
+		var wild []string
+		for _, r := range z.RRsets {
+			if strings.EqualFold(r.Name, "*."+a) {
+				wild = append(wild, r.Type)
+			}
+		}
+		if len(wild) > 0 {
+			sort.Strings(wild)
+			out = append(out, "the wildcard *."+a+" ("+strings.Join(wild, ", ")+") may answer for it now")
+		}
+		if a == ch.zone {
+			break
+		}
+	}
+	for _, r := range z.RRsets {
+		n := strings.ToLower(r.Name)
+		if r.Type == "NS" && n != ch.zone && (n == ch.name || strings.HasSuffix(ch.name, "."+n)) {
+			out = append(out, n+" is delegated (NS), so the name belongs to another server")
+		}
+	}
+	return out
+}
+
 type input struct {
 	Zone     string   `json:"zone"`
 	Name     string   `json:"name"`
@@ -453,8 +532,18 @@ func (c *conn) apply(ctx context.Context, call sdk.Call, p input) (sdk.Result, e
 	}
 	old := z.find(ch.name, ch.typ)
 	label := ch.name + " " + ch.typ
+	var over []string
 	switch call.Action {
-	case "add_record":
+	case "add_record", "add_record_any":
+		over = z.overrides(ch)
+		if call.Action == "add_record" {
+			if !writeTypes[ch.typ] {
+				return sdk.Result{}, fmt.Errorf("add_record adds only A, AAAA, TXT and CNAME records; a %s record can delegate, redirect, take mail or allow certificates, so it needs add_record_any", ch.typ)
+			}
+			if len(over) > 0 {
+				return sdk.Result{}, fmt.Errorf("add_record only adds a name nothing answers for yet, and %s: %s. Use add_record_any", label, strings.Join(over, "; "))
+			}
+		}
 		if old != nil {
 			return sdk.Result{}, fmt.Errorf("%s already has %d record(s): %s. Use replace_rrset to change them", label, len(old.Records), strings.Join(contentsOf(old.Records), ", "))
 		}
@@ -493,7 +582,12 @@ func (c *conn) apply(ctx context.Context, call sdk.Call, p input) (sdk.Result, e
 			after, _ = json.Marshal(map[string]any{"ttl": ch.ttl, "records": contentsOf(ch.records)})
 		}
 		verb := map[string]string{"create": "Create", "update": "Replace", "delete": "Delete"}[op]
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s %s in %s", verb, label, ch.zone),
+		summary := fmt.Sprintf("%s %s in %s", verb, label, ch.zone)
+		if len(over) > 0 {
+			summary += ". It overrides: " + strings.Join(over, "; ")
+			after, _ = json.Marshal(map[string]any{"ttl": ch.ttl, "records": contentsOf(ch.records), "overrides": over})
+		}
+		return sdk.Result{Plan: &sdk.Plan{Summary: summary,
 			Changes: []sdk.Change{{Target: label, Op: op, Before: before, After: after}}}}, nil
 	}
 	set := map[string]any{"name": ch.name, "type": ch.typ}
@@ -607,7 +701,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		sort.SliceStable(sets, func(i, j int) bool { return sets[i]["name"].(string) < sets[j]["name"].(string) })
 		return sdk.JSON(map[string]any{"zone": z.Name, "kind": z.Kind, "serial": z.Serial, "dnssec": z.DNSSEC, "rrsets": sets})
 
-	case "add_record", "replace_rrset", "delete_rrset":
+	case "add_record", "add_record_any", "replace_rrset", "delete_rrset":
 		return c.apply(ctx, call, p)
 
 	case "notify", "rectify":

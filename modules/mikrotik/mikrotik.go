@@ -68,7 +68,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	entry := `{"type":"object","required":["list","address"],"properties":{
 		"list":{"type":"string","description":"Address list name, e.g. blocked"},
 		"address":{"type":"string","description":"An IP address, a network (CIDR), a range (a-b) or a DNS name"}%s}}`
-	addExtra := `,"comment":{"type":"string","maxLength":200},"timeout":{"type":"string","description":"Remove it automatically after this long, e.g. 1h, 1d12h or 01:00:00"}`
+	addExtra := `,"comment":{"type":"string","maxLength":200},"timeout":{"type":"string","description":"Remove it automatically after this long, e.g. 1h, 1d12h or 01:00:00"},"disabled":{"type":"boolean","default":false,"description":"Add it disabled (no firewall rule matches it until enabled)"}`
 	return sdk.Manifest{
 		ID: "mikrotik", Name: "MikroTik", Version: "0.1.0", Category: "Network", Icon: "router",
 		Description: "A MikroTik router (RouterOS 7): resources, interfaces and traffic, DHCP leases, firewall address lists, wireless clients.",
@@ -319,10 +319,30 @@ func sameAddress(a, b string) bool {
 }
 
 type changeIn struct {
-	List    string `json:"list"`
-	Address string `json:"address"`
-	Comment string `json:"comment"`
-	Timeout string `json:"timeout"`
+	List     string `json:"list"`
+	Address  string `json:"address"`
+	Comment  string `json:"comment"`
+	Timeout  string `json:"timeout"`
+	Disabled bool   `json:"disabled"`
+}
+
+var msRe = regexp.MustCompile(`[0-9]+ms$`)
+
+// remaining turns the time an entry has left, as RouterOS shows it
+// (23h59m58s, 4m59s990ms, 00:59:30), into a timeout add accepts, rounding
+// milliseconds down (at least 1s). ok is false when it can't be read.
+func remaining(t string) (string, bool) {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return "", true
+	}
+	if r := msRe.ReplaceAllString(t, ""); r != t {
+		if r == "" {
+			r = "1s"
+		}
+		t = r
+	}
+	return t, timeoutRe.MatchString(t)
 }
 
 // check validates an address list change before anything is asked of the
@@ -393,7 +413,7 @@ func (c *conn) change(ctx context.Context, call sdk.Call, p changeIn) (sdk.Resul
 		}
 		return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: "address list " + p.List, Op: "update", Before: b, After: a}}}}, nil
 	}
-	undoIn := map[string]string{"list": p.List, "address": p.Address}
+	undoIn := map[string]any{"list": p.List, "address": p.Address}
 	if add {
 		body := map[string]string{"list": p.List, "address": p.Address}
 		if p.Comment != "" {
@@ -401,6 +421,9 @@ func (c *conn) change(ctx context.Context, call sdk.Call, p changeIn) (sdk.Resul
 		}
 		if p.Timeout != "" {
 			body["timeout"] = p.Timeout
+		}
+		if p.Disabled {
+			body["disabled"] = "true"
 		}
 		var created entry
 		if err := c.do(ctx, http.MethodPut, "/ip/firewall/address-list", nil, body, &created); err != nil {
@@ -419,6 +442,19 @@ func (c *conn) change(ctx context.Context, call sdk.Call, p changeIn) (sdk.Resul
 	res, err := sdk.JSON(map[string]any{"list": p.List, "removed": p.Address, "entries": len(after)})
 	if found.Comment != "" {
 		undoIn["comment"] = found.Comment
+	}
+	if yes(found.Disabled) {
+		undoIn["disabled"] = true
+	}
+	// Putting back an entry that was about to expire as a permanent one
+	// would change the firewall for good: carry the time it had left, and
+	// offer no undo when that can't be read.
+	left, ok := remaining(found.Timeout)
+	if !ok {
+		return res, err
+	}
+	if left != "" {
+		undoIn["timeout"] = left
 	}
 	res.Undo = sdk.UndoWith("add_address_list_entry", undoIn, "Add "+p.Address+" back to "+p.List)
 	return res, err

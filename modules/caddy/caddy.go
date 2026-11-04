@@ -75,7 +75,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "summary", Title: "Summary", Description: "Apps, servers with what they listen on, every host served, and counts of routes and upstreams.", Risk: sdk.RiskRead},
-			{Name: "routes", Title: "Routes", Description: "Each server's routes: hosts and paths matched, handler types, upstreams and file roots (never handler settings such as auth hashes or headers).", Risk: sdk.RiskRead,
+			{Name: "routes", Title: "Routes", Description: "Each server's routes: hosts and paths matched, handler types, upstreams and file roots (never handler settings such as auth hashes or headers). Matched paths can hold tokens (a secret webhook path), so this is sensitive.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"server":{"type":"string","description":"Only this server, e.g. srv0"},"host":{"type":"string","description":"Only routes matching this host"}}}`)},
 			{Name: "upstreams", Title: "Upstreams", Description: "The reverse proxy's upstreams with active requests and recent failures.", Risk: sdk.RiskRead},
 			{Name: "tls", Title: "TLS", Description: "Automation policies (subjects, issuers, challenge type), names with managed certificates, and how many certificates are loaded by hand.", Risk: sdk.RiskRead},

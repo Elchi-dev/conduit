@@ -196,3 +196,13 @@ func TestCaddyValidation(t *testing.T) {
 		t.Fatalf("%+v %q", h, leaked)
 	}
 }
+
+// Route paths can hold tokens, so routes is sensitive (kept out of the
+// audit log's values).
+func TestCaddyRoutesSensitive(t *testing.T) {
+	for _, a := range New().Manifest().Actions {
+		if a.Name == "routes" && (!a.Sensitive || a.Risk != sdk.RiskRead) {
+			t.Fatalf("%+v", a)
+		}
+	}
+}

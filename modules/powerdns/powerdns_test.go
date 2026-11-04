@@ -207,12 +207,12 @@ func TestPowerDNSValidation(t *testing.T) {
 		{"add_record", `{"zone":"example.com","name":"a","type":"A","content":"1.2.3.4\n5.6.7.8"}`},
 		{"add_record", `{"zone":"example.com","name":"a","type":"AAAA","content":"1.2.3.4"}`},
 		{"add_record", `{"zone":"example.com","name":"a b","type":"A","content":"1.2.3.4"}`},
-		{"add_record", `{"zone":"example.com","name":"a","type":"MX","content":"mail.example.com"}`},
-		{"add_record", `{"zone":"example.com","name":"a","type":"SRV","content":"0 5 99999 sip.example.com"}`},
+		{"add_record_any", `{"zone":"example.com","name":"a","type":"MX","content":"mail.example.com"}`},
+		{"add_record_any", `{"zone":"example.com","name":"a","type":"SRV","content":"0 5 99999 sip.example.com"}`},
 		{"add_record", `{"zone":"example.com","name":"a","type":"CNAME","contents":["x.example.com","y.example.com"]}`},
 		{"add_record", `{"zone":"example.com","name":"a","type":"A"}`},
 		{"add_record", `{"zone":"example.com","name":"a","type":"A","content":"1.2.3.4","ttl":5}`},
-		{"add_record", `{"zone":"example.com","name":"a","type":"CAA","content":"0 issue letsencrypt.org"}`},
+		{"add_record_any", `{"zone":"example.com","name":"a","type":"CAA","content":"0 issue letsencrypt.org"}`},
 		{"replace_rrset", `{"zone":"example.com","name":"a","type":"A","contents":["1.2.3.4","1.2.3.4"]}`},
 		{"delete_rrset", `{"zone":"example.com","name":"a","type":"A","content":"1.2.3.4"}`},
 		{"notify", `{"zone":"example.com/../x"}`},
@@ -259,5 +259,91 @@ func TestPowerDNSValidation(t *testing.T) {
 	f.redirect = other.URL
 	if h := m.Health(context.Background(), "ns"); h.Status != "down" || !strings.Contains(h.Message, "another host") || leaked != "" {
 		t.Fatalf("%+v %q", h, leaked)
+	}
+}
+
+// add_record (write) adds only A, AAAA, TXT and CNAME at a name nothing
+// answers for; everything that could delegate, take mail, mint certificates
+// or override a live answer needs add_record_any (destructive), whose
+// preview says what it overrides.
+func TestPowerDNSAddRecordLimits(t *testing.T) {
+	m, f := setup(t, "secret://k")
+	f.sets = append(f.sets,
+		rrset{Name: "*.example.com.", Type: "A", TTL: 300, Records: []record{{Content: "192.0.2.50"}}},
+		rrset{Name: "corp.example.com.", Type: "NS", TTL: 300, Records: []record{{Content: "ns.corp.example.net."}}},
+		rrset{Name: "example.com.", Type: "NS", TTL: 300, Records: []record{{Content: "ns1.example.com."}}},
+		rrset{Name: "mail.example.com.", Type: "MX", TTL: 300, Records: []record{{Content: "10 mx.example.com."}}},
+	)
+	for in, want := range map[string]string{
+		`{"zone":"example.com","name":"corp2","type":"NS","content":"ns.attacker.net."}`:                 "add_record_any",
+		`{"zone":"example.com","name":"x","type":"DS","content":"12345 13 2 abcdef"}`:                    "add_record_any",
+		`{"zone":"example.com","name":"www","type":"HTTPS","content":"1 attacker.net. alpn=h2"}`:         "add_record_any",
+		`{"zone":"example.com","name":"@","type":"MX","content":"0 mx.attacker.net."}`:                   "add_record_any",
+		`{"zone":"example.com","name":"@","type":"CAA","content":"0 issue \"attacker-ca.net\""}`:         "add_record_any",
+		`{"zone":"example.com","name":"@","type":"TXT","content":"v=spf1 include:attacker.net -all"}`:    "zone apex",
+		`{"zone":"example.com","name":"admin","type":"A","content":"203.0.113.66"}`:                      "wildcard *.example.com.",
+		`{"zone":"example.com","name":"a.b.c","type":"A","content":"203.0.113.66"}`:                      "wildcard *.example.com.",
+		`{"zone":"example.com","name":"_acme-challenge.www","type":"TXT","content":"token"}`:             "_acme-challenge",
+		`{"zone":"example.com","name":"_acme-challenge-x","type":"CNAME","content":"acme.attacker.net"}`: "_acme-challenge",
+		`{"zone":"example.com","name":"sel._domainkey","type":"TXT","content":"v=DKIM1; p=AAAA"}`:        "DKIM",
+		`{"zone":"example.com","name":"*.dev","type":"A","content":"203.0.113.66"}`:                      "wildcard",
+		`{"zone":"example.com","name":"www","type":"AAAA","content":"2001:db8::66"}`:                     "already has A",
+		`{"zone":"example.com","name":"mail","type":"A","content":"203.0.113.66"}`:                       "already has MX",
+		`{"zone":"example.com","name":"corp","type":"A","content":"203.0.113.66"}`:                       "delegated",
+		`{"zone":"example.com","name":"host.corp","type":"A","content":"203.0.113.66"}`:                  "delegated",
+		`{"zone":"example.com","name":"deep.host.corp.example.com.","type":"TXT","content":"x"}`:         "delegated",
+	} {
+		if _, err := invoke(m, "add_record", in, false); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("add_record %s: %v (want %q)", in, err, want)
+		}
+	}
+	for _, s := range f.seen {
+		if strings.HasPrefix(s, "PATCH") {
+			t.Fatalf("add_record wrote: %s", s)
+		}
+	}
+	m2 := &Module{}
+	for _, a := range m2.Manifest().Actions {
+		if a.Name == "add_record" && (a.Risk != sdk.RiskWrite || strings.Contains(string(a.Input), `"NS"`)) {
+			t.Fatalf("%+v", a)
+		}
+		if a.Name == "add_record_any" && a.Risk != sdk.RiskDestructive {
+			t.Fatalf("%+v", a)
+		}
+	}
+
+	// Fresh names outside any wildcard's reach still work at write: a zone
+	// without the wildcard.
+	f.mu.Lock()
+	f.sets = f.sets[:3]
+	f.mu.Unlock()
+	if _, err := invoke(m, "add_record", `{"zone":"example.com","name":"new","type":"A","content":"192.0.2.7"}`, false); err != nil || f.get("new.example.com.", "A") == nil {
+		t.Fatal(err)
+	}
+
+	// add_record_any does the rest, and its preview names what it overrides.
+	f.mu.Lock()
+	f.sets = append(f.sets, rrset{Name: "*.example.com.", Type: "A", TTL: 300, Records: []record{{Content: "192.0.2.50"}}},
+		rrset{Name: "corp.example.com.", Type: "NS", TTL: 300, Records: []record{{Content: "ns.corp.example.net."}}})
+	f.mu.Unlock()
+	r, err := invoke(m, "add_record_any", `{"zone":"example.com","name":"www","type":"AAAA","content":"2001:db8::66"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "already has A records") || !strings.Contains(string(r.Plan.Changes[0].After), "overrides") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "add_record_any", `{"zone":"example.com","name":"host.corp","type":"A","content":"192.0.2.8"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "corp.example.com. is delegated") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "add_record_any", `{"zone":"example.com","name":"admin","type":"A","content":"192.0.2.8"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "wildcard *.example.com.") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "add_record_any", `{"zone":"example.com","name":"@","type":"MX","content":"10 mx.example.com."}`, false)
+	if err != nil || f.get("example.com.", "MX") == nil || r.Undo == nil || r.Undo.Action != "delete_rrset" {
+		t.Fatalf("%v %+v", err, r.Undo)
+	}
+	// An existing name and type still goes through replace_rrset.
+	if _, err := invoke(m, "add_record_any", `{"zone":"example.com","name":"www","type":"A","content":"192.0.2.9"}`, false); err == nil || !strings.Contains(err.Error(), "replace_rrset") {
+		t.Fatal(err)
 	}
 }

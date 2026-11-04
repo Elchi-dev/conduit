@@ -1,13 +1,15 @@
 # NetBox
 
 NetBox, the network source of truth: search, devices, IP addresses,
-prefixes and their free addresses, sites and VLANs; reserving the next free
-address in a prefix and changing a device's status, both with undo.
+prefixes and their free addresses, sites and VLANs; reserving or assigning
+the next free address in a prefix and changing a device's status, all with
+undo.
 
 **Setup.** Create an API token (your profile, API Tokens), store it in the
 vault, and enter NetBox's address (`https://netbox.example.com`) with its
 reference. A read-only token is enough for everything but `reserve_ip`,
-`delete_ip_address` and `set_device_status`. Both v1 tokens (`Token`) and
+`assign_ip`, `delete_ip_address`, `set_device_status` and
+`set_device_status_live`. Both v1 tokens (`Token`) and
 NetBox 4.5's v2 tokens (`nbt_…`, sent as `Bearer`) work.
 
 | Action | Risk | Notes |
@@ -20,14 +22,19 @@ NetBox 4.5's v2 tokens (`nbt_…`, sent as `Bearer`) work.
 | `available_ips` | read | Free addresses in a prefix (by CIDR, or by id when it exists in several VRFs) |
 | `sites` | read | With device counts |
 | `vlans` | read | Filter by text, site and VLAN id |
-| `reserve_ip` | write | Preview shows the address it would take. NetBox picks and creates it in one locked step. Undo deletes it |
-| `delete_ip_address` | destructive | Preview shows the record. Used as the undo of `reserve_ip` |
-| `set_device_status` | write | Preview shows old and new status. Undo puts the old one back |
+| `reserve_ip` | write | Status `reserved` only. Preview shows the address it would take. NetBox picks and creates it in one locked step. An optional `dns_name` must be a plain host name (no wildcard, no `_` labels) that no other address uses. Undo deletes it |
+| `assign_ip` | destructive | The same with any status (`active`, `dhcp`, `slaac`, `deprecated`), which DNS and DHCP syncs act on. Undo deletes it |
+| `delete_ip_address` | destructive | Preview shows the record. Used as the undo of `reserve_ip` and `assign_ip` |
+| `set_device_status` | write | Only between `planned`, `staged` and `inventory`. Preview shows old and new status. Undo puts the old one back |
+| `set_device_status_live` | destructive | Any change, including into or out of `active`, `offline`, `failed` and `decommissioning`. Undo puts the old one back |
 
-**What changes.** Only NetBox's records change: reserving an address
-doesn't configure it anywhere, and a device's status is documentation
-(automation that reads NetBox may act on it, which is why it's previewed
-and undoable). Deleting an address record is destructive.
+**What changes.** NetBox itself only records, but in setups that sync
+NetBox to DNS or DHCP (or drive monitoring and automation from it) these
+records change the network. So at write an agent can only reserve an
+address under a host name nobody else has, and move a device between
+pre-production states; an address with a live status, and a device going
+into or out of production, are destructive, as is deleting an address
+record.
 
 **What's left out.** Answers carry names, statuses, addresses and
 relations; custom fields, config contexts, comments and local context data

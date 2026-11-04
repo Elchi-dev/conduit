@@ -244,3 +244,41 @@ func TestMikroTikValidation(t *testing.T) {
 		t.Fatalf("%+v %q", h, leaked)
 	}
 }
+
+// Undoing a removal puts back the entry as it was: the time it had left
+// (not a permanent entry) and whether it was disabled.
+func TestMikroTikRemoveUndoKeepsTimeoutAndDisabled(t *testing.T) {
+	m, f, _ := setup(t, "secret://pw")
+	f.mu.Lock()
+	f.list = append(f.list,
+		map[string]string{".id": "*7", "list": "allowed", "address": "192.0.2.77", "dynamic": "true", "timeout": "4m59s990ms", "disabled": "true"},
+		map[string]string{".id": "*8", "list": "allowed", "address": "192.0.2.78", "dynamic": "true", "timeout": "soon"},
+	)
+	f.mu.Unlock()
+	r, err := invoke(m, "remove_address_list_entry", `{"list":"blocked","address":"203.0.113.0/24"}`, false)
+	if err != nil || r.Undo == nil || !strings.Contains(string(r.Undo.Input), `"timeout":"23h"`) {
+		t.Fatalf("%+v %v", r.Undo, err)
+	}
+	r, err = invoke(m, "remove_address_list_entry", `{"list":"allowed","address":"192.0.2.77"}`, false)
+	if err != nil || r.Undo == nil || !strings.Contains(string(r.Undo.Input), `"timeout":"4m59s"`) || !strings.Contains(string(r.Undo.Input), `"disabled":true`) {
+		t.Fatalf("%+v %v", r.Undo, err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	back := f.list[len(f.list)-1]
+	f.mu.Unlock()
+	if back["address"] != "192.0.2.77" || back["timeout"] != "4m59s" || back["disabled"] != "true" {
+		t.Fatalf("%v", back)
+	}
+	// A remaining time that can't be read gets no undo rather than a
+	// permanent entry.
+	r, err = invoke(m, "remove_address_list_entry", `{"list":"allowed","address":"192.0.2.78"}`, false)
+	if err != nil || r.Undo != nil {
+		t.Fatalf("%+v %v", r.Undo, err)
+	}
+	if left, ok := remaining("120ms"); !ok || left != "1s" {
+		t.Fatal(left, ok)
+	}
+}

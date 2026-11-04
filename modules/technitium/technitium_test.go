@@ -79,7 +79,7 @@ func (f *fakeTDNS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"status":"error","errorMessage":"No such zone was found: x"}`)
 			return
 		}
-		ok(`{"zone":{"name":"home.lan"},"records":[{"name":"nas.home.lan","type":"A","ttl":3600,"rData":{"ipAddress":"192.168.1.10"},"disabled":false},{"name":"corp.home.lan","type":"FWD","ttl":3600,"rData":{"forwarder":"10.0.0.53","proxyType":"Http","proxyUsername":"me","proxyPassword":"fwd-secret"}}]}`)
+		ok(`{"zone":{"name":"home.lan"},"records":[{"name":"nas.home.lan","type":"A","ttl":3600,"rData":{"ipAddress":"192.168.1.10"},"disabled":false},{"name":"corp.home.lan","type":"FWD","ttl":3600,"rData":{"forwarder":"10.0.0.53","proxyType":"Http","proxyUsername":"me","proxyPassword":"fwd-secret"}},{"name":"app.home.lan","type":"APP","ttl":60,"rData":{"appName":"Split Horizon","classPath":"SplitHorizon.SimpleAddress","data":"{\"apiKey\":\"app-cfg-secret\"}"},"comments":"api_key=hunter2hunter2hunter2"}]}`)
 	case "/api/blocked/export":
 		w.Header().Set("Content-Type", "text/plain")
 		io.WriteString(w, keys(f.blocked))
@@ -238,5 +238,56 @@ func TestTechnitiumValidation(t *testing.T) {
 	f.redirect = other.URL
 	if h := m.Health(context.Background(), "dns"); h.Status != "down" || !strings.Contains(h.Message, "another host") || leaked != "" {
 		t.Fatalf("%+v %q", h, leaked)
+	}
+}
+
+// Blocking is destructive (it can take down resolution), and names whose
+// blocking reaches far beyond one site are refused at every risk.
+func TestTechnitiumBlockingLimits(t *testing.T) {
+	m, f := setup(t, "secret://t")
+	f.allowed["home.lan"] = true
+	f.allowed["co.uk"] = true
+	for _, c := range []struct{ action, domain, want string }{
+		{"block_domain", "com", "single label"},
+		{"block_domain", "lan", "single label"},
+		{"block_domain", "arpa", "single label"},
+		{"block_domain", "in-addr.arpa", "public suffix"},
+		{"block_domain", "co.uk", "public suffix"},
+		{"block_domain", "github.io", "public suffix"},
+		{"block_domain", "home.lan", "own zone"},
+		{"block_domain", "nas.home.lan", "own zone"},
+		{"block_domain", "1.0.in-addr.arpa", "own zone"},
+		{"drop_allowed_domain", "home.lan", "own zone"},
+		{"drop_allowed_domain", "co.uk", "public suffix"},
+		{"allow_domain", "com", "single label"},
+		{"allow_domain", "co.uk", "public suffix"},
+	} {
+		for _, dry := range []bool{true, false} {
+			if _, err := invoke(m, c.action, `{"domain":"`+c.domain+`"}`, dry); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("%s %s: %v (want %q)", c.action, c.domain, err, c.want)
+			}
+		}
+	}
+	for _, s := range f.seen {
+		if strings.HasSuffix(strings.Fields(s)[0], "/add") || strings.HasSuffix(strings.Fields(s)[0], "/delete") {
+			t.Fatalf("reached Technitium: %s", s)
+		}
+	}
+	for _, a := range New().Manifest().Actions {
+		switch a.Name {
+		case "block_domain", "unblock_domain", "allow_domain", "drop_allowed_domain":
+			if a.Risk != sdk.RiskDestructive || !a.DryRun {
+				t.Errorf("%s: %+v", a.Name, a)
+			}
+		}
+	}
+	r, err := invoke(m, "block_domain", `{"domain":"ads.example.com"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "stop resolving") || f.blocked["ads.example.com"] {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	// Records: a DNS app's configuration and secrets in comments stay out.
+	r, err = invoke(m, "records", `{"zone":"home.lan"}`, false)
+	if err != nil || !strings.Contains(string(r.Output), "Split Horizon") || strings.Contains(string(r.Output), "app-cfg-secret") || strings.Contains(string(r.Output), "hunter2") {
+		t.Fatalf("%s %v", r.Output, err)
 	}
 }

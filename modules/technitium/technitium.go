@@ -1,7 +1,9 @@
 // Package technitium works with a Technitium DNS Server through its HTTP
 // API (an API token): dashboard statistics, zones and records, the custom
 // blocked and allowed lists (block, unblock, allow and drop domains, each
-// undoable), flushing the cache and pausing blocking for a while. The token
+// undoable and destructive: blocking can take down resolution, and the
+// server's own zones, single labels and public suffixes are refused),
+// flushing the cache and pausing blocking for a while. The token
 // is sent in the form body of POST requests, never in a URL, so it can't
 // end up in a proxy log or an error message.
 package technitium
@@ -26,6 +28,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/modules/internal/tlspin"
 	"github.com/elchi-dev/conduit/pkg/sdk"
+	"golang.org/x/net/publicsuffix"
 )
 
 // Config is one Technitium DNS Server.
@@ -79,14 +82,14 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "stats", Title: "Stats", Description: "Queries, blocked, cached, NXDOMAIN and failures, clients, top domains and top blocked domains.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"period":{"type":"string","enum":["LastHour","LastDay","LastWeek","LastMonth","LastYear"],"default":"LastDay"}}}`)},
 			{Name: "zones", Title: "Zones", Description: "Name, type, DNSSEC status, serial and whether each is disabled or failing to sync.", Risk: sdk.RiskRead},
-			{Name: "records", Title: "Records", Description: "A zone's records, or one name's (fields that can hold passwords are left out).", Risk: sdk.RiskRead,
+			{Name: "records", Title: "Records", Description: "A zone's records, or one name's (fields that can hold passwords, and DNS apps' configuration, are left out).", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["zone"],"properties":{"zone":{"type":"string"},"domain":{"type":"string","description":"Only this name (default: the whole zone)"}}}`)},
 			{Name: "blocked", Title: "Blocked domains", Description: "The custom blocked list (not the downloaded block lists).", Risk: sdk.RiskRead, Input: sdk.Schema(list)},
 			{Name: "allowed", Title: "Allowed domains", Description: "The allowed list, which wins over every block list.", Risk: sdk.RiskRead, Input: sdk.Schema(list)},
-			{Name: "block_domain", Title: "Block a domain", Description: "Adds it, and its subdomains, to the blocked list. Undo unblocks it.", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(domain)},
-			{Name: "unblock_domain", Title: "Unblock a domain", Description: "Takes it off the blocked list. Undo blocks it again.", Risk: sdk.RiskDestructive, Reversible: true, Input: sdk.Schema(domain)},
-			{Name: "allow_domain", Title: "Allow a domain", Description: "Lets it, and its subdomains, through every block list. Undo drops it from the allowed list.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(domain)},
-			{Name: "drop_allowed_domain", Title: "Drop an allowed domain", Description: "Takes it off the allowed list, so block lists apply to it again. Undo allows it again.", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(domain)},
+			{Name: "block_domain", Title: "Block a domain", Description: "Adds it, and its subdomains, to the blocked list, so they stop resolving for every client. Single labels, public suffixes and the server's own zones are refused (block those in Technitium's console). Undo unblocks it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(domain)},
+			{Name: "unblock_domain", Title: "Unblock a domain", Description: "Takes it off the blocked list. Undo blocks it again.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(domain)},
+			{Name: "allow_domain", Title: "Allow a domain", Description: "Lets it, and its subdomains, through every block list. Single labels and public suffixes are refused. Undo drops it from the allowed list.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(domain)},
+			{Name: "drop_allowed_domain", Title: "Drop an allowed domain", Description: "Takes it off the allowed list, so block lists apply to it again (which can stop it resolving). Single labels, public suffixes and the server's own zones are refused. Undo allows it again.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(domain)},
 			{Name: "flush_cache", Title: "Flush the cache", Description: "Drops every cached answer; the next queries are resolved afresh.", Risk: sdk.RiskWrite},
 			{Name: "disable_blocking", Title: "Pause blocking", Description: "Turns blocking off for some minutes; it comes back on by itself. Undo turns it back on now.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"minutes":{"type":"integer","default":5,"minimum":1,"maximum":1440}}}`)},
@@ -224,6 +227,43 @@ func domainOf(s string) (string, error) {
 		return "", errors.New("give a domain such as ads.example.com")
 	}
 	return d, nil
+}
+
+// broad refuses names whose blocking (or allowing) reaches far beyond one
+// site: a single label (a TLD, or a local name such as lan) and a public
+// suffix (co.uk, in-addr.arpa, github.io).
+func broad(d string) error {
+	if !strings.Contains(d, ".") {
+		return fmt.Errorf("%s is a single label: it covers a whole top-level domain or local namespace; change that in Technitium's console", d)
+	}
+	if _, err := publicsuffix.EffectiveTLDPlusOne(d); err != nil {
+		return fmt.Errorf("%s is a public suffix: it covers every domain registered under it; change that in Technitium's console", d)
+	}
+	return nil
+}
+
+// ownZone refuses a name inside, or above, one of the server's own zones:
+// blocking it would stop the server answering for names it is the
+// authority for. It fails closed when the zones can't be read.
+func (c *conn) ownZone(ctx context.Context, d string) error {
+	var z struct {
+		Zones []struct {
+			Name string `json:"name"`
+		} `json:"zones"`
+	}
+	if err := c.call(ctx, "/zones/list", nil, &z); err != nil {
+		return fmt.Errorf("can't check %s against the server's zones: %w", d, err)
+	}
+	for _, x := range z.Zones {
+		n := strings.ToLower(strings.TrimSuffix(x.Name, "."))
+		if n == "" {
+			continue
+		}
+		if d == n || strings.HasSuffix(d, "."+n) || strings.HasSuffix(n, "."+d) {
+			return fmt.Errorf("%s is part of the server's own zone %s; change its blocking in Technitium's console", d, n)
+		}
+	}
+	return nil
 }
 
 // list reads the blocked or allowed list (an export, one domain a line).
@@ -423,9 +463,22 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		out := []map[string]any{}
 		for _, x := range r.Records {
-			row := map[string]any{"name": x.Name, "type": x.Type, "ttl": x.TTL, "disabled": x.Disabled, "data": scrub(x.RData)}
+			data := scrub(x.RData)
+			if strings.EqualFold(x.Type, "APP") {
+				// A DNS app's record data is the app's own JSON
+				// configuration, which can hold API keys: keep only which
+				// app it is.
+				app := map[string]any{}
+				for _, k := range []string{"appName", "classPath"} {
+					if v, ok := data[k].(string); ok {
+						app[k] = rest.Redact(v)
+					}
+				}
+				data = app
+			}
+			row := map[string]any{"name": x.Name, "type": x.Type, "ttl": x.TTL, "disabled": x.Disabled, "data": data}
 			if x.Comments != "" {
-				row["comments"] = x.Comments
+				row["comments"] = rest.Redact(x.Comments)
 			}
 			out = append(out, row)
 		}
@@ -461,6 +514,16 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
+		if call.Action != "unblock_domain" {
+			if err := broad(d); err != nil {
+				return sdk.Result{}, err
+			}
+		}
+		if call.Action == "block_domain" || call.Action == "drop_allowed_domain" {
+			if err := c.ownZone(ctx, d); err != nil {
+				return sdk.Result{}, err
+			}
+		}
 		which, adding := "blocked", true
 		switch call.Action {
 		case "unblock_domain":
@@ -481,11 +544,28 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, fmt.Errorf("%s isn't on the %s list", d, which)
 		}
 		if call.DryRun {
-			msg := "Allow " + d + " and its subdomains past every block list"
-			if blocked, err := c.list(ctx, "blocked"); err == nil && has(blocked, d) {
-				msg += " (it's on the blocked list too; allowing wins)"
+			var msg string
+			op := "create"
+			switch call.Action {
+			case "allow_domain":
+				msg = "Allow " + d + " and its subdomains past every block list"
+				if blocked, err := c.list(ctx, "blocked"); err == nil && has(blocked, d) {
+					msg += " (it's on the blocked list too; allowing wins)"
+				}
+			case "block_domain":
+				msg = "Block " + d + " and its subdomains: they stop resolving for every client of this server"
+			case "unblock_domain":
+				msg, op = "Unblock "+d+" and its subdomains", "delete"
+			case "drop_allowed_domain":
+				msg, op = "Take "+d+" off the allowed list: block lists apply to it and its subdomains again, so they may stop resolving", "delete"
 			}
-			return sdk.Result{Plan: &sdk.Plan{Summary: msg, Changes: []sdk.Change{{Target: "allowed list", Op: "create", After: json.RawMessage(strconv.Quote(d))}}}}, nil
+			ch := sdk.Change{Target: which + " list", Op: op}
+			if op == "create" {
+				ch.After = json.RawMessage(strconv.Quote(d))
+			} else {
+				ch.Before = json.RawMessage(strconv.Quote(d))
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: msg, Changes: []sdk.Change{ch}}}, nil
 		}
 		op := "add"
 		if !adding {

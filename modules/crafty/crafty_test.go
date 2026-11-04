@@ -62,6 +62,10 @@ func (f *fakeCrafty) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		io.WriteString(w, `{"status":"ok"}`)
+	case "GET " + base + "/backups":
+		io.WriteString(w, `{"0b0b0b0b-1111-4222-8333-444455556666":{"backup_id":"0b0b0b0b-1111-4222-8333-444455556666","backup_name":"Nightly","max_backups":3,"shutdown":true,"default":true},"1c1c1c1c-1111-4222-8333-444455556666":{"backup_id":"1c1c1c1c-1111-4222-8333-444455556666","backup_name":"Keep all","max_backups":0,"shutdown":false,"default":false}}`)
+	case "GET " + base + "/backups/backup/0b0b0b0b-1111-4222-8333-444455556666/files":
+		io.WriteString(w, `{"total":3,"backups":["/crafty/backups/a.zip","/crafty/backups/b.zip","/crafty/backups/c.zip"]}`)
 	case "GET " + base + "/logs":
 		io.WriteString(w, `{"status":"ok","data":["[10:00:00] [Server thread/INFO]: Starting","[10:00:05] [Server thread/INFO]: Done","[10:01:00] Steve joined the game"]}`)
 	default:
@@ -196,5 +200,35 @@ func TestCraftyRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "c"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// backup is destructive: Crafty rotates out old backups and a configuration
+// can shut the server down. The preview reads the configuration and says so.
+func TestCraftyBackupPreview(t *testing.T) {
+	m, f := setup(t, "secret://c")
+	for _, a := range New().Manifest().Actions {
+		if a.Name == "backup" && a.Risk != sdk.RiskDestructive {
+			t.Fatalf("%+v", a)
+		}
+	}
+	f.running = true
+	r, err := invoke(m, "backup", `{"server":"`+sid+`"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, `"Nightly"`) || !strings.Contains(r.Plan.Summary, "keeps at most 3 and has 3 now, so Crafty deletes the 1 oldest") ||
+		!strings.Contains(r.Plan.Summary, "shuts the server down while backing up, disconnecting 2 players") || !strings.Contains(string(r.Plan.Changes[0].Before), `"maxBackups":3`) {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "backup", `{"server":"`+sid+`","backupConfig":"1c1c1c1c-1111-4222-8333-444455556666"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "keeps every backup") || strings.Contains(r.Plan.Summary, "shuts") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "backup", `{"server":"`+sid+`","backupConfig":"2d2d2d2d-1111-4222-8333-444455556666"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "unknown") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	for _, s := range f.seen {
+		if strings.Contains(s, "backup_server") {
+			t.Fatalf("a preview ran a backup: %s", s)
+		}
 	}
 }

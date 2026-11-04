@@ -22,7 +22,7 @@ and later (both shown by `servers`).
 | `stop` | destructive | Saves and stops; the preview says how many players are disconnected. Undo starts it. |
 | `restart` | destructive | |
 | `kill` | destructive | Ends the process without saving. Undo starts it. |
-| `backup` | write | Runs a backup with the server's backup settings, or `backupConfig` (a UUID, Crafty 4.4 and later). Old backups may be rotated out by Crafty's own retention setting. |
+| `backup` | destructive | Runs a backup with the server's backup settings, or `backupConfig` (a UUID, Crafty 4.4 and later). Crafty deletes the oldest backups beyond the configuration's maximum, and a configuration can shut the server down while it runs, so the preview reads the configuration and says the maximum, how many backups there are now (so how many go), and whether it shuts the server down (and how many players that disconnects). |
 | `command` | destructive, sensitive | One console line, sent to the server's stdin. The server must be running. Sensitive because commands can carry passwords. |
 | `logs` | read, sensitive | The last `lines` (default 100, at most 500) of the log. Logs hold IP addresses and anything typed into the console. |
 

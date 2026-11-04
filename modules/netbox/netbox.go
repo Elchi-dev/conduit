@@ -1,7 +1,10 @@
 // Package netbox works with a NetBox source of truth through its REST API
 // (an API token): searching, devices, IP addresses, prefixes and their
 // available addresses, sites and VLANs; reserving the next free address in
-// a prefix (undoable) and changing a device's status (undoable). Custom
+// a prefix (write) or assigning it live (destructive), and changing a
+// device's status between pre-production states (write) or into or out of
+// production (destructive), all undoable. In setups that sync NetBox to
+// DNS, DHCP or automation, these records change the network. Custom
 // fields, config contexts and anything else free-form are left out of the
 // answers, since people keep all sorts in them.
 package netbox
@@ -50,13 +53,20 @@ func New() *Module { return &Module{} }
 var (
 	pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
 	slugRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
-	dnsRe  = regexp.MustCompile(`^(?i)[a-z0-9*]([a-z0-9_-]{0,61}[a-z0-9])?(\.[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9])?)*$`)
+	// A host name: no wildcard and no underscore labels (_acme-challenge,
+	// _domainkey), which a DNS sync would publish as they are.
+	dnsRe = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`)
 )
 
 // Device statuses NetBox ships with; IP statuses an address can be reserved with.
 var (
 	deviceStatuses = []string{"offline", "active", "planned", "staged", "failed", "inventory", "decommissioning"}
 	ipStatuses     = []string{"active", "reserved", "dhcp", "slaac", "deprecated"}
+	// Statuses of a device that isn't in production. set_device_status
+	// (write) moves only between these; into or out of active, offline,
+	// failed or decommissioning is set_device_status_live (destructive),
+	// since monitoring and automation that read NetBox act on those.
+	prepStatuses = []string{"planned", "staged", "inventory"}
 )
 
 func oneOf(s string, xs []string) bool {
@@ -74,13 +84,14 @@ func enum(xs []string) string { b, _ := json.Marshal(xs); return string(b) }
 func (m *Module) Manifest() sdk.Manifest {
 	list := `"q":{"type":"string","description":"Search text"},"site":{"type":"string","description":"Site slug"},"limit":{"type":"integer","default":50,"maximum":500}`
 	prefix := `"prefix":{"type":"string","description":"The prefix in CIDR form, e.g. 10.0.20.0/24"},"prefix_id":{"type":"integer","description":"The prefix's id, when the same prefix exists in several VRFs"}`
+	dnsName := `"dns_name":{"type":"string","description":"A host name such as nas.lan, not used by another address (no wildcards)"}`
 	return sdk.Manifest{
 		ID: "netbox", Name: "NetBox", Version: "0.1.0", Category: "Network", Icon: "network",
-		Description: "NetBox: devices, IP addresses, prefixes and free addresses, sites and VLANs; reserve the next free IP, set a device's status.",
+		Description: "NetBox: devices, IP addresses, prefixes and free addresses, sites and VLANs; reserve or assign the next free IP, set a device's status.",
 		Presets:     []string{"homelab", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","token"],"properties":{
 			"url":{"type":"string","description":"NetBox's address, e.g. https://netbox.example.com"},
-			"token":{"type":"string","x-secret":true,"description":"An API token (your profile, API Tokens); read-only is enough unless agents reserve addresses or change device status"},
+			"token":{"type":"string","x-secret":true,"description":"An API token (your profile, API Tokens); read-only is enough unless agents reserve or assign addresses or change device status"},
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the certificate, to trust a self-signed certificate"},
 			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"}}}`),
 		Actions: []sdk.ActionSpec{
@@ -99,11 +110,15 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "sites", Title: "Sites", Risk: sdk.RiskRead, Input: sdk.Schema(`{"type":"object","properties":{"q":{"type":"string"},"limit":{"type":"integer","default":50,"maximum":500}}}`)},
 			{Name: "vlans", Title: "VLANs", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + list + `,"vid":{"type":"integer","minimum":1,"maximum":4094}}}`)},
-			{Name: "reserve_ip", Title: "Reserve the next free IP", Description: "Records the next free address of a prefix in NetBox (nothing on the network changes). Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","properties":{` + prefix + `,"status":{"type":"string","enum":` + enum(ipStatuses) + `,"default":"reserved"},"dns_name":{"type":"string"},"description":{"type":"string","maxLength":200}}}`)},
+			{Name: "reserve_ip", Title: "Reserve the next free IP", Description: "Records the next free address of a prefix in NetBox with status reserved; in setups that sync NetBox to DNS or DHCP this changes the network. A DNS name another address already uses is refused. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","properties":{` + prefix + `,"status":{"type":"string","enum":["reserved"],"default":"reserved"},` + dnsName + `,"description":{"type":"string","maxLength":200}}}`)},
+			{Name: "assign_ip", Title: "Assign the next free IP", Description: "Records the next free address of a prefix with a live status (active, dhcp, slaac, deprecated); in setups that sync NetBox to DNS or DHCP this changes the network. A DNS name another address already uses is refused. Undo deletes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["status"],"properties":{` + prefix + `,"status":{"type":"string","enum":` + enum(ipStatuses) + `},` + dnsName + `,"description":{"type":"string","maxLength":200}}}`)},
 			{Name: "delete_ip_address", Title: "Delete an IP address", Description: "Removes the address record from NetBox.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"integer"}}}`)},
-			{Name: "set_device_status", Title: "Set a device's status", Description: "Undo puts the previous status back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "set_device_status", Title: "Set a device's status", Description: "Moves a device between planned, staged and inventory; in or out of production (active, offline, failed, decommissioning) is set_device_status_live. Undo puts the previous status back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["status"],"properties":{"id":{"type":"integer"},"name":{"type":"string"},"status":{"type":"string","enum":` + enum(prepStatuses) + `}}}`)},
+			{Name: "set_device_status_live", Title: "Set a device's production status", Description: "Any status change, including into or out of active, offline, failed and decommissioning, which monitoring and automation that read NetBox act on. Undo puts the previous status back.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["status"],"properties":{"id":{"type":"integer"},"name":{"type":"string"},"status":{"type":"string","enum":` + enum(deviceStatuses) + `}}}`)},
 		},
 		Resources: []sdk.ResourceSpec{
@@ -662,17 +677,20 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(map[string]any{"count": pg.Count, "vlans": rows(pg.Results, vlanOut)})
 
-	case "reserve_ip":
+	case "reserve_ip", "assign_ip":
 		st := p.Status
-		if st == "" {
+		if st == "" && call.Action == "reserve_ip" {
 			st = "reserved"
 		}
 		if !oneOf(st, ipStatuses) {
 			return sdk.Result{}, errors.New("the status is one of " + strings.Join(ipStatuses, ", "))
 		}
+		if call.Action == "reserve_ip" && st != "reserved" {
+			return sdk.Result{}, fmt.Errorf("reserve_ip only reserves; an address with status %s is live (DHCP or DNS syncs may act on it), so it needs assign_ip", st)
+		}
 		dns := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(p.DNSName), "."))
-		if dns != "" && (len(dns) > 255 || !dnsRe.MatchString(dns)) {
-			return sdk.Result{}, errors.New("the DNS name is a host name like nas.lan")
+		if dns != "" && (len(dns) > 253 || !dnsRe.MatchString(dns)) {
+			return sdk.Result{}, errors.New("the DNS name is a host name like nas.lan (no wildcards or underscores)")
 		}
 		desc, err := clean(p.Description, 200, "description")
 		if err != nil {
@@ -685,6 +703,19 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
+		if dns != "" {
+			// A DNS sync would point the name at the new address: a name
+			// in use is taken over, not added.
+			var used page[ipAddr]
+			if err := c.do(ctx, http.MethodGet, "/ipam/ip-addresses/", url.Values{"dns_name__ie": {dns}, "limit": {"5"}}, nil, &used); err != nil {
+				return sdk.Result{}, err
+			}
+			for _, a := range used.Results {
+				if strings.EqualFold(strings.TrimSuffix(a.DNSName, "."), dns) {
+					return sdk.Result{}, fmt.Errorf("%s is already the DNS name of %s (id %d); pick another name", dns, a.Address, a.ID)
+				}
+			}
+		}
 		if call.DryRun {
 			free, err := c.available(ctx, pf, 1)
 			if err != nil {
@@ -694,7 +725,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				return sdk.Result{}, fmt.Errorf("%s has no free addresses", pf.Prefix)
 			}
 			after, _ := json.Marshal(map[string]string{"address": free[0].Address, "status": st, "dns_name": dns, "description": desc})
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Reserve %s in %s (%s)", free[0].Address, pf.Prefix, st),
+			verb := "Reserve"
+			if call.Action == "assign_ip" {
+				verb = "Assign"
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s %s in %s (%s)", verb, free[0].Address, pf.Prefix, st),
 				Changes: []sdk.Change{{Target: "prefix " + pf.Prefix, Op: "create", After: after}}}}, nil
 		}
 		body := map[string]string{"status": st, "description": desc}
@@ -737,9 +772,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(map[string]any{"deleted": a.Address, "id": a.ID})
 
-	case "set_device_status":
+	case "set_device_status", "set_device_status_live":
 		if !oneOf(p.Status, deviceStatuses) {
 			return sdk.Result{}, errors.New("the status is one of " + strings.Join(deviceStatuses, ", "))
+		}
+		live := call.Action == "set_device_status_live"
+		if !live && !oneOf(p.Status, prepStatuses) {
+			return sdk.Result{}, fmt.Errorf("set_device_status moves a device only between %s; %s is a production status, so use set_device_status_live", strings.Join(prepStatuses, ", "), p.Status)
 		}
 		d, err := c.device(ctx, p.ID, p.Name)
 		if err != nil {
@@ -748,6 +787,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		old := d.Status.v()
 		if old == p.Status {
 			return sdk.Result{}, fmt.Errorf("%s is already %s", d.Name, old)
+		}
+		if !live && !oneOf(old, prepStatuses) {
+			return sdk.Result{}, fmt.Errorf("%s is %s, a production status (or one Conduit doesn't know); taking it out of that needs set_device_status_live", d.Name, old)
 		}
 		if call.DryRun {
 			b, _ := json.Marshal(old)
@@ -761,7 +803,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		res, err := sdk.JSON(map[string]any{"device": d.Name, "id": d.ID, "status": nd.Status.v(), "was": old})
 		if old != "" {
-			res.Undo = sdk.UndoWith("set_device_status", map[string]any{"id": d.ID, "status": old}, "Set "+d.Name+" back to "+old)
+			res.Undo = sdk.UndoWith(call.Action, map[string]any{"id": d.ID, "status": old}, "Set "+d.Name+" back to "+old)
 		}
 		return res, err
 	}

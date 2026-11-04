@@ -334,3 +334,25 @@ func TestESPHomeCriticalNames(t *testing.T) {
 		}
 	}
 }
+
+func TestESPHomeGermanObjectIDs(t *testing.T) {
+	c := &conn{}
+	for _, tc := range []struct {
+		id   string
+		want bool
+	}{
+		{"hoftor", true}, {"haust_r_riegel", true}, {"haust__r", true}, {"haustuer", true}, {"garagentor", true},
+		{"einfahrtstor", true}, {"tor_2", true}, {"tor2", true}, {"torantrieb", true}, {"t_re_keller", true},
+		{"schloss_eingang", true}, {"t_r_ffner", true}, {"tueroeffner", true}, {"fenster_bad", true}, {"heizung", true},
+		{"sirene", true}, {"ventil_garten", true}, {"kamera_einfahrt", true}, {"rauchmelder", true}, {"sicherheit", true},
+		{"bew_sserung", true}, {"bewaesserung", true},
+		{"motor", false}, {"monitor", false}, {"rotor", false}, {"traktor", false}, {"faktor", false}, {"indikator", false},
+		{"stehlampe", false}, {"light_relay", false}, {"motor_2", false},
+	} {
+		for _, d := range []string{"switch", "button"} {
+			if got := c.isCritical(entityRef{Domain: d, ID: tc.id}); got != tc.want {
+				t.Errorf("%s.%s: critical %v, want %v", d, tc.id, got, tc.want)
+			}
+		}
+	}
+}

@@ -70,8 +70,16 @@ var (
 	// a device, or opens, unlocks, sounds or silences something, anywhere
 	// in the object id (restart2, esp_reboot, factoryreset, garage_door):
 	// a false match only means the destructive action.
-	criticalName = regexp.MustCompile(`restart|reboot|reset|factory|shutdown|safe[_-]?mode|firmware|ota|update|flash|garage|gate|door|lock|valve|siren|alarm|silence`)
-	domains      = map[string]bool{"sensor": true, "binary_sensor": true, "text_sensor": true, "switch": true, "light": true, "fan": true, "cover": true,
+	criticalName = regexp.MustCompile(`restart|reboot|reset|factory|shutdown|safe[_-]?mode|firmware|ota|update|flash|garage|gate|door|lock|valve|siren|alarm|silence|` + germanID)
+	// germanID is the same in German, the app's other language, as ESPHome
+	// writes it in an object id: lowercase, with an umlaut spelled out or
+	// turned into _ (Haustür is haustuer or haust_r, Türöffner t_r_ffner).
+	// Tor counts as a word or at the end of a compound (hoftor, tor_2), not
+	// inside motor or monitor.
+	germanID = `tuer|(^|[_-]|haus|hof|garten|keller|eingangs|terrassen|balkon|wohnungs|neben|hinter|vorder)t_{1,2}r|` +
+		`(^|[_-])tor($|[_-]|[0-9]|antrieb)|(garten|hof|einfahrt|einfahrts|zufahrt|zufahrts|haus|eingangs|garagen)tor|` +
+		`ffner|schloss|riegel|fenster|heiz|sirene|ventil|kamera|rauchmelder|sicherheit|bew(ae|_{1,2})?sserung`
+	domains = map[string]bool{"sensor": true, "binary_sensor": true, "text_sensor": true, "switch": true, "light": true, "fan": true, "cover": true,
 		"number": true, "select": true, "button": true, "lock": true, "climate": true, "valve": true, "text": true, "date": true, "time": true, "datetime": true,
 		"event": true, "update": true, "alarm_control_panel": true, "media_player": true}
 )

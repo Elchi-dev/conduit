@@ -344,3 +344,23 @@ func TestHomebridgeRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+func TestHomebridgeGermanNames(t *testing.T) {
+	c := &conn{}
+	for _, c2 := range []struct {
+		name string
+		want bool
+	}{
+		{"Hoftor", true}, {"Haustür Riegel", true}, {"Haustuer", true}, {"Garagentor", true}, {"Einfahrtstor", true},
+		{"Tor 2", true}, {"Torantrieb", true}, {"Türe Keller", true}, {"Schloss Eingang", true}, {"Türöffner", true},
+		{"Oeffner", true}, {"Fenster Bad", true}, {"Heizung", true}, {"Sirene", true}, {"Ventil Garten", true},
+		{"Kamera Einfahrt", true}, {"Rauchmelder", true}, {"Sicherheit", true}, {"Bewässerung", true}, {"Bewaesserung", true},
+		{"Motor", false}, {"Monitor", false}, {"Rotor", false}, {"Traktor", false}, {"Faktor", false}, {"Indikator", false},
+		{"Stehlampe", false},
+	} {
+		s := service{Type: "Switch", ServiceName: c2.name}
+		if got := c.criticalWhy(s) != ""; got != c2.want {
+			t.Errorf("%q: critical %v, want %v", c2.name, got, c2.want)
+		}
+	}
+}

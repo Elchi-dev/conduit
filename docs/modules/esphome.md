@@ -35,7 +35,11 @@ or `button.feed_dog`. By name, a button or switch is critical when its
 object id contains, anywhere (`restart2`, `esp_reboot`, `factoryreset`,
 `frontdoor`), `restart`, `reboot`, `reset`, `factory`, `shutdown`,
 `safe_mode` (or `safemode`), `firmware`, `ota`, `update`, `flash`, `garage`,
-`gate`, `door`, `lock`, `valve`, `siren`, `alarm` or `silence`. A false match
+`gate`, `door`, `lock`, `valve`, `siren`, `alarm` or `silence`, or the same
+in German as ESPHome writes it in an object id (`hoftor`, `tor_2`,
+`haustuer` or `haust_r`, `t_r_ffner`, `schloss`, `riegel`, `fenster`,
+`heizung`, `sirene`, `ventil`, `kamera`, `rauchmelder`, `bew_sserung` …;
+`motor` and `monitor` don't count). A false match
 (`outdoor_light`, `clock`) only means using `press_critical`.
 
 | Action | Risk | Notes |

@@ -83,7 +83,11 @@ var (
 	// criticalName matches names of what opens, unlocks, sounds or watches
 	// something (Garage, Front gate, Door strike, Alarm, Camera power): a
 	// false match only means the destructive action.
-	criticalName = regexp.MustCompile(`(?i)garage|gate|door|lock|valve|siren|alarm|secur|camera|sprinkler|irrigation|water main`)
+	criticalName = regexp.MustCompile(`(?i)garage|gate|door|lock|valve|siren|alarm|secur|camera|sprinkler|irrigation|water main|` + germanWord)
+	// germanWord is the same in German, the app's other language (Tür,
+	// Haustuer, Hoftor, Schloss, Fenster, Heizung …). Tor counts as a word
+	// or at the end of a compound (Hoftor), not inside Motor or Monitor.
+	germanWord = `tür|tuer|(^|[^a-zäöü])tor([^a-zäöü]|$|antrieb)|(garten|hof|einfahrt|einfahrts|zufahrt|zufahrts|haus|eingangs|garagen)tor|öffner|oeffner|schloss|riegel|fenster|heiz|sirene|ventil|kamera|rauchmelder|sicherheit|bewässerung|bewaesserung`
 )
 
 // Manifest implements sdk.Module.

@@ -24,7 +24,9 @@ something important or open something behind a plain switch in
 systems, valves, faucets, irrigation, cameras and doorbells; any service
 with a lock, door, alarm or camera characteristic; anything whose name
 contains garage, gate, door, lock, valve, siren, alarm, security, camera,
-sprinkler or irrigation; what's listed in `criticalAccessories`; and every
+sprinkler or irrigation (German names count too: Tür, Tor, Hoftor, Schloss,
+Riegel, Öffner, Fenster, Heizung, Sirene, Ventil, Kamera, Rauchmelder,
+Bewässerung …); what's listed in `criticalAccessories`; and every
 other service of such an accessory (same bridge and accessory id), such as a
 camera's motion or privacy switch or a lock's extra button. A false match
 only means the destructive action. Setting a value a characteristic

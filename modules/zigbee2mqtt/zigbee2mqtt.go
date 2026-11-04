@@ -69,7 +69,11 @@ var (
 	// when its switch is wired to something that mustn't be switched with
 	// write: a valve, a garage or gate opener, a door strike or lock.
 	// The word has to start a word ("Outdoor plug" and "Clock" don't match).
-	critDevice = regexp.MustCompile(`(?i)(^|[^a-z])(valve|garage|gate|door|lock|unlock|opener|strike|latch|barrier|irrigat|sprinkler|shut.?off|water|gas|siren|alarm|heater|boiler)`)
+	critDevice = regexp.MustCompile(`(?i)(^|[^a-z])(valve|garage|gate|door|lock|unlock|opener|strike|latch|barrier|irrigat|sprinkler|shut.?off|water|gas|siren|alarm|heater|boiler|wasser|schranke)|` + germanWord)
+	// germanWord is the same in German, the app's other language, also
+	// inside compounds (Haustür, Türöffner, Gartenventil). Tor counts as a
+	// word or at the end of a compound (Hoftor), not inside Motor or Monitor.
+	germanWord = `tür|tuer|(^|[^a-zäöü])tor([^a-zäöü]|$|antrieb)|(garten|hof|einfahrt|einfahrts|zufahrt|zufahrts|haus|eingangs|garagen)tor|öffner|oeffner|schloss|riegel|fenster|heiz|sirene|ventil|kamera|rauchmelder|sicherheit|bewässerung|bewaesserung`
 )
 
 // criticalTypes are the specific exposes whose features are destructive to

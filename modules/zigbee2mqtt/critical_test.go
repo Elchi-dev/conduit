@@ -133,3 +133,22 @@ func TestZ2MLargeDeviceList(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGermanSwitchNames(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		want bool
+	}{
+		{"Hoftor", true}, {"Haustür Riegel", true}, {"Haustuer", true}, {"Garagentor", true}, {"Einfahrtstor", true},
+		{"Tor 2", true}, {"Torantrieb", true}, {"Türe Keller", true}, {"Schloss Eingang", true}, {"Türöffner", true},
+		{"Oeffner", true}, {"Fenster Bad", true}, {"Heizung", true}, {"Heizlüfter", true}, {"Sirene", true},
+		{"Gartenventil", true}, {"Kamera Einfahrt", true}, {"Rauchmelder", true}, {"Sicherheit", true},
+		{"Bewässerung", true}, {"Bewaesserung", true}, {"Wasser Hauptleitung", true}, {"Schranke", true},
+		{"Motor", false}, {"Monitor", false}, {"Rotor", false}, {"Traktor", false}, {"Faktor", false}, {"Indikator", false},
+		{"Stehlampe", false}, {"Outdoor plug", false},
+	} {
+		if got := (device{FriendlyName: c.name}).switchCritical(); got != c.want {
+			t.Errorf("%q: critical %v, want %v", c.name, got, c.want)
+		}
+	}
+}

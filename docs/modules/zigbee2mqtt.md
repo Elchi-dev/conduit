@@ -23,7 +23,10 @@ keypads and garage openers don't need listing: they're recognised from what
 they expose, and a switch whose device's description, model or friendly
 name starts a word with valve, garage, gate, door, lock, opener, strike,
 latch, barrier, irrigation, sprinkler, shutoff, water, gas, siren, alarm,
-heater or boiler counts as critical too ("Outdoor plug" doesn't).
+heater or boiler counts as critical too ("Outdoor plug" doesn't). German
+names count as well, also inside compounds: Tür, Tor, Hoftor, Schloss, Riegel,
+Öffner, Fenster, Heizung, Sirene, Ventil, Kamera, Rauchmelder, Bewässerung,
+Wasser, Schranke … (but not Motor or Monitor).
 
 **What `set_device` sets.** Only properties under a `light`, `switch` or
 `fan` expose, plus `brightness`, `color`, `color_temp`, `color_xy`,

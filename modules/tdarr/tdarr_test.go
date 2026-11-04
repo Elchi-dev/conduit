@@ -195,3 +195,24 @@ func TestTdarrRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+// A server error naming a file loses the folder before it's shown.
+func TestTdarrErrorsHidePaths(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		fmt.Fprint(w, `{"message":"ENOENT: no such file, open '/media/private/Family/a.mkv' (C:\\private\\b)"}`)
+	}))
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: srv.URL})
+	if err := m.Configure(context.Background(), fakehost.New(nil), "t", raw); err != nil {
+		t.Fatal(err)
+	}
+	h := m.Health(context.Background(), "t")
+	if h.Status != "down" || strings.Contains(h.Message, "private") || !strings.Contains(h.Message, "ENOENT") {
+		t.Fatalf("%+v", h)
+	}
+	if got := clip(strings.Repeat("é", 100), 101); len(got) > 104 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("%q", got)
+	}
+}

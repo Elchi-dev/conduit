@@ -20,6 +20,9 @@ reverse proxy). For a self-signed certificate, set `fingerprint`.
 never sent. The client won't follow a redirect to another host or from https
 to http. Files in progress show only their name, never their folder, and
 library folders, node addresses, temp paths and path mappings aren't read.
+Folders and file paths are taken out of FileFlows' error messages, a node's
+operating system and priority are shown only as a number or a short word,
+and at most 100 files, nodes and libraries are listed.
 
 **Notes.** FileFlows' API needs a FileFlows license; without one, or with
 the API off, every request answers "not found", which the module reports as

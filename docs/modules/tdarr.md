@@ -24,7 +24,9 @@ error if Tdarr kept it as it was.
 won't follow a redirect to another host or from https to http. A node is
 checked before any request and then looked up among Tdarr's nodes, so only
 an id Tdarr listed is sent. Workers show only the file's name, never its
-folder, and the library, cache and output folders aren't read.
+folder, and the library, cache and output folders aren't read. Folders and
+file paths are taken out of Tdarr's error messages, and names are shortened;
+at most 50 nodes (and 50 workers each) and 200 libraries are listed.
 
 **Notes.** Queue counts follow the tables in Tdarr's own interface, which
 leave out disabled libraries. Library statistics are read for the first 25

@@ -152,3 +152,32 @@ func TestFileFlowsRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+// A server error naming a file loses the folder, and node fields FileFlows
+// could send as objects aren't passed on.
+func TestFileFlowsHidesPaths(t *testing.T) {
+	fail := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail {
+			w.WriteHeader(500)
+			fmt.Fprint(w, `{"message":"Could not find '/media/private/Family/a.mkv'"}`)
+			return
+		}
+		fmt.Fprint(w, `[{"Uid":"a1","Name":"n","OperatingSystem":{"TempPath":"/temp/private"},"Priority":"/private/x"}]`)
+	}))
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: srv.URL, APIToken: "secret://ff"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://ff": token}), "f", raw); err != nil {
+		t.Fatal(err)
+	}
+	h := m.Health(context.Background(), "f")
+	if h.Status != "down" || strings.Contains(h.Message, "private") || !strings.Contains(h.Message, "Could not find") {
+		t.Fatalf("%+v", h)
+	}
+	fail = false
+	r, err := invoke(m, "nodes", `{}`)
+	if err != nil || strings.Contains(string(r.Output), "private") || !strings.Contains(string(r.Output), `"name":"n"`) {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+}

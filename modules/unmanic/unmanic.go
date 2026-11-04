@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -47,6 +48,13 @@ const pendingPage = 500
 
 var pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
 
+// maxWorkers is the most workers named in the output or in one call.
+const maxWorkers = 50
+
+var workerRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+
+const workersIn = `"workers":{"type":"array","minItems":1,"maxItems":50,"items":{"type":"string","pattern":"^[A-Za-z0-9_.-]{1,64}$"},"description":"Worker ids (from workers); all workers when left out"}`
+
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
@@ -64,10 +72,10 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{}}`)},
 			{Name: "history", Title: "Completed tasks", Description: "How many tasks finished, succeeded and failed, and the most recent ones with their name, result and finish time.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"limit":{"type":"integer","default":20,"minimum":1,"maximum":100}}}`)},
-			{Name: "pause", Title: "Pause all workers", Description: "Pauses every worker: tasks in progress halt until resumed. Undo resumes them.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","properties":{}}`)},
-			{Name: "resume", Title: "Resume all workers", Description: "Resumes every paused worker. Undo pauses them again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","properties":{}}`)},
+			{Name: "pause", Title: "Pause workers", Description: "Pauses every worker, or only the workers given: tasks in progress halt until resumed. Undo resumes exactly the workers it paused.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","properties":{` + workersIn + `}}`)},
+			{Name: "resume", Title: "Resume workers", Description: "Resumes every paused worker, or only the workers given. Undo pauses exactly the workers it resumed.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","properties":{` + workersIn + `}}`)},
 		},
 	}
 }
@@ -109,6 +117,7 @@ func (m *Module) Close(id string) error { m.set.Delete(id); return nil }
 
 func (c *conn) do(ctx context.Context, method, p string, body, out any) error {
 	_, err := c.api.Do(ctx, method, p, nil, body, out)
+	err = scrub(err)
 	switch {
 	case rest.IsStatus(err, http.StatusUnauthorized), rest.IsStatus(err, http.StatusForbidden):
 		return errors.New("Unmanic refused the request (is something in front of it asking for a login?)")
@@ -143,13 +152,38 @@ func (c *conn) workers(ctx context.Context) ([]worker, error) {
 	return ws, nil
 }
 
+// pathRun is a word with a slash or backslash in a server's error text:
+// a file or folder (/library/Family/a.mkv, C:\x\y).
+var pathRun = regexp.MustCompile(`[^\s"'<>]*[\\/][^\s"'<>]*`)
+
+// scrub keeps folders out of an error Unmanic sent.
+func scrub(err error) error {
+	var e *rest.Error
+	if errors.As(err, &e) {
+		return &rest.Error{Status: e.Status, Message: pathRun.ReplaceAllString(e.Message, "[path]")}
+	}
+	return err
+}
+
+// clip redacts a server's text, then keeps it to one line of n bytes.
+func clip(s string, n int) string {
+	s = rest.Redact(strings.Join(strings.Fields(s), " "))
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
 // shortName keeps only a file's name: paths say where someone keeps what.
 func shortName(p string) string {
 	p = strings.TrimSpace(strings.ReplaceAll(p, `\`, "/"))
 	if p == "" {
 		return ""
 	}
-	return rest.Redact(path.Base(p))
+	return clip(path.Base(p), 200)
 }
 
 func counts(ws []worker) (busy, paused int) {
@@ -192,7 +226,8 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 }
 
 type input struct {
-	Limit int `json:"limit"`
+	Limit   int      `json:"limit"`
+	Workers []string `json:"workers"`
 }
 
 func startTime(v any) string {
@@ -226,8 +261,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
-		for _, w := range ws {
-			e := map[string]any{"id": w.ID, "name": w.Name, "busy": !w.Idle, "paused": w.Paused}
+		for i, w := range ws {
+			if i == maxWorkers {
+				break
+			}
+			e := map[string]any{"id": clip(w.ID, 64), "name": clip(w.Name, 100), "busy": !w.Idle, "paused": w.Paused}
 			if !w.Idle {
 				e["file"] = shortName(w.File)
 				if s := startTime(w.StartTime); s != "" {
@@ -237,7 +275,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			out = append(out, e)
 		}
 		busy, paused := counts(ws)
-		return sdk.JSON(map[string]any{"total": len(ws), "busy": busy, "paused": paused, "workers": out})
+		res := map[string]any{"total": len(ws), "busy": busy, "paused": paused, "workers": out}
+		if len(ws) > maxWorkers {
+			res["note"] = fmt.Sprintf("the first %d workers only", maxWorkers)
+		}
+		return sdk.JSON(res)
 
 	case "pending":
 		var res struct {
@@ -256,8 +298,8 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		byStatus, byLib := map[string]int{}, map[string]int{}
 		for _, r := range res.Results {
-			byStatus[r.Status]++
-			byLib[r.Library]++
+			byStatus[clip(r.Status, 40)]++
+			byLib[clip(r.Library, 100)]++
 		}
 		out := map[string]any{"total": *res.Total, "byStatus": byStatus, "byLibrary": byLib}
 		if *res.Total > int64(len(res.Results)) {
@@ -298,53 +340,129 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(map[string]any{"total": *res.Total, "succeeded": res.Success, "failed": res.Failed, "recent": recent})
 
 	case "pause", "resume":
-		return c.pauseResume(ctx, call)
+		return c.pauseResume(ctx, call, p.Workers)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
 
-func (c *conn) pauseResume(ctx context.Context, call sdk.Call) (sdk.Result, error) {
+// pick checks the worker ids given (all workers when none are) against
+// Unmanic's list and returns the ones not yet in the state asked for.
+func pick(ws []worker, in []string, pausing bool) ([]string, error) {
+	byID := map[string]worker{}
+	for _, w := range ws {
+		byID[w.ID] = w
+	}
+	want := map[string]bool{}
+	for _, id := range in {
+		if _, ok := byID[id]; !ok {
+			return nil, fmt.Errorf("there's no worker %s (see workers)", id)
+		}
+		want[id] = true
+	}
+	var out []string
+	for _, w := range ws {
+		if (len(in) == 0 || want[w.ID]) && w.Paused != pausing {
+			out = append(out, w.ID)
+		}
+	}
+	return out, nil
+}
+
+func (c *conn) pauseResume(ctx context.Context, call sdk.Call, in []string) (sdk.Result, error) {
 	pausing := call.Action == "pause"
+	if in != nil && len(in) == 0 {
+		return sdk.Result{}, errors.New("workers lists at least one worker id; leave it out for all workers")
+	}
+	if len(in) > maxWorkers {
+		return sdk.Result{}, fmt.Errorf("pick at most %d workers", maxWorkers)
+	}
+	for _, id := range in {
+		if !workerRe.MatchString(id) {
+			return sdk.Result{}, errors.New("workers are worker ids (from workers)")
+		}
+	}
 	ws, err := c.workers(ctx)
 	if err != nil {
 		return sdk.Result{}, err
 	}
 	busy, paused := counts(ws)
-	change := len(ws) - paused // workers to pause
-	if !pausing {
-		change = paused
+	ids, err := pick(ws, in, pausing)
+	if err != nil {
+		return sdk.Result{}, err
 	}
-	if change == 0 {
+	if len(ids) == 0 {
 		return sdk.JSON(map[string]any{"workers": len(ws), "paused": paused, "note": "nothing to change"})
+	}
+	for _, id := range ids {
+		if !workerRe.MatchString(id) {
+			return sdk.Result{}, errors.New("unexpected worker id from Unmanic")
+		}
 	}
 	verb, back := "Pause", "resume"
 	if !pausing {
 		verb, back = "Resume", "pause"
 	}
 	if call.DryRun {
+		after := paused + len(ids)
+		if !pausing {
+			after = paused - len(ids)
+		}
 		b, _ := json.Marshal(map[string]int{"workers": len(ws), "paused": paused, "busy": busy})
-		a, _ := json.Marshal(map[string]int{"workers": len(ws), "paused": map[bool]int{true: len(ws), false: 0}[pausing]})
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s all Unmanic workers (%d change)", verb, change),
-			Changes: []sdk.Change{{Target: "workers", Op: call.Action, Before: b, After: a}}}}, nil
+		a, _ := json.Marshal(map[string]any{"workers": len(ws), "paused": after, "changed": ids})
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s %d of %d Unmanic workers", verb, len(ids), len(ws)),
+			Changes: []sdk.Change{{Target: "workers " + strings.Join(ids, ", "), Op: call.Action, Before: b, After: a}}}}, nil
 	}
 	var ok struct {
 		Success *bool `json:"success"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/workers/worker/"+call.Action+"/all", map[string]any{}, &ok); err != nil {
-		return sdk.Result{}, err
+	send := func(p string, body any) error {
+		ok.Success = nil
+		if err := c.do(ctx, http.MethodPost, p, body, &ok); err != nil {
+			return err
+		}
+		if ok.Success != nil && !*ok.Success {
+			return fmt.Errorf("Unmanic didn't %s the workers", call.Action)
+		}
+		return nil
 	}
-	if ok.Success != nil && !*ok.Success {
-		return sdk.Result{}, fmt.Errorf("Unmanic didn't %s the workers", call.Action)
+	if len(ids) == len(ws) {
+		// Every worker changes: one call for all of them.
+		if err := send("/workers/worker/"+call.Action+"/all", map[string]any{}); err != nil {
+			return sdk.Result{}, err
+		}
+	} else {
+		for i, id := range ids {
+			if err := send("/workers/worker/"+call.Action, map[string]string{"worker_id": id}); err != nil {
+				if i > 0 {
+					return sdk.Result{}, fmt.Errorf("%s workers %s, then: %w", map[bool]string{true: "paused", false: "resumed"}[pausing], strings.Join(ids[:i], ", "), err)
+				}
+				return sdk.Result{}, err
+			}
+		}
 	}
 	after, err := c.workers(ctx)
 	if err != nil {
 		return sdk.Result{}, fmt.Errorf("sent the change, but couldn't read the workers back: %w", err)
 	}
-	_, nowPaused := counts(after)
-	if (pausing && nowPaused != len(after)) || (!pausing && nowPaused != 0) {
-		return sdk.Result{}, fmt.Errorf("Unmanic has %d of %d workers paused after %s", nowPaused, len(after), call.Action)
+	now := map[string]bool{}
+	for _, w := range after {
+		now[w.ID] = w.Paused
 	}
-	res, err := sdk.JSON(map[string]any{"workers": len(after), "paused": nowPaused})
-	res.Undo = sdk.UndoWith(back, map[string]any{}, strings.ToUpper(back[:1])+back[1:]+" all workers again")
+	kept := 0
+	for _, id := range ids {
+		if p, ok := now[id]; !ok || p != pausing {
+			kept++
+		}
+	}
+	_, nowPaused := counts(after)
+	if kept > 0 {
+		return sdk.Result{}, fmt.Errorf("Unmanic has %d of %d workers paused after %s (%d of %d not changed)", nowPaused, len(after), call.Action, kept, len(ids))
+	}
+	res, err := sdk.JSON(map[string]any{"workers": len(after), "paused": nowPaused, "changed": ids})
+	undo := map[string]any{"workers": ids}
+	if len(ids) > maxWorkers {
+		undo = map[string]any{} // every worker changed, so all of them go back
+	}
+	res.Undo = sdk.UndoWith(back, undo, fmt.Sprintf("%s the %d workers again", back, len(ids)))
 	return res, err
 }

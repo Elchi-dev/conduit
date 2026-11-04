@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -49,6 +50,9 @@ type Module struct {
 func New() *Module { return &Module{} }
 
 var pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
+
+// maxListed caps the files in progress, nodes and libraries in the output.
+const maxListed = 100
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
@@ -152,6 +156,7 @@ var (
 
 func (c *conn) get(ctx context.Context, p string, out any) error {
 	_, err := c.api.Do(ctx, http.MethodGet, "/api"+p, nil, nil, out)
+	err = scrub(err)
 	switch {
 	case rest.IsStatus(err, http.StatusUnauthorized), rest.IsStatus(err, http.StatusForbidden):
 		return errAuth
@@ -189,17 +194,60 @@ func (c *conn) status(ctx context.Context) (status, error) {
 	return s, nil
 }
 
+// pathRun is a word with a slash or backslash in a server's error text:
+// a file or folder (/media/Family/a.mkv, C:\x\y).
+var pathRun = regexp.MustCompile(`[^\s"'<>]*[\\/][^\s"'<>]*`)
+
+// scrub keeps folders out of an error FileFlows sent.
+func scrub(err error) error {
+	var e *rest.Error
+	if errors.As(err, &e) {
+		return &rest.Error{Status: e.Status, Message: pathRun.ReplaceAllString(e.Message, "[path]")}
+	}
+	return err
+}
+
+// clip redacts a server's text, then keeps it to one line of n bytes.
+func clip(s string, n int) string {
+	s = rest.Redact(strings.Join(strings.Fields(s), " "))
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
+// scalar passes on a number, a boolean or a short string, and nothing else:
+// a field FileFlows may send as an object could hold a path.
+func scalar(v any) (any, bool) {
+	switch x := v.(type) {
+	case float64, bool:
+		return x, true
+	case string:
+		if x = clip(x, 40); x != "" && !strings.ContainsAny(x, `/\`) {
+			return x, true
+		}
+	}
+	return nil, false
+}
+
 // shortName keeps only a file's name: paths say where someone keeps what.
 func shortName(p string) string {
 	p = strings.TrimSpace(strings.ReplaceAll(p, `\`, "/"))
 	if p == "" {
 		return ""
 	}
-	return rest.Redact(path.Base(p))
+	return clip(path.Base(p), 200)
 }
 
 // refName reads a name sent either as a string or as {"Name": ...}.
 func refName(raw json.RawMessage) string {
+	return clip(rawName(raw), 100)
+}
+
+func rawName(raw json.RawMessage) string {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		return s
@@ -276,14 +324,20 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		files := []map[string]any{}
-		for _, f := range s.Files {
+		for i, f := range s.Files {
+			if i == maxListed {
+				break
+			}
 			n := f.Relative
 			if n == "" {
 				n = f.Name
 			}
-			files = append(files, map[string]any{"name": shortName(n), "library": refName(f.Library), "step": f.Step, "percent": float64(int(f.Percent*10)) / 10})
+			files = append(files, map[string]any{"name": shortName(n), "library": refName(f.Library), "step": clip(f.Step, 100), "percent": float64(int(f.Percent*10)) / 10})
 		}
 		out := map[string]any{"queued": *s.Queue, "processing": s.Processing, "processed": s.Processed, "files": files}
+		if len(s.Files) > maxListed {
+			out["note"] = fmt.Sprintf("the first %d files in progress only", maxListed)
+		}
 		if s.Time != "" && len(s.Time) <= 40 {
 			out["processingTime"] = s.Time
 		}
@@ -295,20 +349,27 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
-		for _, n := range ns {
-			e := map[string]any{"id": n.UID, "name": n.Name, "enabled": n.Enabled, "runners": n.FlowRunners}
+		for i, n := range ns {
+			if i == maxListed {
+				break
+			}
+			e := map[string]any{"id": clip(n.UID, 100), "name": clip(n.Name, 100), "enabled": n.Enabled, "runners": n.FlowRunners}
 			if n.Version != "" {
-				e["version"] = n.Version
+				e["version"] = clip(n.Version, 40)
 			}
-			if n.OS != nil {
-				e["os"] = n.OS
+			if v, ok := scalar(n.OS); ok {
+				e["os"] = v
 			}
-			if n.Priority != nil {
-				e["priority"] = n.Priority
+			if v, ok := scalar(n.Priority); ok {
+				e["priority"] = v
 			}
 			out = append(out, e)
 		}
-		return sdk.JSON(map[string]any{"total": len(out), "nodes": out})
+		res := map[string]any{"total": len(ns), "nodes": out}
+		if len(ns) > maxListed {
+			res["note"] = fmt.Sprintf("the first %d nodes only", maxListed)
+		}
+		return sdk.JSON(res)
 
 	case "libraries":
 		var ls []struct {
@@ -325,8 +386,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
-		for _, l := range ls {
-			e := map[string]any{"id": l.UID, "name": l.Name, "enabled": l.Enabled, "flow": refName(l.Flow), "priority": l.Priority, "scanIntervalSeconds": l.ScanInterval}
+		for i, l := range ls {
+			if i == maxListed {
+				break
+			}
+			e := map[string]any{"id": clip(l.UID, 100), "name": clip(l.Name, 100), "enabled": l.Enabled, "flow": refName(l.Flow), "scanIntervalSeconds": l.ScanInterval}
+			if v, ok := scalar(l.Priority); ok {
+				e["priority"] = v
+			}
 			for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999"} {
 				if t, err := time.Parse(layout, l.LastScanned); err == nil {
 					if t.Year() > 1 {
@@ -337,7 +404,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			out = append(out, e)
 		}
-		return sdk.JSON(map[string]any{"total": len(out), "libraries": out})
+		res := map[string]any{"total": len(ls), "libraries": out}
+		if len(ls) > maxListed {
+			res["note"] = fmt.Sprintf("the first %d libraries only", maxListed)
+		}
+		return sdk.JSON(res)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }

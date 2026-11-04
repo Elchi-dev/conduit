@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -47,6 +48,13 @@ type Module struct {
 func New() *Module { return &Module{} }
 
 const maxLibraries = 25
+
+// maxNodes and maxListed cap the nodes (and each node's workers) and the
+// libraries in the output.
+const (
+	maxNodes  = 50
+	maxListed = 200
+)
 
 var pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
 
@@ -128,6 +136,7 @@ var errKey = errors.New("Tdarr refused the request: check the API key (Tools, AP
 
 func (c *conn) do(ctx context.Context, method, p string, body, out any) error {
 	_, err := c.api.Do(ctx, method, "/api/v2"+p, nil, body, out)
+	err = scrub(err)
 	switch {
 	case rest.IsStatus(err, http.StatusUnauthorized), rest.IsStatus(err, http.StatusForbidden):
 		return errKey
@@ -204,13 +213,38 @@ func round(f float64, places int) float64 {
 	return math.Round(f*p) / p
 }
 
+// pathRun is a word with a slash or backslash in a server's error text:
+// a file or folder (/media/Family/a.mkv, C:\x\y).
+var pathRun = regexp.MustCompile(`[^\s"'<>]*[\\/][^\s"'<>]*`)
+
+// scrub keeps folders out of an error Tdarr sent ("ENOENT … '/media/…'").
+func scrub(err error) error {
+	var e *rest.Error
+	if errors.As(err, &e) {
+		return &rest.Error{Status: e.Status, Message: pathRun.ReplaceAllString(e.Message, "[path]")}
+	}
+	return err
+}
+
+// clip redacts a server's text, then keeps it to one line of n bytes.
+func clip(s string, n int) string {
+	s = rest.Redact(strings.Join(strings.Fields(s), " "))
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
 // shortName keeps only a file's name: paths say where someone keeps what.
 func shortName(p string) string {
 	p = strings.TrimSpace(strings.ReplaceAll(p, `\`, "/"))
 	if p == "" {
 		return ""
 	}
-	return rest.Redact(path.Base(p))
+	return clip(path.Base(p), 200)
 }
 
 // Health implements sdk.Module.
@@ -266,25 +300,38 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
-		for _, e := range ns {
+		for i, e := range ns {
+			if i == maxNodes {
+				break
+			}
 			ws := []map[string]any{}
 			ids := make([]string, 0, len(e.n.Workers))
 			for k := range e.n.Workers {
 				ids = append(ids, k)
 			}
 			sort.Strings(ids)
-			for _, k := range ids {
+			for j, k := range ids {
+				if j == maxNodes {
+					break
+				}
 				w := e.n.Workers[k]
-				ws = append(ws, map[string]any{"id": k, "type": w.Job.Type, "status": w.Status, "percent": round(num(w.Percentage), 1),
-					"fps": round(num(w.FPS), 1), "eta": w.ETA, "file": shortName(w.File)})
+				ws = append(ws, map[string]any{"id": clip(k, 100), "type": clip(w.Job.Type, 40), "status": clip(w.Status, 100), "percent": round(num(w.Percentage), 1),
+					"fps": round(num(w.FPS), 1), "eta": clip(w.ETA, 40), "file": shortName(w.File)})
 			}
 			limits := map[string]float64{}
 			for k, v := range e.n.WorkerLimits {
-				limits[k] = num(v)
+				if len(limits) < 20 {
+					limits[clip(k, 40)] = num(v)
+				}
 			}
-			out = append(out, map[string]any{"id": e.n.ID, "name": e.n.Name, "paused": e.n.Paused, "version": e.n.Version, "workerLimits": limits, "workers": ws})
+			out = append(out, map[string]any{"id": clip(e.n.ID, 100), "name": clip(e.n.Name, 100), "paused": e.n.Paused, "version": clip(e.n.Version, 40),
+				"workerLimits": limits, "workersRunning": len(e.n.Workers), "workers": ws})
 		}
-		return sdk.JSON(map[string]any{"total": len(out), "nodes": out})
+		res := map[string]any{"total": len(ns), "nodes": out}
+		if len(ns) > maxNodes {
+			res["note"] = fmt.Sprintf("the first %d nodes only", maxNodes)
+		}
+		return sdk.JSON(res)
 
 	case "libraries":
 		return c.libraries(ctx)
@@ -357,7 +404,10 @@ func (c *conn) libraries(ctx context.Context) (sdk.Result, error) {
 	}
 	out := []map[string]any{}
 	for i, l := range libs {
-		e := map[string]any{"id": l.ID, "name": l.Name, "folderWatching": l.Watching, "priority": num(l.Priority), "type": l.StackType}
+		if i == maxListed {
+			break
+		}
+		e := map[string]any{"id": clip(l.ID, 100), "name": clip(l.Name, 100), "folderWatching": l.Watching, "priority": num(l.Priority), "type": clip(l.StackType, 40)}
 		if l.Process != nil {
 			e["processed"] = *l.Process
 		}
@@ -370,8 +420,10 @@ func (c *conn) libraries(ctx context.Context) (sdk.Result, error) {
 		}
 		out = append(out, e)
 	}
-	res := map[string]any{"total": len(out), "all": total, "libraries": out}
-	if len(out) > maxLibraries {
+	res := map[string]any{"total": len(libs), "all": total, "libraries": out}
+	if len(libs) > maxListed {
+		res["note"] = fmt.Sprintf("the first %d libraries, with statistics for the first %d", maxListed, maxLibraries)
+	} else if len(out) > maxLibraries {
 		res["note"] = fmt.Sprintf("statistics for the first %d libraries only", maxLibraries)
 	}
 	return sdk.JSON(res)
@@ -410,18 +462,19 @@ func (c *conn) pauseResume(ctx context.Context, call sdk.Call, in string) (sdk.R
 	if err != nil {
 		return sdk.Result{}, err
 	}
+	name := clip(n.Name, 100)
 	verb, back := "Pause", "resume_node"
 	if !want {
 		verb, back = "Resume", "pause_node"
 	}
 	if n.Paused == want {
-		return sdk.JSON(map[string]any{"node": n.Name, "paused": n.Paused, "note": "nothing to change"})
+		return sdk.JSON(map[string]any{"node": name, "paused": n.Paused, "note": "nothing to change"})
 	}
 	if call.DryRun {
 		b, _ := json.Marshal(map[string]any{"paused": n.Paused, "workersRunning": len(n.Workers)})
 		a, _ := json.Marshal(map[string]bool{"paused": want})
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s Tdarr node %s", verb, n.Name),
-			Changes: []sdk.Change{{Target: "node " + n.Name, Op: strings.TrimSuffix(call.Action, "_node"), Before: b, After: a}}}}, nil
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s Tdarr node %s", verb, name),
+			Changes: []sdk.Change{{Target: "node " + name, Op: strings.TrimSuffix(call.Action, "_node"), Before: b, After: a}}}}, nil
 	}
 	body := map[string]any{"data": map[string]any{"nodeID": n.ID, "nodeUpdates": map[string]bool{"nodePaused": want}}}
 	if err := c.do(ctx, http.MethodPost, "/update-node", body, nil); err != nil {
@@ -432,9 +485,9 @@ func (c *conn) pauseResume(ctx context.Context, call sdk.Call, in string) (sdk.R
 		return sdk.Result{}, fmt.Errorf("sent the change, but couldn't read the node back: %w", err)
 	}
 	if after.Paused != want {
-		return sdk.Result{}, fmt.Errorf("Tdarr kept node %s %s", n.Name, map[bool]string{true: "paused", false: "running"}[after.Paused])
+		return sdk.Result{}, fmt.Errorf("Tdarr kept node %s %s", name, map[bool]string{true: "paused", false: "running"}[after.Paused])
 	}
-	res, err := sdk.JSON(map[string]any{"node": n.Name, "id": n.ID, "paused": after.Paused})
-	res.Undo = sdk.UndoWith(back, map[string]string{"node": n.ID}, fmt.Sprintf("%s node %s again", map[bool]string{true: "Resume", false: "Pause"}[want], n.Name))
+	res, err := sdk.JSON(map[string]any{"node": name, "id": n.ID, "paused": after.Paused})
+	res.Undo = sdk.UndoWith(back, map[string]string{"node": n.ID}, fmt.Sprintf("%s node %s again", map[bool]string{true: "Resume", false: "Pause"}[want], name))
 	return res, err
 }

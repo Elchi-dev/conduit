@@ -52,6 +52,22 @@ func (f *fakeUnmanic) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.paused = [2]bool{p, p}
 		}
 		fmt.Fprint(w, `{"success":true}`)
+	case "POST /unmanic/api/v2/workers/worker/pause", "POST /unmanic/api/v2/workers/worker/resume":
+		var in struct {
+			ID string `json:"worker_id"`
+		}
+		json.Unmarshal(body, &in)
+		i := map[string]int{"W0": 0, "W1": 1}
+		n, ok := i[in.ID]
+		if !ok {
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"no such worker in /config/private/unmanic.db"}`)
+			return
+		}
+		if !f.ignore {
+			f.paused[n] = strings.HasSuffix(r.URL.Path, "/pause")
+		}
+		fmt.Fprint(w, `{"success":true}`)
 	default:
 		w.WriteHeader(404)
 		fmt.Fprint(w, `{"error":"404: Endpoint not found"}`)
@@ -121,6 +137,39 @@ func TestUnmanic(t *testing.T) {
 	}
 }
 
+// An undo puts back only the workers the action changed: W1 was paused
+// before "pause", so resuming must leave it paused.
+func TestUnmanicExactUndo(t *testing.T) {
+	m, f := setup(t)
+	f.paused = [2]bool{false, true}
+	r, err := invoke(m, "pause", `{}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "1 of 2") || f.paused[0] {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "pause", `{}`, false)
+	if err != nil || f.paused != [2]bool{true, true} || r.Undo == nil || string(r.Undo.Input) != `{"workers":["W0"]}` {
+		t.Fatalf("%+v %v %v", r, err, f.paused)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.paused != [2]bool{false, true} {
+		t.Fatalf("%v %v", err, f.paused)
+	}
+	n := len(f.seen)
+	for _, in := range []string{`{"workers":["W9"]}`, `{"workers":["../x"]}`, `{"workers":[]}`} {
+		if _, err := invoke(m, "resume", in, false); err == nil {
+			t.Fatalf("accepted %s", in)
+		}
+	}
+	for _, s := range f.seen[n:] {
+		if strings.Contains(s, "/worker/") {
+			t.Fatalf("sent %s", s)
+		}
+	}
+	r, err = invoke(m, "resume", `{"workers":["W1"]}`, false)
+	if err != nil || f.paused != [2]bool{false, false} || string(r.Undo.Input) != `{"workers":["W1"]}` {
+		t.Fatalf("%+v %v %v", r, err, f.paused)
+	}
+}
+
 func TestUnmanicValidation(t *testing.T) {
 	m, f := setup(t)
 	for _, c := range []struct{ action, in string }{
@@ -161,5 +210,23 @@ func TestUnmanicRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "u"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// A server error naming a file loses the folder before it's shown.
+func TestUnmanicErrorsHidePaths(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		fmt.Fprint(w, `{"error":"Errno 2: No such file: '/library/private/Family/a.mkv'"}`)
+	}))
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: srv.URL})
+	if err := m.Configure(context.Background(), fakehost.New(nil), "u", raw); err != nil {
+		t.Fatal(err)
+	}
+	_, err := invoke(m, "history", `{}`, false)
+	if err == nil || strings.Contains(err.Error(), "private") || !strings.Contains(err.Error(), "No such file") {
+		t.Fatal(err)
 	}
 }

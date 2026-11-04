@@ -49,9 +49,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/coolify"
 	"github.com/elchi-dev/conduit/modules/crafty"
 	"github.com/elchi-dev/conduit/modules/crisp"
+	"github.com/elchi-dev/conduit/modules/crowdsec"
 	"github.com/elchi-dev/conduit/modules/database"
 	"github.com/elchi-dev/conduit/modules/datadog"
+	"github.com/elchi-dev/conduit/modules/defectdojo"
 	"github.com/elchi-dev/conduit/modules/deluge"
+	"github.com/elchi-dev/conduit/modules/dependencytrack"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/directus"
 	"github.com/elchi-dev/conduit/modules/discord"
@@ -282,6 +285,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/vultr"
 	"github.com/elchi-dev/conduit/modules/wakatime"
 	"github.com/elchi-dev/conduit/modules/wallabag"
+	"github.com/elchi-dev/conduit/modules/wazuh"
 	"github.com/elchi-dev/conduit/modules/weather"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
@@ -602,6 +606,10 @@ func builtins(app *App) []sdk.Module {
 		filebrowser.New(),
 		ocis.New(),
 		rclone.New(),
+		crowdsec.New(),
+		wazuh.New(),
+		defectdojo.New(),
+		dependencytrack.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

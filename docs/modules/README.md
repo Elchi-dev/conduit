@@ -294,6 +294,10 @@ recommended policies.
 | File Browser | [filebrowser.md](filebrowser.md) | homelab |
 | ownCloud Infinite Scale | [ocis.md](ocis.md) | homelab, team |
 | rclone | [rclone.md](rclone.md) | homelab, developer |
+| CrowdSec | [crowdsec.md](crowdsec.md) | homelab, team |
+| Wazuh | [wazuh.md](wazuh.md) | homelab, team |
+| DefectDojo | [defectdojo.md](defectdojo.md) | developer, team |
+| Dependency-Track | [dependencytrack.md](dependencytrack.md) | developer, team |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

@@ -26,6 +26,10 @@ and why.
   Apprise runs must name the previewed number of services) and Tdarr,
   Unmanic, FileFlows (transcoding; FileFlows read-only, since its pause
   endpoint couldn't be confirmed). Reviews 46 and 47 cover them.
+- **Final local check at 22:30 CET (0f1eb85):** gofmt, vet, race tests,
+  web and site builds with German, 51 browser tests and upgrades from
+  v0.1.0, v0.2.0, v0.3.0, v0.3.1 and v1.0.0 all pass. Ready to release as
+  v1.1.0 once GitHub Actions runs.
 - **Left as documented decisions:** sending mail and chat messages, and
   turning automations back on (n8n, Node-RED), stay write; InfluxDB
   `enable_task` is destructive.

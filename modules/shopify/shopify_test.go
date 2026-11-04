@@ -28,6 +28,8 @@ type fakeShopify struct {
 	lastRefund  map[string]any
 	lastCancel  map[string]any
 	lastFulfill map[string]any
+	// usd makes the customer pay in USD (1.10 per EUR) in the EUR shop.
+	usd bool
 }
 
 func (f *fakeShopify) order() map[string]any {
@@ -43,6 +45,9 @@ func (f *fakeShopify) order() map[string]any {
 		map[string]any{"id": "gid://shopify/OrderTransaction/9", "kind": "SALE", "status": "SUCCESS", "gateway": "shopify_payments", "createdAt": "2026-11-01T10:00:00Z", "test": true,
 			"amountSet": map[string]any{"shopMoney": map[string]any{"amount": "49.00", "currencyCode": "EUR"}}},
 	}
+	if f.usd {
+		tx[0].(map[string]any)["amountSet"].(map[string]any)["presentmentMoney"] = map[string]any{"amount": "53.90", "currencyCode": "USD"}
+	}
 	if f.refunded > 0 {
 		tx = append(tx, map[string]any{"id": "gid://shopify/OrderTransaction/10", "kind": "REFUND", "status": "SUCCESS", "gateway": "shopify_payments", "test": true,
 			"amountSet": map[string]any{"shopMoney": map[string]any{"amount": jsonNum(f.refunded), "currencyCode": "EUR"}}, "parentTransaction": map[string]any{"id": "gid://shopify/OrderTransaction/9"}})
@@ -50,9 +55,19 @@ func (f *fakeShopify) order() map[string]any {
 	ms := func(a string) map[string]any {
 		return map[string]any{"shopMoney": map[string]any{"amount": a, "currencyCode": "EUR"}}
 	}
-	return map[string]any{"id": "gid://shopify/Order/1001", "name": "#1001", "createdAt": "2026-11-01T10:00:00Z", "cancelledAt": cancelledAt, "test": true,
+	if f.usd && f.refunded > 0 {
+		tx[1].(map[string]any)["amountSet"] = map[string]any{"shopMoney": map[string]any{"amount": jsonNum(f.refunded / 1.1), "currencyCode": "EUR"},
+			"presentmentMoney": map[string]any{"amount": jsonNum(f.refunded), "currencyCode": "USD"}}
+	}
+	pres := "EUR"
+	total := ms("49.00")
+	if f.usd {
+		pres = "USD"
+		total["presentmentMoney"] = map[string]any{"amount": "53.90", "currencyCode": "USD"}
+	}
+	return map[string]any{"presentmentCurrencyCode": pres, "id": "gid://shopify/Order/1001", "name": "#1001", "createdAt": "2026-11-01T10:00:00Z", "cancelledAt": cancelledAt, "test": true,
 		"displayFinancialStatus": "PAID", "displayFulfillmentStatus": fStatus, "subtotalLineItemsQuantity": 2, "email": "jane@example.org", "phone": "+4915112345678",
-		"totalPriceSet": ms("49.00"), "totalRefundedSet": ms(jsonNum(f.refunded)), "totalReceivedSet": ms("49.00"),
+		"totalPriceSet": total, "totalRefundedSet": ms(jsonNum(f.refunded)), "totalReceivedSet": ms("49.00"),
 		"customer":        map[string]any{"id": "gid://shopify/Customer/5", "displayName": "Jane Doe"},
 		"shippingAddress": map[string]any{"name": "Jane Doe", "address1": "1 Main St", "city": "Berlin", "zip": "10115", "countryCodeV2": "DE"},
 		"lineItems":       map[string]any{"nodes": []any{map[string]any{"title": "Mug", "sku": "MUG-1", "quantity": 2, "currentQuantity": 2, "originalUnitPriceSet": ms("24.50")}}},
@@ -296,8 +311,9 @@ func TestShopifyRefundAndCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Everything was refunded already, so cancelling refunds nothing more.
 	r, err = invoke(m, "cancel_order", `{"order":"#1001","refund":true,"reason":"customer"}`, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "refunds 49.00 EUR to the original payment methods") || f.cancelled {
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "refunds 0.00 EUR to the original payment methods") || f.cancelled {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	r, err = invoke(m, "cancel_order", `{"order":"#1001","refund":true,"reason":"customer"}`, false)
@@ -396,5 +412,34 @@ func TestShopifyRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "s"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// In a multi-currency store the customer pays in another currency than the
+// shop's; Shopify refunds in that one, so the preview, the limit and the
+// amount sent are all in it, and the refund names it.
+func TestShopifyRefundInCustomerCurrency(t *testing.T) {
+	m, f := setup(t, "secret://shop")
+	f.usd = true
+	r, err := invoke(m, "refund_order", `{"order":"#1001"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Full refund of 53.90 USD on order #1001 via shopify_payments (test order)" {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":"50"}`, false); err != nil {
+		t.Fatal(err)
+	}
+	in := f.lastRefund["input"].(map[string]any)
+	tx := in["transactions"].([]any)[0].(map[string]any)
+	if in["currency"] != "USD" || tx["amount"] != "50.00" {
+		t.Fatal(in)
+	}
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":"4"}`, false); err == nil || !strings.Contains(err.Error(), "only 3.90 USD of 53.90 USD") {
+		t.Fatal(err)
+	}
+	// A cancellation's preview counts what's left after earlier refunds.
+	f.usd, f.refunded = false, 10
+	r, err = invoke(m, "cancel_order", `{"order":"#1001","refund":true}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "refunds 39.00 EUR") {
+		t.Fatalf("%+v %v", r.Plan, err)
 	}
 }

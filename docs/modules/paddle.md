@@ -24,6 +24,8 @@ says "nothing to change" when the subscription is already in that state.
 
 - Pausing while a cancellation is scheduled is refused; take the
   cancellation back with `resume_subscription` first.
+- A paused subscription can only be cancelled `immediately` (Paddle's
+  rule); without it the request is refused.
 - An immediate cancellation can't be undone, and a canceled subscription
   can't be paused or resumed.
 - Refunds and credits (Paddle adjustments) are made in the Paddle dashboard.

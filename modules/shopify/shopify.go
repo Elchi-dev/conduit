@@ -110,7 +110,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "cancel_order", Title: "Cancel an order", Description: "Cancels an order, optionally refunding it to the original payment methods and restocking its items. Can't be undone. The preview shows the total and what happens to the money.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"reason":{"type":"string","enum":["CUSTOMER","DECLINED","FRAUD","INVENTORY","STAFF","OTHER"],"default":"OTHER"},"refund":{"type":"boolean","default":false,"description":"Refund what was paid to the original payment methods"},"restock":{"type":"boolean","default":true},"notifyCustomer":{"type":"boolean","default":false},"staffNote":{"type":"string","maxLength":255}}}`)},
 			{Name: "refund_order", Title: "Refund an order", Description: "Refunds an amount of an order to its original payment, fully or partly. Money goes back to the customer and can't be taken back. Items aren't restocked.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"amount":{"type":"string","description":"Like 12.50, in the order's currency; the whole remaining amount when empty"},"note":{"type":"string","maxLength":255},"notifyCustomer":{"type":"boolean","default":false},"idempotencyKey":{"type":"string","description":"Reuse to make a retried refund safe; one is made up otherwise"}}}`)},
+				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"amount":{"type":"string","description":"Like 12.50, in the currency the customer paid in (the preview shows it); the whole remaining amount when empty"},"note":{"type":"string","maxLength":255},"notifyCustomer":{"type":"boolean","default":false},"idempotencyKey":{"type":"string","description":"Reuse to make a retried refund safe; one is made up otherwise"}}}`)},
 		},
 	}
 }
@@ -319,11 +319,27 @@ func pow10(n int) int {
 
 func money(v int64, cur string) string { return decimal(v, cur) + " " + cur }
 
+type amountCur struct {
+	Amount       string `json:"amount"`
+	CurrencyCode string `json:"currencyCode"`
+}
+
 type moneySet struct {
-	ShopMoney struct {
-		Amount       string `json:"amount"`
-		CurrencyCode string `json:"currencyCode"`
-	} `json:"shopMoney"`
+	ShopMoney amountCur `json:"shopMoney"`
+	// PresentmentMoney is the amount in the currency the customer paid in,
+	// which differs from the shop's currency in a multi-currency store.
+	// Refunds are made in it.
+	PresentmentMoney *amountCur `json:"presentmentMoney"`
+}
+
+// customer is the amount and currency the customer paid in (the shop's
+// when Shopify didn't say).
+func (m moneySet) customer() (int64, string) {
+	if p := m.PresentmentMoney; p != nil && p.CurrencyCode != "" {
+		v, _ := parseAmount(p.Amount)
+		return v, p.CurrencyCode
+	}
+	return m.value(), m.ShopMoney.CurrencyCode
 }
 
 func (m moneySet) value() int64 {
@@ -586,14 +602,14 @@ func (c *conn) resolveOrder(ctx context.Context, s string) (string, error) {
 
 const orderQuery = `query Order($id: ID!) {
   order(id: $id) {
-    id name createdAt cancelledAt cancelReason closed test displayFinancialStatus displayFulfillmentStatus subtotalLineItemsQuantity email phone note
-    totalPriceSet { shopMoney { amount currencyCode } } totalRefundedSet { shopMoney { amount currencyCode } } totalReceivedSet { shopMoney { amount currencyCode } }
+    id name createdAt cancelledAt cancelReason closed test displayFinancialStatus displayFulfillmentStatus subtotalLineItemsQuantity email phone note presentmentCurrencyCode
+    totalPriceSet { shopMoney { amount currencyCode } presentmentMoney { amount currencyCode } } totalRefundedSet { shopMoney { amount currencyCode } } totalReceivedSet { shopMoney { amount currencyCode } }
     customer { id displayName }
     shippingAddress { name company address1 address2 city provinceCode zip countryCodeV2 phone }
     lineItems(first: 50) { nodes { title sku quantity currentQuantity variantTitle originalUnitPriceSet { shopMoney { amount currencyCode } } } }
     fulfillments(first: 20) { id name status createdAt trackingInfo(first: 3) { company number url } }
     fulfillmentOrders(first: 20) { nodes { id status lineItems(first: 50) { nodes { remainingQuantity } } } }
-    transactions(first: 50) { id kind status gateway createdAt test amountSet { shopMoney { amount currencyCode } } parentTransaction { id } }
+    transactions(first: 50) { id kind status gateway createdAt test amountSet { shopMoney { amount currencyCode } presentmentMoney { amount currencyCode } } parentTransaction { id } }
   }
 }`
 
@@ -623,6 +639,7 @@ type fulfillmentOrder struct {
 type orderFull struct {
 	orderRow
 	Closed           bool     `json:"closed"`
+	PresentmentCur   string   `json:"presentmentCurrencyCode"`
 	Email            string   `json:"email"`
 	Phone            string   `json:"phone"`
 	Note             string   `json:"note"`
@@ -1101,14 +1118,20 @@ func (c *conn) cancelOrder(ctx context.Context, call sdk.Call, p input) (sdk.Res
 	}
 	pay := "payments kept (authorised payments are voided)"
 	if p.Refund {
-		pay = "refunds " + o.TotalReceivedSet.String() + " to the original payment methods"
+		// What a cancellation refunds is what was received less what was
+		// refunded already.
+		net := o.TotalReceivedSet.value() - o.TotalRefundedSet.value()
+		if net < 0 {
+			net = 0
+		}
+		pay = "refunds " + money(net, o.TotalReceivedSet.ShopMoney.CurrencyCode) + " to the original payment methods"
 	}
 	if call.DryRun {
 		mode := ""
 		if o.Test {
 			mode = ", test order"
 		}
-		before := map[string]any{"financialStatus": o.DisplayFinancialStatus, "fulfillmentStatus": o.DisplayFulfillmentStatus, "total": o.TotalPriceSet.String(), "received": o.TotalReceivedSet.String()}
+		before := map[string]any{"financialStatus": o.DisplayFinancialStatus, "fulfillmentStatus": o.DisplayFulfillmentStatus, "total": o.TotalPriceSet.String(), "received": o.TotalReceivedSet.String(), "refunded": o.TotalRefundedSet.String()}
 		after := map[string]any{"cancelled": true, "reason": reason, "refund": p.Refund, "restock": restock, "notifyCustomer": p.NotifyCustomer}
 		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Cancel order %s (total %s): %s%s", o.Name, o.TotalPriceSet.String(), pay, mode),
 			Changes: []sdk.Change{{Target: "order " + o.Name, Op: "cancel", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
@@ -1184,51 +1207,58 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	// What's left: successful payments minus successful refunds. The refund
-	// goes to the largest payment, so it can't exceed that one.
+	// Refunds are made in the currency the customer paid in (the
+	// presentment currency), which in a multi-currency store isn't the
+	// shop's: every amount here is in it, and so is the refund sent.
+	// What's left: successful payments minus successful refunds. A refund
+	// goes back to one payment, the one with the most left on it, so it
+	// can't exceed what that payment has left.
 	var paid, refunded int64
+	cur := o.PresentmentCur
+	fromParent := map[string]int64{}
+	for _, t := range o.Transactions {
+		if t.Status == "SUCCESS" && t.Kind == "REFUND" {
+			v, _ := t.AmountSet.customer()
+			refunded += v
+			if t.ParentTransaction != nil {
+				fromParent[t.ParentTransaction.ID] += v
+			}
+		}
+	}
 	var parent *transaction
-	cur := o.TotalPriceSet.ShopMoney.CurrencyCode
+	var room, parentAmount int64
 	for i, t := range o.Transactions {
-		if t.Status != "SUCCESS" {
+		if t.Status != "SUCCESS" || (t.Kind != "SALE" && t.Kind != "CAPTURE") {
 			continue
 		}
-		switch t.Kind {
-		case "SALE", "CAPTURE":
-			paid += t.AmountSet.value()
-			if parent == nil || t.AmountSet.value() > parent.AmountSet.value() {
-				parent = &o.Transactions[i]
-			}
-		case "REFUND":
-			refunded += t.AmountSet.value()
+		v, c := t.AmountSet.customer()
+		if cur == "" {
+			cur = c
+		}
+		if c != cur {
+			return sdk.Result{}, fmt.Errorf("order %s was paid in more than one currency; refund it in Shopify", o.Name)
+		}
+		paid += v
+		if r := v - fromParent[t.ID]; parent == nil || r > room {
+			parent, room, parentAmount = &o.Transactions[i], r, v
 		}
 	}
 	left := paid - refunded
 	if parent == nil || left <= 0 {
 		return sdk.Result{}, fmt.Errorf("order %s has nothing left to refund", o.Name)
 	}
-	if parent.AmountSet.ShopMoney.CurrencyCode != "" {
-		cur = parent.AmountSet.ShopMoney.CurrencyCode
-	}
-	var fromParent int64
-	for _, t := range o.Transactions {
-		if t.Status == "SUCCESS" && t.Kind == "REFUND" && t.ParentTransaction != nil && t.ParentTransaction.ID == parent.ID {
-			fromParent += t.AmountSet.value()
-		}
-	}
-	room := parent.AmountSet.value() - fromParent
 	if room < left {
 		left = room
 	}
 	if left <= 0 {
-		return sdk.Result{}, fmt.Errorf("order %s's payment is fully refunded; refund its other payments in Shopify", o.Name)
+		return sdk.Result{}, fmt.Errorf("order %s's payments are fully refunded", o.Name)
 	}
 	amount := want
 	if amount == 0 {
 		amount = left
 	}
 	if amount > left {
-		return sdk.Result{}, fmt.Errorf("only %s of %s is left to refund on this payment", money(left, cur), money(parent.AmountSet.value(), cur))
+		return sdk.Result{}, fmt.Errorf("only %s of %s is left to refund on this payment", money(left, cur), money(parentAmount, cur))
 	}
 	if step := int64(scale / pow10(digits(cur))); amount%step != 0 {
 		return sdk.Result{}, fmt.Errorf("%s has %d decimals", cur, digits(cur))
@@ -1242,7 +1272,11 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		if o.Test || parent.Test {
 			mode = "test order"
 		}
-		before := map[string]any{"total": o.TotalPriceSet.String(), "paid": money(paid, cur), "refunded": money(refunded, cur), "financialStatus": o.DisplayFinancialStatus}
+		total, tcur := o.TotalPriceSet.customer()
+		before := map[string]any{"total": money(total, tcur), "paid": money(paid, cur), "refunded": money(refunded, cur), "financialStatus": o.DisplayFinancialStatus}
+		if shopCur := o.TotalPriceSet.ShopMoney.CurrencyCode; shopCur != "" && shopCur != cur {
+			before["shopTotal"] = o.TotalPriceSet.String()
+		}
 		after := map[string]any{"refund": money(amount, cur), "gateway": parent.Gateway, "refundedAfter": money(refunded+amount, cur), "notifyCustomer": p.NotifyCustomer}
 		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s of %s on order %s via %s (%s)", kind, money(amount, cur), o.Name, parent.Gateway, mode),
 			Changes: []sdk.Change{{Target: "order " + o.Name, Op: "refund", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
@@ -1251,7 +1285,7 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if key == "" {
 		key = newKey()
 	}
-	in := map[string]any{"orderId": o.ID, "notify": p.NotifyCustomer, "transactions": []map[string]any{{
+	in := map[string]any{"orderId": o.ID, "notify": p.NotifyCustomer, "currency": cur, "transactions": []map[string]any{{
 		"orderId": o.ID, "parentId": parent.ID, "kind": "REFUND", "gateway": parent.Gateway, "amount": decimal(amount, cur)}}}
 	if note != "" {
 		in["note"] = note
@@ -1278,7 +1312,7 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if d.RefundCreate.Refund == nil {
 		return sdk.Result{}, errors.New("Shopify didn't create the refund")
 	}
-	out := map[string]any{"order": o.Name, "refund": short(d.RefundCreate.Refund.ID), "amount": money(amount, cur), "idempotencyKey": key}
+	out := map[string]any{"order": o.Name, "refund": short(d.RefundCreate.Refund.ID), "amount": money(amount, cur), "currency": cur, "idempotencyKey": key}
 	if ro := d.RefundCreate.Order; ro != nil {
 		out["financialStatus"] = ro.DisplayFinancialStatus
 		out["refundedTotal"] = ro.TotalRefundedSet.String()

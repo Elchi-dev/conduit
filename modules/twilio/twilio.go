@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
@@ -379,18 +380,35 @@ func (c *conn) history(ctx context.Context, kind string, p input) (sdk.Result, e
 	return sdk.JSON(res)
 }
 
-// segments estimates how many SMS parts a text takes.
+// gsmBasic and gsmExtended are the GSM-7 alphabet: a text made only of
+// these is sent in 7-bit parts, where an extended character takes two
+// places. Anything else (a backtick, most accents, emoji) makes the whole
+// text UCS-2, with far fewer characters per part.
+const (
+	gsmBasic    = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"
+	gsmExtended = "^{}\\[~]|€\f"
+)
+
+// segments estimates how many SMS parts a text takes (each is billed).
 func segments(s string) int {
-	gsm := true
+	gsm, n := true, 0
 	for _, r := range s {
-		if r > 0x7e || (r < 0x20 && r != '\n' && r != '\r') {
+		switch {
+		case strings.ContainsRune(gsmBasic, r):
+			n++
+		case strings.ContainsRune(gsmExtended, r):
+			n += 2
+		default:
 			gsm = false
+		}
+		if !gsm {
 			break
 		}
 	}
-	n := utf8.RuneCountInString(s)
 	one, many := 160, 153
 	if !gsm {
+		// UCS-2 counts UTF-16 units: an emoji takes two.
+		n = len(utf16.Encode([]rune(s)))
 		one, many = 70, 67
 	}
 	if n <= one {

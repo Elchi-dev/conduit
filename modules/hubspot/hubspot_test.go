@@ -48,7 +48,7 @@ func (f *fakeHubSpot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /crm/v3/objects/tickets":
 		io.WriteString(w, `{"results":[{"id":"30","properties":{"subject":"Login broken","hs_pipeline":"0","hs_pipeline_stage":"1","hs_ticket_priority":"HIGH","content":"LEAKME customer text"}}]}`)
 	case "GET /crm/v3/pipelines/deals":
-		io.WriteString(w, `{"results":[{"id":"default","label":"Sales","stages":[{"id":"appointmentscheduled","label":"Appointment scheduled","metadata":{"isClosed":"false"}},{"id":"contractsent","label":"Contract sent","metadata":{"isClosed":"false"}},{"id":"closedwon","label":"Closed won","metadata":{"isClosed":"true"}}]}]}`)
+		io.WriteString(w, `{"results":[{"id":"default","label":"Sales","stages":[{"id":"appointmentscheduled","label":"Appointment scheduled","metadata":{"isClosed":"false"}},{"id":"contractsent","label":"Contract sent","metadata":{"isClosed":"false"}},{"id":"closedwon","label":"Closed won","metadata":{"isClosed":"true"}},{"id":"9001","label":"contractsent","metadata":{"isClosed":"false"}},{"id":"lost1","label":"Lost","metadata":{"isClosed":"true"}},{"id":"lost2","label":"lost","metadata":{"isClosed":"true"}}]}]}`)
 	case "GET /crm/v3/pipelines/tickets":
 		io.WriteString(w, `{"results":[{"id":"0","label":"Support","stages":[{"id":"1","label":"New","metadata":{"isClosed":"false"}}]}]}`)
 	case "GET /crm/v3/objects/deals/900":
@@ -146,7 +146,7 @@ func TestHubSpotReads(t *testing.T) {
 		t.Fatal(f.seen)
 	}
 	for _, a := range m.Manifest().Actions {
-		want := a.Name == "contacts" || a.Name == "notes" || a.Name == "add_note"
+		want := a.Name == "contacts" || a.Name == "notes" || a.Name == "add_note" || a.Name == "tickets"
 		if a.Sensitive != want {
 			t.Fatalf("%s: sensitive %v", a.Name, a.Sensitive)
 		}
@@ -200,6 +200,14 @@ func TestHubSpotNotesAndDeals(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.stage != "appointmentscheduled" {
+		t.Fatal(err)
+	}
+	// A stage id wins over another stage labelled like it, so an undo naming
+	// the old stage by id lands there; a label two stages share is refused.
+	if _, err := invoke(m, "set_deal_stage", `{"deal":"900","stage":"contractsent"}`, false); err != nil || f.stage != "contractsent" {
+		t.Fatal(err, f.stage)
+	}
+	if _, err := invoke(m, "set_deal_stage", `{"deal":"900","stage":"LOST"}`, true); err == nil || !strings.Contains(err.Error(), "2 stages labelled") {
 		t.Fatal(err)
 	}
 }

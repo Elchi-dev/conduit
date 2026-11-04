@@ -197,6 +197,13 @@ func TestPaddleSubscriptionChanges(t *testing.T) {
 	if r, err := invoke(m, "pause_subscription", in, false); err != nil || !strings.Contains(string(r.Output), "paused already") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
+	// A paused subscription has no period end to cancel at; Paddle only
+	// cancels it immediately, so the preview mustn't promise an undo.
+	for _, dry := range []bool{true, false} {
+		if _, err := invoke(m, "cancel_subscription", in, dry); err == nil || !strings.Contains(err.Error(), "only immediately") || f.status != "paused" {
+			t.Fatal(err)
+		}
+	}
 	r, err = invoke(m, "resume_subscription", in, true)
 	if err != nil || !strings.Contains(r.Plan.Summary, "bills the customer") || f.status != "paused" {
 		t.Fatalf("%+v %v", r.Plan, err)

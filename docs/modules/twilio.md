@@ -23,6 +23,9 @@ to known people, list their numbers in `allowedRecipients`.
 - With `allowedRecipients` set, any other number is refused before anything
   is sent.
 - Trial accounts can only text verified numbers.
+- The part count follows the GSM-7 alphabet: one character outside it (a
+  backtick, most accents, an emoji) sends the whole text as UCS-2, 70
+  characters a part instead of 160, and `{}[]~^|\€` take two places.
 
 **Security.** The SID and token go in the `Authorization` header, only to
 `api.twilio.com`, and the client won't follow a redirect to another host.

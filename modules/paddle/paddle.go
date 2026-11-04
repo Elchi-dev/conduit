@@ -643,6 +643,10 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id string, now bool) (
 		switch {
 		case s.scheduled() == "cancel" && !now:
 			return nothing("it's set to cancel already on " + s.ScheduledChange.EffectiveAt)
+		case s.Status == "paused" && !now:
+			// A paused subscription has no billing period to run out:
+			// Paddle cancels it only immediately, which can't be undone.
+			return sdk.Result{}, fmt.Errorf("subscription %s is paused; Paddle cancels a paused subscription only immediately (set immediately, which can't be undone)", id)
 		}
 		st = step{http.MethodPost, "/subscriptions/" + url.PathEscape(id) + "/cancel", map[string]any{"effective_from": eff},
 			fmt.Sprintf("Cancel subscription %s (%s) of customer %s %s", id, s.product(), s.CustomerID, when), "cancel",

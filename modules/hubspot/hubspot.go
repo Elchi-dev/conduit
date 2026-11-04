@@ -4,8 +4,9 @@
 // deal to another stage.
 //
 // Contacts and notes carry personal data (names, emails, phones, free text
-// about people), so those actions are sensitive; companies, deals and
-// tickets return business fields only. Error text from HubSpot is scrubbed
+// about people), and so do tickets (a ticket from the inbox takes the
+// customer's email subject), so those actions are sensitive; companies and
+// deals return business fields only. Error text from HubSpot is scrubbed
 // of emails and phone numbers before it's passed on.
 package hubspot
 
@@ -93,7 +94,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + search + `,` + page + `}}`)},
 			{Name: "deals", Title: "Deals", Description: "Deals: name, amount, pipeline and stage (by label), close date and owner id.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + search + `,` + page + `}}`)},
-			{Name: "tickets", Title: "Tickets", Description: "Support tickets: subject, pipeline and stage, priority, created and changed dates. Not the ticket's content.", Risk: sdk.RiskRead,
+			{Name: "tickets", Title: "Tickets", Description: "Support tickets: subject, pipeline and stage, priority, created and changed dates. Not the ticket's content.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{` + search + `,` + page + `}}`)},
 			{Name: "notes", Title: "Notes on a record", Description: "The notes on a contact, company, deal or ticket, newest first, as plain text.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["type","id"],"properties":{` + record + `,"limit":{"type":"integer","default":20,"minimum":1,"maximum":100}}}`)},
@@ -605,16 +606,32 @@ func (c *conn) setDealStage(ctx context.Context, call sdk.Call, p input) (sdk.Re
 	if pipe == nil {
 		return sdk.Result{}, fmt.Errorf("deal %s's pipeline isn't one HubSpot lists", id)
 	}
+	// A stage id wins over a label: the undo names the old stage by its id,
+	// and another stage may be labelled like it. Two stages with the same
+	// label (ignoring case) are ambiguous.
 	var to, toLabel, fromLabel string
 	labels := []string{}
+	byLabel := 0
 	for _, s := range pipe.Stages {
 		labels = append(labels, s.Label)
-		if s.ID == want || strings.EqualFold(s.Label, want) {
-			to, toLabel = s.ID, s.Label
-		}
 		if s.ID == d.Properties["dealstage"] {
 			fromLabel = s.Label
 		}
+	}
+	for _, s := range pipe.Stages {
+		if s.ID == want {
+			to, toLabel, byLabel = s.ID, s.Label, 0
+			break
+		}
+		if strings.EqualFold(s.Label, want) {
+			if byLabel == 0 {
+				to, toLabel = s.ID, s.Label
+			}
+			byLabel++
+		}
+	}
+	if byLabel > 1 {
+		return sdk.Result{}, fmt.Errorf("pipeline %s has %d stages labelled %q; give the stage's id", pipe.Label, byLabel, want)
 	}
 	if to == "" {
 		return sdk.Result{}, fmt.Errorf("%q isn't a stage of pipeline %s; its stages are %s", want, pipe.Label, strings.Join(labels, ", "))

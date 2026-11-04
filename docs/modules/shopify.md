@@ -20,7 +20,7 @@ such as `acme` or `acme.myshopify.com`.
 | `inventory` | read | Per active location (or one): available, on hand, committed and incoming for each item. `below` keeps only items running low. |
 | `fulfill_order` | destructive | Fulfils every open item, with tracking details if given. The customer is emailed only with `notifyCustomer`. Undo cancels the fulfilment. |
 | `cancel_fulfillment` | destructive | Cancels a fulfilment so its items can be fulfilled again. |
-| `cancel_order` | destructive | Cancels an order with a reason; `refund` returns what was paid to the original payment methods, `restock` (on by default) puts the items back. The preview shows the total and what happens to the money. |
+| `cancel_order` | destructive | Cancels an order with a reason; `refund` returns what was paid to the original payment methods, `restock` (on by default) puts the items back. The preview shows the total and, with `refund`, what's left to refund (received less earlier refunds). |
 | `refund_order` | destructive | Refunds an amount (like `12.50`, or everything left) to the order's payment. The preview shows the amount, currency and gateway. Each refund carries an idempotency key, so a retry can't refund twice. |
 
 Every action with a preview says "nothing to change" when the order is
@@ -31,8 +31,11 @@ already fulfilled, cancelled or refunded.
 - Fulfilling is destructive because it tells the customer and the warehouse
   that goods shipped, and stores that capture payment on fulfilment charge
   the customer then.
-- Refunds go to the order's largest payment; an amount larger than that
-  payment is refused, so split refunds across payments in the Shopify admin.
+- Refunds are in the currency the customer paid in, which in a
+  multi-currency store isn't the shop's; the preview, the amount you give
+  and the refund sent are all in it.
+- Refunds go to the payment with the most left on it; an amount larger than
+  that is refused, so split refunds across payments in the Shopify admin.
   Items aren't restocked by `refund_order`.
 - Cancelling runs in the background at Shopify; `orders` shows the result a
   moment later.

@@ -14,7 +14,7 @@ matching `.write` scopes to add notes or move deals). Store its access token
 | `contacts` | read, sensitive | Finds contacts by name, email or phone (`search`), or lists the latest: name, email, phone, company, job title, lifecycle stage. |
 | `companies` | read | Name, domain, industry, city, country, size and lifecycle stage. |
 | `deals` | read | Name, amount and currency, pipeline and stage by label, whether the stage is closed, close date and owner id. |
-| `tickets` | read | Subject, pipeline and stage, priority and category. Not the ticket's content. |
+| `tickets` | read, sensitive | Subject (a ticket from the inbox takes the customer's email subject), pipeline and stage, priority and category. Not the ticket's content. |
 | `notes` | read, sensitive | The notes on a contact, company, deal or ticket, newest first, as plain text. |
 | `add_note` | write, sensitive | Adds a note to a record. Undo deletes it. |
 | `delete_note` | destructive | Deletes a note; the preview shows when it was written and which records it's on. |
@@ -25,7 +25,8 @@ All listings page with `after` and take up to 100 records at a time.
 **Notes.**
 
 - Stage labels come from the account's pipelines; a stage outside the deal's
-  pipeline is refused with the list of valid ones.
+  pipeline is refused with the list of valid ones. A stage id wins over a
+  label, and a label two stages share is refused (give the id).
 - Notes are stored as HubSpot's rich text; Conduit escapes what it writes and
   strips formatting when it reads.
 

@@ -156,6 +156,26 @@ func TestTwilioSend(t *testing.T) {
 	if n := segments("Grüße 👋"); n != 1 {
 		t.Fatal(n)
 	}
+	// The preview's part count is what Twilio bills: a backtick isn't GSM-7
+	// (the text goes UCS-2), extended characters take two places, and an
+	// emoji takes two UTF-16 units.
+	for _, c := range []struct {
+		s    string
+		want int
+	}{
+		{strings.Repeat("a", 160), 1},
+		{strings.Repeat("a", 159) + "`", 3},
+		{strings.Repeat("{", 80), 1},
+		{strings.Repeat("{", 81), 2},
+		{"Grüße " + strings.Repeat("é", 154), 1},
+		{"Grüße " + strings.Repeat("é", 155), 2},
+		{strings.Repeat("👋", 35), 1},
+		{strings.Repeat("👋", 36), 2},
+	} {
+		if n := segments(c.s); n != c.want {
+			t.Fatalf("%q: %d parts, want %d", c.s, n, c.want)
+		}
+	}
 	for _, a := range m.Manifest().Actions {
 		if a.Name == "send_sms" && (a.Risk != sdk.RiskDestructive || !a.DryRun || a.Reversible) {
 			t.Fatalf("%+v", a)

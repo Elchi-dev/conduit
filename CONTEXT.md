@@ -16,8 +16,8 @@ owner and a company equally; never tailor it to one setup.
   signed release), and **v1.0.0 (Wed 4 Nov, 05:49 CET)** with 105 modules
   and signed builds for every platform (39 files).
   https://github.com/Elchi-dev/conduit/releases
-- **Ready for v1.1.0 (on main, not released):** 325 built-in modules,
-  security reviews 8–45 and two sweeps of every module fixed (see
+- **Ready for v1.1.0 (on main, not released):** 331 built-in modules,
+  security reviews 8–47 and two sweeps of every module fixed (see
   BUILD_LOG.md). Notes are in `docs/releases/v1.1.0.md`. Main passes the
   full local check (Go race tests, web and site builds with i18n, 51
   browser tests, upgrades from every release including v1.0.0).

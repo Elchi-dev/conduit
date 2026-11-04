@@ -180,11 +180,11 @@ func TestHarborChanges(t *testing.T) {
 	}
 	for _, a := range m.Manifest().Actions {
 		switch a.Name {
-		case "delete_artifact", "delete_tag":
+		case "delete_artifact", "delete_tag", "add_tag":
 			if a.Risk != sdk.RiskDestructive || !a.DryRun {
 				t.Fatal(a.Name)
 			}
-		case "scan", "add_tag":
+		case "scan":
 			if a.Risk != sdk.RiskWrite || !a.DryRun {
 				t.Fatal(a.Name)
 			}

@@ -16,11 +16,13 @@ run only those commands, and store its password in the vault:
 ```
 
 `tls` is `auto` by default: the module asks for STARTTLS and uses it when
-upsd offers it (`CERTFILE` in `upsd.conf`), otherwise it talks plain TCP.
-Set it to `require` to refuse plain TCP, which matters when a password is
-set: in `auto` mode someone on the path could answer that TLS isn't
-available and read the password. upsd's certificate is usually self-signed:
-enter its SHA-256 `fingerprint` (that also implies `require`).
+upsd offers it (`CERTFILE` in `upsd.conf`), otherwise it reads over plain
+TCP. The username and password are never sent over plain TCP in `auto`
+mode, since someone on the path could answer that TLS isn't available and
+read them: the beeper actions are refused there. Set `tls` to `off` to allow
+a plain-text login on a network you trust, or to `require` to refuse plain
+TCP for reading too. upsd's certificate is usually self-signed: enter its
+SHA-256 `fingerprint` (that also implies `require`).
 
 | Action | Risk | Notes |
 | --- | --- | --- |
@@ -29,7 +31,7 @@ enter its SHA-256 `fingerprint` (that also implies `require`).
 | `alarms` | read | Across all UPSes: forced shutdown, low battery (or charge at its low mark), overload and output off (critical); on battery with minutes left, replace battery, bypass, driver alarms and failed self-tests (warning); stale or disconnected drivers. |
 | `variables` | read | All of a UPS's variables, as `upsc` shows them. |
 | `commands` | read | The instant commands the driver offers, each marked with whether Conduit will send it (only the beeper ones). |
-| `beeper_disable` | write | Silences the UPS's alarm (`beeper.disable`). The plan shows `ups.beeper.status` before and after; nothing is sent when it's already disabled. Undo is `beeper_enable`. |
+| `beeper_disable` | destructive | Silences the UPS's alarm (`beeper.disable`). The plan shows `ups.beeper.status` before and after; nothing is sent when it's already disabled. It's destructive because a silenced UPS no longer warns anyone nearby of a power failure or a failing battery. Undo is `beeper_enable`. |
 | `beeper_enable` | write | Turns the alarm back on (`beeper.enable`). Undo is `beeper_disable`. |
 
 Health is `degraded` while any UPS has an alarm or stale data.
@@ -45,6 +47,7 @@ upsmon waits for before powering off.
 **Security.** UPS names are checked (letters, digits, `.`, `_`, `+`, `-`)
 before they go into a request line, and nothing with a line break is ever
 sent, so input can't add commands. The username and password are quoted and
-sent only for the beeper actions, after STARTTLS when it's on. Each call
+sent only for the beeper actions, and only after STARTTLS unless `tls` is
+`off`. Each call
 uses its own connection with a 10-second deadline, lines are limited to
 4 KB and lists to 5,000 entries.

@@ -438,7 +438,7 @@ func (e *Engine) run(ctx context.Context, m sdk.Module, spec sdk.ActionSpec, in 
 	default:
 		base.Status = "ok"
 		base.Output = redact(spec, res.Output)
-		if !spec.Sensitive {
+		if keepUndo(m, spec, res.Undo) {
 			base.Undo = res.Undo
 		}
 	}
@@ -531,6 +531,21 @@ func redact(spec sdk.ActionSpec, b json.RawMessage) json.RawMessage {
 	}
 	out, _ := json.Marshal(m)
 	return out
+}
+
+// keepUndo says whether an action's undo token may go in the audit log. A
+// sensitive action's token is kept only when it reverses through an action
+// of the same module that isn't sensitive itself: that action's input is
+// logged in the clear whenever it runs, so its contract is that it carries
+// no secret (kv_delete takes a key, restore_version a version number). An
+// undo that would replay a secret value (put the old value back) is dropped,
+// and such actions don't declare themselves reversible.
+func keepUndo(m sdk.Module, spec sdk.ActionSpec, u *sdk.Undo) bool {
+	if u == nil || !spec.Sensitive {
+		return true
+	}
+	target, ok := findAction(m.Manifest(), u.Action)
+	return ok && !target.Sensitive
 }
 
 func findAction(m sdk.Manifest, name string) (sdk.ActionSpec, bool) {

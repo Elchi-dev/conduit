@@ -10,13 +10,14 @@ import (
 
 // destructiveName matches action names that say they do something an agent
 // approved only for write must not do: delete, stop or abort running work,
-// run or ship code, apply infrastructure, move money, change access, or
-// blind monitoring. A verb counts only as the whole name or its first word
-// (stop, stop_build), so listings such as deployments or deploys don't match.
+// run or ship code, apply infrastructure, move money, change access, blind
+// monitoring, or reveal a secret. A verb counts only as the whole name or its
+// first word (stop, stop_build), so listings such as deployments or deploys
+// don't match.
 var destructiveName = regexp.MustCompile(`^(` +
 	`deploy|redeploy|rollback|restart|stop|delete|remove|purge|drain|revoke|deactivate|` +
 	`refund|apply|merge|approve|transfer|shutdown|reboot|poweroff|wipe|terminate|kill|` +
-	`unseal|seal|dispatch` +
+	`unseal|seal|dispatch|reveal` +
 	`)(_|$)|^(` +
 	`cancel_build|cancel_run|stop_pipeline|disable_user|enable_client|activate_user|` +
 	`set_secret|run_pipeline|trigger_build|trigger_deploy|queue_plan` +
@@ -83,11 +84,62 @@ func TestRiskLintPattern(t *testing.T) {
 	for name, want := range map[string]bool{
 		"stop": true, "stop_build": true, "delete_file": true, "redeploy": true, "queue_plan": true,
 		"enable_client": true, "set_secret": true, "dispatch_workflow": true, "seal": true,
+		"reveal": true, "reveal_secret": true, "revealed": false,
 		"deployments": false, "deploys": false, "stopwatch": false, "set_secrets_note": false,
 		"cancel_queued": false, "enable_workflow": false, "unmute_monitor": false,
 	} {
 		if got := destructiveName.MatchString(name); got != want {
 			t.Errorf("%s: %v", name, got)
+		}
+	}
+}
+
+// sensitiveUndo lists the sensitive actions that are reversible, as
+// "module.action", with the action their undo calls. The engine keeps a
+// sensitive action's undo token in the audit log only when that action
+// isn't sensitive itself (its input is logged in the clear whenever it runs,
+// so it carries no secret: a key to delete, a version number, a share id).
+// An undo that would replay a secret value can't be kept, so such an action
+// mustn't claim to be reversible.
+var sensitiveUndo = map[string]string{
+	"consul.kv_create":        "kv_delete",       // deletes the key it created
+	"hashivault.write_secret": "restore_version", // restores the version that was current
+	"nextcloud.share":         "unshare",         // removes the link by its id
+}
+
+// TestSensitiveUndo fails when a sensitive action claims an undo the audit
+// log can't keep.
+func TestSensitiveUndo(t *testing.T) {
+	seen := map[string]bool{}
+	for _, m := range builtins(&App{Server: &Server{}}) {
+		mf := m.Manifest()
+		specs := map[string]sdk.ActionSpec{}
+		for _, a := range mf.Actions {
+			specs[a.Name] = a
+		}
+		for _, a := range mf.Actions {
+			if !a.Sensitive || !a.Reversible {
+				continue
+			}
+			key := mf.ID + "." + a.Name
+			undo, ok := sensitiveUndo[key]
+			if !ok {
+				t.Errorf("%s is sensitive and reversible: its undo would replay secret material, which the audit log doesn't keep. Drop Reversible (and any undo wording), or undo through a non-sensitive action and list it in sensitiveUndo", key)
+				continue
+			}
+			seen[key] = true
+			target, ok := specs[undo]
+			switch {
+			case !ok:
+				t.Errorf("%s: its undo action %s doesn't exist", key, undo)
+			case target.Sensitive:
+				t.Errorf("%s: its undo action %s is sensitive, so the engine drops the undo", key, undo)
+			}
+		}
+	}
+	for key := range sensitiveUndo {
+		if !seen[key] {
+			t.Errorf("sensitiveUndo has %s, which isn't a sensitive reversible built-in action any more", key)
 		}
 	}
 }

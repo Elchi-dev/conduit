@@ -85,7 +85,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["project","repository","reference"],"properties":{` + proj + `,` + repo + `,` + ref + `}}`)},
 			{Name: "delete_tag", Title: "Delete a tag", Description: "Removes one tag; the artifact stays (under its digest and any other tags). Undo adds the tag back to the same digest.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["project","repository","tag"],"properties":{` + proj + `,` + repo + `,"tag":{"type":"string"}}}`)},
-			{Name: "add_tag", Title: "Add a tag", Description: "Adds a tag to an artifact (given by digest or another tag). Undo removes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_tag", Title: "Add a tag", Description: "Adds a tag to an artifact (given by digest or another tag). Destructive because a new tag (latest, prod, v2) can be what deploy automation pulls or watches, so it can roll the artifact out. Undo removes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["project","repository","reference","tag"],"properties":{` + proj + `,` + repo + `,` + ref + `,"tag":{"type":"string","description":"The new tag"}}}`)},
 			{Name: "robots", Title: "Robot accounts", Description: "Robot accounts (system-wide, or of one project) with level, permissions, whether they're disabled and when they expire. Never their secrets.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + proj + `}}`)},

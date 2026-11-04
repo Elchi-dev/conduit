@@ -258,7 +258,8 @@ func TestNUTRead(t *testing.T) {
 func TestNUTBeeper(t *testing.T) {
 	f := start(t, nil)
 	f.track = true
-	m := configure(t, f, Config{Username: "monuser", Password: "secret://pw"})
+	// tls off: a plain-text login is allowed only when asked for.
+	m := configure(t, f, Config{Username: "monuser", Password: "secret://pw", TLS: "off"})
 	p, err := invoke(m, "beeper_disable", `{"ups":"rack"}`, true)
 	if err != nil || p.Plan == nil || p.Plan.Summary != "Silence the beeper on UPS rack" || string(p.Plan.Changes[0].Before) != `{"beeper":"enabled"}` {
 		t.Fatalf("%+v %v", p.Plan, err)
@@ -287,12 +288,16 @@ func TestNUTBeeper(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, a := range m.Manifest().Actions {
-		if strings.HasPrefix(a.Name, "beeper_") != (a.Risk == sdk.RiskWrite && a.Reversible && a.DryRun) || strings.Contains(a.Name, "shutdown") || a.Name == "instcmd" {
+		if strings.HasPrefix(a.Name, "beeper_") != (a.Reversible && a.DryRun) || strings.Contains(a.Name, "shutdown") || a.Name == "instcmd" {
 			t.Fatal(a.Name)
+		}
+		// Silencing an alarm is destructive; turning it back on is a write.
+		if (a.Name == "beeper_disable" && a.Risk != sdk.RiskDestructive) || (a.Name == "beeper_enable" && a.Risk != sdk.RiskWrite) {
+			t.Fatal(a.Name, a.Risk)
 		}
 	}
 
-	bad := configure(t, f, Config{Username: "monuser", Password: "secret://bad"})
+	bad := configure(t, f, Config{Username: "monuser", Password: "secret://bad", TLS: "off"})
 	if _, err := invoke(bad, "beeper_disable", `{"ups":"rack"}`, false); err == nil || !strings.Contains(err.Error(), "wrong username or password") || f.beeper != "enabled" {
 		t.Fatal(err)
 	}
@@ -385,6 +390,18 @@ func TestNUTTLS(t *testing.T) {
 	auto := configure(t, plain, Config{})
 	if h := auto.Health(context.Background(), "u"); h.Status != "degraded" {
 		t.Fatalf("%+v", h)
+	}
+	// In auto mode, a upsd without STARTTLS gets no credentials: the login
+	// goes in plain text only with tls off.
+	autoLogin := configure(t, plain, Config{Username: "monuser", Password: "secret://pw"})
+	n0 := len(plain.sent())
+	if _, err := invoke(autoLogin, "beeper_disable", `{"ups":"rack"}`, false); err == nil || !strings.Contains(err.Error(), "tls to off") || plain.beeper != "enabled" {
+		t.Fatal(err)
+	}
+	for _, l := range plain.sent()[n0:] {
+		if strings.HasPrefix(l, "USERNAME") || strings.HasPrefix(l, "PASSWORD") || strings.HasPrefix(l, "INSTCMD") {
+			t.Fatalf("sent %q without TLS in auto mode", l)
+		}
 	}
 	off := configure(t, plain, Config{TLS: "off"})
 	n := len(plain.sent())

@@ -171,7 +171,7 @@ func TestSeerrRead(t *testing.T) {
 		if (a.Name == "requests" || a.Name == "request") != a.Sensitive {
 			t.Fatal(a.Name, "sensitive")
 		}
-		risk := map[string]sdk.Risk{"approve": sdk.RiskDestructive, "decline": sdk.RiskWrite, "create_request": sdk.RiskWrite, "delete_request": sdk.RiskDestructive}[a.Name]
+		risk := map[string]sdk.Risk{"approve": sdk.RiskDestructive, "decline": sdk.RiskWrite, "create_request": sdk.RiskDestructive, "delete_request": sdk.RiskDestructive}[a.Name]
 		if risk == "" {
 			risk = sdk.RiskRead
 		}

@@ -127,7 +127,7 @@ func invoke(m *Module, action, in string, dry bool) (sdk.Result, error) {
 }
 
 func TestVaultReads(t *testing.T) {
-	m, _ := setup(t, "secret://v")
+	m, f := setup(t, "secret://v")
 	if h := m.Health(context.Background(), "v"); h.Status != "ok" || !strings.Contains(h.Message, "token token-ops") {
 		t.Fatalf("%+v", h)
 	}
@@ -148,18 +148,41 @@ func TestVaultReads(t *testing.T) {
 			t.Fatalf("%s %s: %s %v", c.action, c.in, out, err)
 		}
 	}
-	// A value only when asked for by key.
-	r, err := invoke(m, "read_secret", `{"path":"app/db","reveal":["password","nope"]}`, false)
+	// read_secret never returns a value, even when asked to.
+	before := len(f.seen)
+	if r, err := invoke(m, "read_secret", `{"path":"app/db","reveal":["password"]}`, false); err == nil || !strings.Contains(err.Error(), "reveal_secret") || strings.Contains(string(r.Output), "hunter2") || len(f.seen) != before {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	// A value only through reveal_secret, and only for the keys named.
+	r, err := invoke(m, "reveal_secret", `{"path":"app/db","keys":["password","nope"]}`, false)
 	if err != nil || !strings.Contains(string(r.Output), `"values":{"password":"hunter2"}`) || strings.Contains(string(r.Output), `"user":"app"`) || !strings.Contains(string(r.Output), `"missing":["nope"]`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
-	r, _ = invoke(m, "read_secret", `{"path":"app/db","version":1,"reveal":["password"]}`, false)
+	r, _ = invoke(m, "reveal_secret", `{"path":"app/db","version":1,"keys":["password"]}`, false)
 	if !strings.Contains(string(r.Output), "old-pass") {
 		t.Fatal(string(r.Output))
 	}
+	many := make([]string, 33)
+	for i := range many {
+		many[i] = "k" + strconv.Itoa(i)
+	}
+	tooMany, _ := json.Marshal(map[string]any{"path": "app/db", "keys": many})
+	if _, err := invoke(m, "reveal_secret", string(tooMany), false); err == nil {
+		t.Fatal("revealed 33 keys")
+	}
+	if _, err := invoke(m, "reveal_secret", `{"path":"app/db"}`, false); err == nil {
+		t.Fatal("revealed without naming keys")
+	}
 	for _, a := range m.Manifest().Actions {
-		if a.Name == "read_secret" && (!a.Sensitive || a.Risk != sdk.RiskRead) {
-			t.Fatal("read_secret must be a sensitive read")
+		switch a.Name {
+		case "read_secret":
+			if a.Risk != sdk.RiskRead || strings.Contains(string(a.Input), "reveal") {
+				t.Fatal("read_secret must be a read without reveal")
+			}
+		case "reveal_secret":
+			if !a.Sensitive || a.Risk != sdk.RiskDestructive {
+				t.Fatal("reveal_secret must be a sensitive destructive action")
+			}
 		}
 	}
 }
@@ -235,7 +258,12 @@ func TestVaultValidation(t *testing.T) {
 		{"metadata", `{"path":"x","mount":"auth/token"}`},
 		{"list_keys", `{"mount":"../sys"}`},
 		{"list_keys", `{"path":"a//b"}`},
-		{"read_secret", `{"path":"app/db","reveal":["bad\nkey"]}`},
+		{"reveal_secret", `{"path":"app/db","keys":["bad\nkey"]}`},
+		{"metadata", `{"path":"x","mount":"ns1/sys"}`},
+		{"metadata", `{"path":"x","mount":"team/auth"}`},
+		{"list_keys", `{"mount":"ns1/identity"}`},
+		{"write_secret", `{"mount":"a/b/cubbyhole","path":"x","data":{"k":"v"}}`},
+		{"reveal_secret", `{"mount":"ns1/SYS","path":"x","keys":["k"]}`},
 		{"read_secret", `{"path":"app/db","version":-1}`},
 		{"write_secret", `{"path":"app/db"}`},
 		{"write_secret", `{"path":"app/db","data":{"":"x"}}`},

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -601,7 +602,21 @@ func (c *conn) setEnabled(ctx context.Context, call sdk.Call, realm, base, raw s
 		}
 		return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: "user " + u.Username, Op: "update", Before: mustJSON(map[string]any{"enabled": u.Enabled}), After: mustJSON(map[string]any{"enabled": enabled})}}}}, nil
 	}
-	if err := c.do(ctx, http.MethodPut, base+"/users/"+u.ID, nil, map[string]any{"enabled": enabled}, nil); err != nil {
+	// Keycloak's PUT replaces the representation, and some versions drop
+	// what's left out (attributes, required actions). Send back the full
+	// user as Keycloak has it now, with only enabled changed.
+	var rep map[string]json.RawMessage
+	if err := c.do(ctx, http.MethodGet, base+"/users/"+u.ID, nil, nil, &rep); err != nil {
+		return sdk.Result{}, friendly(err, "user")
+	}
+	var gotID string
+	if json.Unmarshal(rep["id"], &gotID) != nil || !strings.EqualFold(gotID, u.ID) {
+		return sdk.Result{}, errors.New("unexpected user from Keycloak")
+	}
+	delete(rep, "credentials") // not part of an update
+	delete(rep, "access")      // computed for the caller
+	rep["enabled"] = json.RawMessage(strconv.FormatBool(enabled))
+	if err := c.do(ctx, http.MethodPut, base+"/users/"+u.ID, nil, rep, nil); err != nil {
 		return sdk.Result{}, friendly(err, "user")
 	}
 	res, err := sdk.JSON(map[string]any{"realm": realm, "user": u.Username, "enabled": enabled})

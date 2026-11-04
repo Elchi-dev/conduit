@@ -24,6 +24,10 @@ type fake struct {
 	enabled   bool
 	loggedOut bool
 	expire    bool
+	// attrs and actions are what a PUT without them would drop: the fake
+	// replaces the stored user with what's sent, like Keycloak does.
+	attrs   json.RawMessage
+	actions json.RawMessage
 }
 
 func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +52,8 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	f.seen = append(f.seen, r.Method+" "+r.URL.RequestURI()+" "+string(body))
 	enc := json.NewEncoder(w)
-	alice := map[string]any{"id": aliceID, "username": "alice", "email": "alice@example.com", "enabled": f.enabled, "createdTimestamp": 1700000000000, "credentials": []any{map[string]any{"value": "pw-hash"}}}
+	alice := map[string]any{"id": aliceID, "username": "alice", "email": "alice@example.com", "enabled": f.enabled, "createdTimestamp": 1700000000000, "credentials": []any{map[string]any{"value": "pw-hash"}},
+		"attributes": f.attrs, "requiredActions": f.actions}
 	q := r.URL.Query()
 	switch r.Method + " " + r.URL.EscapedPath() {
 	case "GET /admin/realms":
@@ -68,11 +73,16 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /admin/realms/acme/users/" + aliceID:
 		enc.Encode(alice)
 	case "PUT /admin/realms/acme/users/" + aliceID:
-		var b struct{ Enabled *bool }
+		var b struct {
+			Enabled         *bool
+			Attributes      json.RawMessage
+			RequiredActions json.RawMessage
+		}
 		json.Unmarshal(body, &b)
 		if b.Enabled != nil {
 			f.enabled = *b.Enabled
 		}
+		f.attrs, f.actions = b.Attributes, b.RequiredActions
 		w.WriteHeader(204)
 	case "GET /admin/realms/acme/users/" + aliceID + "/sessions":
 		io.WriteString(w, `[{"id":"s1","ipAddress":"203.0.113.9","start":1700000000000,"lastAccess":1700000100000,"clients":{"c1":"web"}},{"id":"s2","ipAddress":"203.0.113.9","clients":{}}]`)
@@ -89,7 +99,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func setup(t *testing.T, secret string) (*Module, *fake) {
-	f := &fake{enabled: true}
+	f := &fake{enabled: true, attrs: json.RawMessage(`{"department":["ops"]}`), actions: json.RawMessage(`["CONFIGURE_TOTP"]`)}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	m := New()
@@ -152,15 +162,19 @@ func TestKeycloakUserChanges(t *testing.T) {
 	if err != nil || f.enabled || r.Undo == nil || r.Undo.Action != "enable_user" {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if !strings.HasSuffix(f.seen[len(f.seen)-1], `{"enabled":false}`) {
-		t.Fatal(f.seen[len(f.seen)-1])
+	// The PUT carries the full user, so attributes and required actions
+	// survive, and never the credentials.
+	put := f.seen[len(f.seen)-1]
+	if !strings.HasPrefix(put, "PUT ") || !strings.Contains(put, `"enabled":false`) || !strings.Contains(put, `"username":"alice"`) || strings.Contains(put, "pw-hash") ||
+		string(f.attrs) != `{"department":["ops"]}` || string(f.actions) != `["CONFIGURE_TOTP"]` {
+		t.Fatal(put, string(f.attrs), string(f.actions))
 	}
 	if p, err := invoke(m, r.Undo.Action, string(r.Undo.Input), true); err != nil || !strings.Contains(p.Plan.Summary, "can sign in again") {
 		t.Fatalf("%+v %v", p, err)
 	}
 	r, err = invoke(m, r.Undo.Action, string(r.Undo.Input), false)
-	if err != nil || !f.enabled || r.Undo == nil || r.Undo.Action != "disable_user" {
-		t.Fatalf("%+v %v", r, err)
+	if err != nil || !f.enabled || r.Undo == nil || r.Undo.Action != "disable_user" || string(f.attrs) != `{"department":["ops"]}` {
+		t.Fatalf("%+v %v %s", r, err, f.attrs)
 	}
 	r, err = invoke(m, "logout_user", `{"user":"`+aliceID+`"}`, true)
 	if err != nil || r.Plan == nil || f.loggedOut || !strings.Contains(r.Plan.Summary, "all 2 session(s)") {

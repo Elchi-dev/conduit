@@ -100,7 +100,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	key := `"key":{"type":"string","description":"KV key, e.g. config/app/db"}`
 	return sdk.Manifest{
 		ID: "consul", Name: "Consul", Version: "0.1.0", Category: "Infrastructure", Icon: "network",
-		Description: "HashiCorp Consul: members, services and health checks, KV keys and values, writing and deleting a key, deregistering a service.",
+		Description: "HashiCorp Consul: members, services and health checks, KV keys and values, creating, replacing and deleting a key, deregistering a service.",
 		Presets:     []string{"homelab", "developer", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["address"],"properties":{
 			"address":{"type":"string","description":"The Consul HTTP API of an agent, e.g. https://consul.example.com:8501"},
@@ -118,11 +118,13 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + dc + `,"state":{"type":"string","enum":["any","passing","warning","critical"],"default":"critical"}}}`)},
 			{Name: "kv_list", Title: "List KV keys", Description: "Keys and folders under a prefix. Never values.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + dc + `,"prefix":{"type":"string","description":"Folder, e.g. config/ (the top when empty)"},"recurse":{"type":"boolean","description":"Every key below, not only the next level"}}}`)},
-			{Name: "kv_get", Title: "Read a KV value", Description: "One key's value (text, or base64 for binary), flags, index and lock session.", Risk: sdk.RiskRead, Sensitive: true,
+			{Name: "kv_get", Title: "Read a KV value", Description: "One key's value (text, or base64 for binary), flags, index and lock session. Sensitive: the value is never logged. Keep credentials in a secrets manager, not Consul KV: anything allowed to read can read this.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["key"],"properties":{` + dc + `,` + key + `}}`)},
-			{Name: "kv_put", Title: "Write a KV value", Description: "Sets a key's value, refused if the key changed since it was looked at. The preview shows sizes, never values. Undo puts back the old value (or deletes a new key).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
-				Input: sdk.Schema(`{"type":"object","required":["key","value"],"properties":{` + dc + `,` + key + `,"value":{"type":"string"},"base64":{"type":"boolean","description":"The value is base64 (binary)"},"cas":{"type":"integer","minimum":0,"description":"Only if the key's modify index is still this (0: only if it doesn't exist)"}}}`)},
-			{Name: "kv_delete", Title: "Delete a KV key", Description: "Deletes one key (never a whole tree), refused if it changed since it was looked at. Undo puts it back.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Sensitive: true,
+			{Name: "kv_create", Title: "Create a KV key", Description: "Creates a key that doesn't exist yet (check-and-set 0, so it never overwrites). The preview shows the size, never the value. Undo deletes the key again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","required":["key","value"],"properties":{` + dc + `,` + key + `,"value":{"type":"string"},"base64":{"type":"boolean","description":"The value is base64 (binary)"}}}`)},
+			{Name: "kv_put", Title: "Replace a KV value", Description: "Replaces the value of an existing key, refused if the key changed since it was looked at. The old value is gone for good: there's no undo. The preview shows sizes, never values. kv_create makes new keys.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","required":["key","value"],"properties":{` + dc + `,` + key + `,"value":{"type":"string"},"base64":{"type":"boolean","description":"The value is base64 (binary)"},"cas":{"type":"integer","minimum":1,"description":"Only if the key's modify index is still this"}}}`)},
+			{Name: "kv_delete", Title: "Delete a KV key", Description: "Deletes one key (never a whole tree), refused if it changed since it was looked at. The value is gone for good: there's no undo.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["key"],"properties":{` + dc + `,` + key + `,"cas":{"type":"integer","minimum":1,"description":"Only if the key's modify index is still this"}}}`)},
 			{Name: "deregister_service", Title: "Deregister a service", Description: "Removes one service instance from the catalog (through its own agent when that's the one configured). The preview shows the instance and its checks.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["service"],"properties":{` + dc + `,"service":{"type":"string","description":"Service name"},"id":{"type":"string","description":"Service instance ID, needed when there are several"},"node":{"type":"string","description":"Node the instance is on"}}}`)},
@@ -275,7 +277,9 @@ type check struct {
 }
 
 func (k check) summary() map[string]any {
-	e := map[string]any{"node": k.Node, "check": k.Name, "id": k.CheckID, "status": k.Status, "output": clip(k.Output, 300)}
+	// Check output is whatever a script or endpoint printed, which can echo
+	// a connection string or token: credentials are redacted before clipping.
+	e := map[string]any{"node": k.Node, "check": k.Name, "id": k.CheckID, "status": k.Status, "output": clip(rest.Redact(k.Output), 300)}
 	if k.ServiceName != "" {
 		e["service"] = k.ServiceName
 		e["serviceId"] = k.ServiceID
@@ -569,7 +573,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(out)
 
-	case "kv_put":
+	case "kv_create", "kv_put":
 		return c.put(ctx, call, dc, p)
 	case "kv_delete":
 		return c.del(ctx, call, dc, p)
@@ -602,21 +606,6 @@ func (c *conn) instances(ctx context.Context, dc, name string, passing bool) ([]
 	return ins, nil
 }
 
-// undoValue is the input that puts a key back as it was.
-func undoValue(key, dc string, old kvPair, cas uint64) map[string]any {
-	in := map[string]any{"key": key, "cas": cas}
-	if dc != "" {
-		in["datacenter"] = dc
-	}
-	b := old.bytes()
-	if utf8.Valid(b) {
-		in["value"] = string(b)
-	} else {
-		in["value"], in["base64"] = base64.StdEncoding.EncodeToString(b), true
-	}
-	return in
-}
-
 func (c *conn) put(ctx context.Context, call sdk.Call, dc string, p input) (sdk.Result, error) {
 	key := strings.TrimSpace(p.Key)
 	esc, err := kvPath(key, false)
@@ -639,21 +628,31 @@ func (c *conn) put(ctx context.Context, call sdk.Call, dc string, p input) (sdk.
 	if err != nil {
 		return sdk.Result{}, err
 	}
+	// kv_create only makes new keys (check-and-set 0), so it can be undone
+	// by deleting the key; kv_put only replaces existing ones, and the old
+	// value isn't kept anywhere, so it's destructive and has no undo.
+	create := call.Action == "kv_create"
+	switch {
+	case create && found:
+		return sdk.Result{}, fmt.Errorf("%s already exists; kv_create never overwrites (kv_put replaces a value, and is destructive)", key)
+	case !create && !found:
+		return sdk.Result{}, fmt.Errorf("there's no key %s; kv_create makes a new one", key)
+	}
 	idx := uint64(0)
 	if found {
 		idx = old.ModifyIndex
 	}
-	if p.CAS != nil && *p.CAS != idx {
+	if !create && p.CAS != nil && *p.CAS != idx {
 		return sdk.Result{}, fmt.Errorf("%s changed since (its index is %d, not %d), so this is refused", key, idx, *p.CAS)
 	}
 	if call.DryRun {
-		sum := fmt.Sprintf("Create %s (%d bytes)", key, len(val))
+		sum := fmt.Sprintf("Create %s (%d bytes); undo deletes it again", key, len(val))
 		op := "create"
 		before := map[string]any{"exists": false}
 		if found {
 			ob := old.bytes()
 			op = "update"
-			sum = fmt.Sprintf("Replace the value of %s (%d bytes → %d bytes)", key, len(ob), len(val))
+			sum = fmt.Sprintf("Replace the value of %s (%d bytes → %d bytes); the old value can't be put back", key, len(ob), len(val))
 			if bytes.Equal(ob, val) {
 				sum = fmt.Sprintf("Write %s with the value it already has", key)
 			}
@@ -674,6 +673,9 @@ func (c *conn) put(ctx context.Context, call sdk.Call, dc string, p input) (sdk.
 		return sdk.Result{}, err
 	}
 	if !ok {
+		if create {
+			return sdk.Result{}, fmt.Errorf("%s was created by someone else while this ran; nothing was written", key)
+		}
 		return sdk.Result{}, fmt.Errorf("%s changed while this ran; look again and retry", key)
 	}
 	now, _, err := c.getKV(ctx, esc, c.q(dc))
@@ -681,9 +683,9 @@ func (c *conn) put(ctx context.Context, call sdk.Call, dc string, p input) (sdk.
 		return sdk.Result{}, err
 	}
 	res, err := sdk.JSON(map[string]any{"name": key, "bytes": len(val), "modifyIndex": now.ModifyIndex, "created": !found})
-	if found {
-		res.Undo = sdk.UndoWith("kv_put", undoValue(key, dc, old, now.ModifyIndex), "Put back the old value of "+key)
-	} else {
+	if create {
+		// kv_delete isn't sensitive (it takes a key and an index, never a
+		// value), so the engine keeps this undo for a sensitive action.
 		in := map[string]any{"key": key, "cas": now.ModifyIndex}
 		if dc != "" {
 			in["datacenter"] = dc
@@ -710,7 +712,7 @@ func (c *conn) del(ctx context.Context, call sdk.Call, dc string, p input) (sdk.
 		return sdk.Result{}, fmt.Errorf("%s changed since (its index is %d, not %d), so this is refused", key, old.ModifyIndex, *p.CAS)
 	}
 	if call.DryRun {
-		sum := fmt.Sprintf("Delete %s (%d bytes); undo puts it back", key, len(old.bytes()))
+		sum := fmt.Sprintf("Delete %s (%d bytes); the value is gone for good, there's no undo", key, len(old.bytes()))
 		if old.Session != "" {
 			sum += "; the key is LOCKED by a session"
 		}
@@ -725,9 +727,9 @@ func (c *conn) del(ctx context.Context, call sdk.Call, dc string, p input) (sdk.
 	if !ok {
 		return sdk.Result{}, fmt.Errorf("%s changed while this ran; look again and retry", key)
 	}
-	res, err := sdk.JSON(map[string]any{"name": key, "deleted": true})
-	res.Undo = sdk.UndoWith("kv_put", undoValue(key, dc, old, 0), "Put "+key+" back")
-	return res, err
+	// No undo: putting the key back would mean keeping its value in the
+	// audit log.
+	return sdk.JSON(map[string]any{"name": key, "deleted": true})
 }
 
 func (c *conn) deregister(ctx context.Context, call sdk.Call, dc string, p input) (sdk.Result, error) {

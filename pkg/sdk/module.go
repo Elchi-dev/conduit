@@ -68,6 +68,9 @@ type ActionSpec struct {
 	DryRun bool `json:"dryRun,omitempty"`
 	// Sensitive actions carry secret material in their input or output.
 	// Conduit never writes either to the audit log, approvals or events.
+	// A sensitive action's undo is kept only when it calls an action that
+	// isn't sensitive (so its input carries no secret); otherwise it's
+	// dropped, and the action shouldn't declare Reversible.
 	Sensitive bool `json:"sensitive,omitempty"`
 }
 

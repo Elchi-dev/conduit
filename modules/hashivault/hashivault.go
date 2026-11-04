@@ -1,6 +1,7 @@
 // Package hashivault works with a HashiCorp Vault or OpenBao server through
 // its HTTP API: health and seal status, mounts, KV version 2 secrets (key
-// names and metadata, values only when asked for one key at a time, writing
+// names and metadata, values only through the destructive reveal_secret for
+// the keys it names, writing
 // a secret and restoring an earlier version), the token's own lookup and
 // lease counts. It never seals, unseals or changes policies.
 package hashivault
@@ -87,8 +88,12 @@ func mountPath(s string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if system[strings.SplitN(s, "/", 2)[0]] {
-		return "", fmt.Errorf("%s isn't a KV mount", s)
+	// Any segment, not just the first: with a namespace prefix (ns1/sys),
+	// Vault routes the rest to that namespace's system backends.
+	for _, seg := range strings.Split(s, "/") {
+		if system[strings.ToLower(seg)] {
+			return "", fmt.Errorf("%s isn't a KV mount", s)
+		}
 	}
 	return esc, nil
 }
@@ -99,7 +104,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	path := `"path":{"type":"string","description":"Secret path in the mount, e.g. app/prod/db"}`
 	return sdk.Manifest{
 		ID: "hashivault", Name: "HashiCorp Vault", Version: "0.1.0", Category: "Security", Icon: "key",
-		Description: "HashiCorp Vault or OpenBao: seal status, mounts, KV v2 key names and metadata, reading one value, writing a secret and restoring a version, token lookup, lease counts.",
+		Description: "HashiCorp Vault or OpenBao: seal status, mounts, KV v2 key names and metadata, revealing named values (destructive), writing a secret and restoring a version, token lookup, lease counts.",
 		Presets:     []string{"homelab", "developer", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["address","token"],"properties":{
 			"address":{"type":"string","description":"The Vault API, e.g. https://vault.example.com:8200"},
@@ -115,8 +120,10 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + mount + `,"path":{"type":"string","description":"Folder, empty for the top"}}}`)},
 			{Name: "metadata", Title: "Secret metadata", Description: "A secret's current version, versions with created and deleted times, max versions and custom metadata. Never values.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["path"],"properties":{` + mount + `,` + path + `}}`)},
-			{Name: "read_secret", Title: "Read a secret", Description: "The key names of a secret (one version). Values are returned only for the keys named in reveal.", Risk: sdk.RiskRead, Sensitive: true,
-				Input: sdk.Schema(`{"type":"object","required":["path"],"properties":{` + mount + `,` + path + `,"version":{"type":"integer","minimum":1,"description":"Version, the current one when empty"},"reveal":{"type":"array","items":{"type":"string"},"maxItems":32,"description":"Keys whose values to return"}}}`)},
+			{Name: "read_secret", Title: "Read a secret's keys", Description: "The key names of a secret (one version), with its version and created time. Never values: reveal_secret returns those.", Risk: sdk.RiskRead,
+				Input: sdk.Schema(`{"type":"object","required":["path"],"properties":{` + mount + `,` + path + `,"version":{"type":"integer","minimum":1,"description":"Version, the current one when empty"}}}`)},
+			{Name: "reveal_secret", Title: "Reveal secret values", Description: "The values of the named keys of a secret (one version, up to 32 keys), and only those. Revealing a credential is destructive: it can't be taken back.", Risk: sdk.RiskDestructive, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","required":["path","keys"],"properties":{` + mount + `,` + path + `,"version":{"type":"integer","minimum":1,"description":"Version, the current one when empty"},"keys":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32,"description":"Keys whose values to return"}}}`)},
 			{Name: "write_secret", Title: "Write a secret", Description: "Writes a new version of a secret, replacing the credentials it holds (or, with merge, only the keys given). The preview lists keys added, changed and removed, never values. Undo restores the previous version.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["path","data"],"properties":{` + mount + `,` + path + `,"data":{"type":"object","additionalProperties":{"type":"string"},"description":"Key to value"},"merge":{"type":"boolean","description":"Keep the keys not given"}}}`)},
 			{Name: "restore_version", Title: "Restore a secret version", Description: "Writes an earlier version's data as the new current version (KV v2 keeps the history). The preview shows key names of both. Undo restores the version that was current.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
@@ -282,7 +289,8 @@ type input struct {
 	Mount         string            `json:"mount"`
 	Path          string            `json:"path"`
 	Version       int               `json:"version"`
-	Reveal        []string          `json:"reveal"`
+	Reveal        []string          `json:"reveal"` // refused: read_secret returns names only
+	Keys          []string          `json:"keys"`
 	Data          map[string]string `json:"data"`
 	Merge         bool              `json:"merge"`
 	ExpectCurrent int               `json:"expectCurrent"`
@@ -561,7 +569,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(map[string]any{"name": s.display, "currentVersion": md.Current, "oldestVersion": md.Oldest, "maxVersions": md.MaxVersions, "casRequired": md.CASRequired,
 			"created": md.Created, "updated": md.Updated, "deleteVersionAfter": md.DeleteAfter, "customMetadata": md.Custom, "versions": versions})
 
-	case "read_secret":
+	case "read_secret", "reveal_secret":
+		if call.Action == "read_secret" && len(p.Reveal) > 0 {
+			return sdk.Result{}, errors.New("read_secret returns key names only; reveal_secret (destructive) returns the values of named keys")
+		}
 		s, err := c.locate(p)
 		if err != nil {
 			return sdk.Result{}, err
@@ -569,12 +580,18 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if p.Version < 0 {
 			return sdk.Result{}, errors.New("the version is 1 or more")
 		}
-		if len(p.Reveal) > 32 {
-			return sdk.Result{}, errors.New("reveal up to 32 keys at a time")
-		}
-		for _, k := range p.Reveal {
-			if !validKey(k) {
-				return sdk.Result{}, fmt.Errorf("%q isn't a key name", k)
+		reveal := call.Action == "reveal_secret"
+		if reveal {
+			if len(p.Keys) == 0 {
+				return sdk.Result{}, errors.New("name the keys whose values to reveal (read_secret lists them)")
+			}
+			if len(p.Keys) > 32 {
+				return sdk.Result{}, errors.New("reveal up to 32 keys at a time")
+			}
+			for _, k := range p.Keys {
+				if !validKey(k) {
+					return sdk.Result{}, fmt.Errorf("%q isn't a key name", k)
+				}
 			}
 		}
 		data, v, created, err := c.read(ctx, s, p.Version)
@@ -582,10 +599,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := map[string]any{"name": s.display, "version": v, "created": created, "names": keys(data)}
-		if len(p.Reveal) > 0 {
+		if reveal {
 			vals := map[string]json.RawMessage{}
 			var missing []string
-			for _, k := range p.Reveal {
+			for _, k := range p.Keys {
 				if val, ok := data[k]; ok {
 					vals[k] = val
 				} else {

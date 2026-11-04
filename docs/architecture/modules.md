@@ -34,8 +34,26 @@ specific as a single action on a single instance.
 
 Actions marked `sensitive` carry secret material. Conduit never writes their
 input or output to the audit log, approvals or events: field names and the
-`name` field are kept, every other value becomes `"[redacted]"`. Sensitive
-actions cannot be undone through the log.
+`name` field are kept, every other value becomes `"[redacted]"`.
+
+An undo token never holds secret material either. The log keeps a sensitive
+action's undo only when it calls an action of the same module that isn't
+sensitive itself (that action's input is logged in the clear whenever it
+runs, so it carries no secret): creating a key undone by deleting it, a
+secret write undone by restoring a version number, a share removed by its
+id. An undo that would replay a value (put the old value back) is dropped,
+so such an action must not declare itself `reversible` or promise an undo;
+when the old value is lost, the action is `destructive`. The daemon's risk
+lint (`internal/daemon/risk_lint_test.go`) checks every sensitive,
+reversible built-in action against this.
+
+Revealing a credential is destructive: it can't be taken back. Modules whose
+job is holding credentials (Conduit's vault, HashiCorp Vault) return only
+names and metadata from read actions, and values from a separate `reveal…`
+action marked `destructive` and `sensitive`; the risk lint fails any
+`reveal…` action below destructive. Other sensitive reads (a KV value, a
+mail, a log) return data that may contain a secret, which is why the log
+never keeps it.
 
 ## Secrets
 

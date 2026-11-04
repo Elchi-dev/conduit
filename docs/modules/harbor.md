@@ -19,7 +19,7 @@ self-signed certificate, enter its SHA-256 `fingerprint`.
 | `scan` | write | Starts a vulnerability scan of one artifact (`reference`: tag or digest). The preview shows the last scan's status. |
 | `delete_artifact` | destructive | Deletes an artifact and every tag on it; its blobs go at the next garbage collection. The preview lists the tags, size and push time, and calls out immutable tags (Harbor refuses those). The delete goes by digest, so a tag moved in between can't take another artifact. No undo. |
 | `delete_tag` | destructive | Removes one `tag`; the artifact stays under its digest and other tags. The preview warns when it would be left untagged (retention rules may then remove it). Undo adds the tag back to the same digest. |
-| `add_tag` | write | Adds a `tag` to an artifact given by digest or another tag. The preview warns when the tag is on another artifact. Undo removes it. |
+| `add_tag` | destructive | Adds a `tag` to an artifact given by digest or another tag. Destructive because a tag such as `latest` or `prod` can be what deploy automation (Argo CD Image Updater, Flux, Watchtower, a webhook) pulls or watches, so a new tag can roll the artifact out. The preview warns when the tag is on another artifact. Undo removes it. |
 | `robots` | read | Robot accounts, system-wide or of one `project`, with level, permissions (resource:action), disabled, expiry and whether they've expired. Never their secrets. |
 
 **Security.** Credentials go as HTTP basic auth, and the client follows

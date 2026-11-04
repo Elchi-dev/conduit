@@ -25,6 +25,11 @@ a self-signed certificate, enter its SHA-256 `fingerprint`.
 | `logout_user` | destructive | Ends every session of a user in the realm. The preview counts them. Access tokens already issued stay valid until they expire. |
 | `clients` | read | Clients (with a `search` on the client ID): ID, name, protocol, public, confidential or bearer-only, enabled, service account, standard flow, root URL, redirect URIs and authenticator. Never client secrets or registration tokens. |
 
+`disable_user` and `enable_user` read the user's full representation and
+send it back with only `enabled` changed (leaving out credentials), because
+Keycloak's update replaces the user and could otherwise drop attributes or
+required actions.
+
 **Security.** The client secret is used only for the client-credentials
 grant at the realm's token endpoint on the configured host; the access
 token is kept in memory until shortly before it expires and fetched again

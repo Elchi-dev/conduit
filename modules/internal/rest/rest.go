@@ -105,10 +105,14 @@ func (c *Client) Do(ctx context.Context, method, path string, q url.Values, body
 const maxRawMessage = 80
 
 // secretRun matches what looks like a credential: a Bearer or Basic scheme
-// with its value, token=/key:/secret=/password= with a value, or any long run of token characters (API keys,
+// with its value, a URL's user:password@, token=/key:/secret=/password= with a value, or any long run of token characters (API keys,
 // session ids, JWT segments). Error text is shown to agents and kept in
 // the audit log, and some servers echo the request's credentials in it.
-var secretRun = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}|(token|key|secret|password)["']?\s*[:=]\s*["']?[^\s"',;&]{6,}|[A-Za-z0-9_-]{20,}`)
+var secretRun = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}|://[^\s/:@]+:[^\s/@]+@|(token|key|secret|password)["']?\s*[:=]\s*["']?[^\s"',;&]{6,}|[A-Za-z0-9_-]{20,}`)
+
+// Redact replaces anything that looks like a credential with [redacted], for
+// modules passing on free text a server produced (check output, logs).
+func Redact(s string) string { return redact(s) }
 
 // redact replaces anything that looks like a credential with [redacted].
 func redact(s string) string {

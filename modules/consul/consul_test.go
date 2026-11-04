@@ -112,7 +112,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /v1/health/state/any":
 		io.WriteString(w, `[{"Node":"c1","Name":"web http","Status":"critical","ServiceID":"web-1","ServiceName":"web"},{"Node":"c2","Name":"web http","Status":"passing","ServiceID":"web-2","ServiceName":"web"},{"Node":"c1","Name":"serf","Status":"passing"}]`)
 	case "GET /v1/health/state/critical":
-		io.WriteString(w, `[{"Node":"c1","Name":"web http","Status":"critical","Output":"connection refused","ServiceID":"web-1","ServiceName":"web"}]`)
+		io.WriteString(w, `[{"Node":"c1","Name":"web http","Status":"critical","Output":"connection refused; dsn=postgres://app:hunter2@db:5432 token=abcdef123456","ServiceID":"web-1","ServiceName":"web"}]`)
 	case "GET /v1/health/service/web":
 		io.WriteString(w, `[{"Node":{"Node":"c1","Address":"10.0.0.2"},"Service":{"ID":"web-1","Service":"web","Port":80},"Checks":[{"Name":"web http","Status":"critical","ServiceID":"web-1"}]},
 			{"Node":{"Node":"c2","Address":"10.0.0.3"},"Service":{"ID":"web-2","Service":"web","Port":80},"Checks":[]}]`)
@@ -160,7 +160,8 @@ func TestConsulReads(t *testing.T) {
 		{"members", `{}`, `"role":"server","status":"alive"`},
 		{"services", `{}`, `"checks":{"critical":1,"passing":1,"warning":0},"instances":2,"service":"web","status":"critical"`},
 		{"service_health", `{"service":"web"}`, `"id":"web-2"`},
-		{"checks", `{}`, `"output":"connection refused"`},
+		// Credentials echoed by a check are redacted.
+		{"checks", `{}`, `"output":"connection refused; dsn=postgres[redacted]db:5432 [redacted]"`},
 		{"kv_list", `{"prefix":"config/"}`, `"folders":["config/app/"]`},
 		{"kv_list", `{"prefix":"config/","recurse":true}`, `"config/app/db"`},
 	} {
@@ -190,42 +191,55 @@ func TestConsulKVWrites(t *testing.T) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	plan, _ := json.Marshal(r.Plan)
-	if strings.Contains(string(plan), "hunter2") || strings.Contains(string(plan), "n3w") || !strings.Contains(r.Plan.Summary, "23 bytes → 19 bytes") {
+	if strings.Contains(string(plan), "hunter2") || strings.Contains(string(plan), "n3w") || !strings.Contains(r.Plan.Summary, "23 bytes → 19 bytes") ||
+		!strings.Contains(r.Plan.Summary, "can't be put back") || strings.Contains(r.Plan.Summary, "undo") {
 		t.Fatalf("%s", plan)
 	}
+	// kv_put replaces an existing value and claims no undo.
 	r, err = invoke(m, "kv_put", `{"key":"config/app/db","value":"postgres://u:n3w@db"}`, false)
-	if err != nil || string(f.kv["config/app/db"].val) != "postgres://u:n3w@db" || r.Undo == nil || r.Undo.Action != "kv_put" {
+	if err != nil || string(f.kv["config/app/db"].val) != "postgres://u:n3w@db" || r.Undo != nil {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if !strings.Contains(f.seen[len(f.seen)-2], "cas=5") {
 		t.Fatal(f.seen)
 	}
-	undo := string(r.Undo.Input)
-	if _, err := invoke(m, "kv_put", undo, false); err != nil || string(f.kv["config/app/db"].val) != "postgres://u:hunter2@db" {
+	if _, err := invoke(m, "kv_put", `{"key":"config/app/db","value":"x","cas":5}`, false); err == nil || !strings.Contains(err.Error(), "changed since") {
 		t.Fatal(err)
 	}
-	// The same undo again: the key moved on.
-	if _, err := invoke(m, "kv_put", undo, false); err == nil || !strings.Contains(err.Error(), "changed since") {
+	// kv_put never creates.
+	if _, err := invoke(m, "kv_put", `{"key":"config/new","value":"x"}`, false); err == nil || !strings.Contains(err.Error(), "kv_create") || f.kv["config/new"] != nil {
 		t.Fatal(err)
 	}
-	// A new key's undo deletes it.
-	r, err = invoke(m, "kv_put", `{"key":"config/new","value":"x"}`, false)
-	if err != nil || r.Undo == nil || r.Undo.Action != "kv_delete" {
-		t.Fatalf("%+v %v", r, err)
+	// kv_create never overwrites, not even when given a cas.
+	n := len(f.seen)
+	if _, err := invoke(m, "kv_create", `{"key":"config/app/db","value":"evil","cas":11}`, false); err == nil || !strings.Contains(err.Error(), "already exists") || string(f.kv["config/app/db"].val) != "postgres://u:n3w@db" {
+		t.Fatal(err)
+	}
+	for _, s := range f.seen[n:] {
+		if strings.HasPrefix(s, "PUT") {
+			t.Fatal(s)
+		}
+	}
+	p, err := invoke(m, "kv_create", `{"key":"config/new","value":"x"}`, true)
+	if err != nil || p.Plan == nil || !strings.Contains(p.Plan.Summary, "undo deletes it") || f.kv["config/new"] != nil {
+		t.Fatalf("%+v %v", p, err)
+	}
+	// A new key's undo deletes it, carrying no value.
+	r, err = invoke(m, "kv_create", `{"key":"config/new","value":"s3cret-new"}`, false)
+	if err != nil || r.Undo == nil || r.Undo.Action != "kv_delete" || strings.Contains(string(r.Undo.Input), "s3cret") || !strings.Contains(f.seen[len(f.seen)-2], "cas=0") {
+		t.Fatalf("%+v %v %v", r, err, f.seen)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.kv["config/new"] != nil {
 		t.Fatal(err)
 	}
-	// Binary values round-trip through delete and its undo.
+	// kv_delete says the value is gone, and claims no undo.
+	p, err = invoke(m, "kv_delete", `{"key":"top"}`, true)
+	if err != nil || strings.Contains(p.Plan.Summary, "puts it back") || !strings.Contains(p.Plan.Summary, "no undo") {
+		t.Fatalf("%+v %v", p, err)
+	}
 	r, err = invoke(m, "kv_delete", `{"key":"top"}`, false)
-	if err != nil || f.kv["top"] != nil || r.Undo == nil {
+	if err != nil || f.kv["top"] != nil || r.Undo != nil {
 		t.Fatalf("%+v %v", r, err)
-	}
-	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || string(f.kv["top"].val) != "\xff\x00" {
-		t.Fatal(err)
-	}
-	if _, err := invoke(m, "kv_put", `{"key":"top","value":"x","cas":0}`, false); err == nil {
-		t.Fatal("cas 0 on an existing key accepted")
 	}
 }
 
@@ -251,10 +265,14 @@ func TestConsulDeregister(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		switch a.Name {
 		case "deregister_service", "kv_delete":
-			if a.Risk != sdk.RiskDestructive || !a.DryRun {
+			if a.Risk != sdk.RiskDestructive || !a.DryRun || a.Reversible || a.Sensitive {
 				t.Fatal(a.Name)
 			}
 		case "kv_put":
+			if a.Risk != sdk.RiskDestructive || !a.DryRun || a.Reversible || !a.Sensitive {
+				t.Fatal(a.Name)
+			}
+		case "kv_create":
 			if a.Risk != sdk.RiskWrite || !a.DryRun || !a.Reversible || !a.Sensitive {
 				t.Fatal(a.Name)
 			}
@@ -278,6 +296,8 @@ func TestConsulValidation(t *testing.T) {
 		{"kv_put", `{"key":"a"}`},
 		{"kv_put", `{"key":"a","value":"!!","base64":true}`},
 		{"kv_put", `{"key":"a/","value":"x"}`},
+		{"kv_create", `{"key":"a"}`},
+		{"kv_create", `{"key":"../b","value":"x"}`},
 		{"kv_delete", `{"key":"a#b"}`},
 		{"deregister_service", `{"service":"web","id":"../../x"}`},
 		{"deregister_service", `{"service":"web","node":"a/b"}`},

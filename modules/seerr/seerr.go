@@ -84,7 +84,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id + `}}`)},
 			{Name: "search", Title: "Search", Description: "Movies and shows matching a title, with their TMDB id, year, and whether they're already available or requested.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["query"],"properties":{"query":{"type":"string","maxLength":200},"page":{"type":"integer","minimum":1,"maximum":20,"default":1}}}`)},
-			{Name: "create_request", Title: "Request media", Description: "Requests a movie or a show (all seasons or some) by TMDB id, as the API key's user (an admin, so it's usually approved at once). Undo deletes the request.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "create_request", Title: "Request media", Description: "Requests a movie or a show (all seasons or some) by TMDB id, as the API key's user. Destructive because that user is usually an admin, whose requests are approved at once and sent to Radarr or Sonarr to download, like approve. Undo deletes the request, but what Radarr or Sonarr already started stays.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["mediaType","tmdbId"],"properties":{
 					"mediaType":{"type":"string","enum":["movie","tv"]},
 					"tmdbId":{"type":"integer","minimum":1},

@@ -115,7 +115,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "alarms", Title: "Alarms", Description: "What needs attention across all UPSes: on battery, low battery, replace battery, overload, forced shutdown, driver alarms, stale data.", Risk: sdk.RiskRead},
 			{Name: "variables", Title: "Variables", Description: "All of a UPS's variables (as upsc shows them).", Risk: sdk.RiskRead, Input: sdk.Schema(beeper)},
 			{Name: "commands", Title: "Instant commands", Description: "The instant commands the UPS's driver offers, and which of them Conduit will send (only the beeper ones).", Risk: sdk.RiskRead, Input: sdk.Schema(beeper)},
-			{Name: "beeper_disable", Title: "Silence beeper", Description: "Turns the UPS's audible alarm off (instcmd beeper.disable). Undo turns it back on.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true, Input: sdk.Schema(beeper)},
+			{Name: "beeper_disable", Title: "Silence beeper", Description: "Turns the UPS's audible alarm off (instcmd beeper.disable). Undo turns it back on. Destructive because a silenced UPS no longer warns anyone nearby of a power failure or a failing battery.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true, Input: sdk.Schema(beeper)},
 			{Name: "beeper_enable", Title: "Enable beeper", Description: "Turns the UPS's audible alarm on (instcmd beeper.enable). Undo turns it off again.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true, Input: sdk.Schema(beeper)},
 		},
 	}
@@ -870,6 +870,12 @@ func (c *conn) instcmd(ctx context.Context, s *session, ups, cmd string) error {
 	}
 	if c.user == "" {
 		return errors.New("instant commands need a upsd user: enter a username and password from upsd.users (with instcmds = beeper.disable, beeper.enable)")
+	}
+	// In auto mode a plain session means upsd (or someone on the path)
+	// said there's no TLS; the password goes out in the clear only when
+	// tls is explicitly off.
+	if !s.secure && c.mode != "off" {
+		return errors.New("upsd didn't offer STARTTLS, so the password isn't sent in plain text: set CERTFILE in upsd.conf, or set tls to off to allow a plain-text login")
 	}
 	pw, err := c.host.Secret(ctx, c.pass)
 	if err != nil {

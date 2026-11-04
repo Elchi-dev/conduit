@@ -19,7 +19,6 @@ import (
 	"github.com/elchi-dev/conduit/modules/bookstack"
 	"github.com/elchi-dev/conduit/modules/caddy"
 	"github.com/elchi-dev/conduit/modules/calendar"
-	"github.com/elchi-dev/conduit/modules/chatwoot"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/comfyui"
 	"github.com/elchi-dev/conduit/modules/consul"
@@ -34,7 +33,6 @@ import (
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/firefly"
 	"github.com/elchi-dev/conduit/modules/fly"
-	"github.com/elchi-dev/conduit/modules/freshdesk"
 	"github.com/elchi-dev/conduit/modules/frigate"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
@@ -94,7 +92,6 @@ import (
 	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
 	"github.com/elchi-dev/conduit/modules/portainer"
-	"github.com/elchi-dev/conduit/modules/posthog"
 	"github.com/elchi-dev/conduit/modules/powerdns"
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/pterodactyl"
@@ -143,8 +140,6 @@ import (
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
-	"github.com/elchi-dev/conduit/modules/zammad"
-	"github.com/elchi-dev/conduit/modules/zendesk"
 	"github.com/elchi-dev/conduit/modules/zigbee2mqtt"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -269,7 +264,6 @@ func builtins(app *App) []sdk.Module {
 		uptimerobot.New(),
 		healthchecks.New(),
 		betterstack.New(),
-		posthog.New(),
 		hue.New(),
 		shelly.New(),
 		esphome.New(),
@@ -279,10 +273,6 @@ func builtins(app *App) []sdk.Module {
 		matrix.New(),
 		signal.New(),
 		listmonk.New(),
-		zendesk.New(),
-		freshdesk.New(),
-		chatwoot.New(),
-		zammad.New(),
 		ghost.New(),
 		bookstack.New(),
 		outline.New(),

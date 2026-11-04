@@ -273,3 +273,48 @@ func TestSabnzbdRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %s %v %q", r.Output, err, leaked)
 	}
 }
+
+// While SABnzbd fetches an NZB by URL the job is named after the URL, and a
+// failed fetch lands in history named by it: the indexer's key mustn't show.
+func TestSabnzbdHidesKeyInFetchNames(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch q.Get("mode") {
+		case "queue":
+			if q.Get("name") == "pause" {
+				io.WriteString(w, `{"status":true}`)
+				return
+			}
+			io.WriteString(w, `{"queue":{"status":"Downloading","noofslots":1,"slots":[{"nzo_id":"SABnzbd_nzo_grab01","status":"Grabbing",
+				"filename":"Trying to fetch NZB from https://indexer.example/api?t=get&id=1&apikey=LEAKMEKEY"}]}}`)
+		case "history":
+			io.WriteString(w, `{"history":{"noofslots":2,"slots":[
+				{"nzo_id":"SABnzbd_nzo_fail01","name":"https://indexer.example/api?t=get&id=1&apikey=LEAKMEKEY","status":"Failed","storage":"/dl/api?t=get&apikey=LEAKMEKEY"},
+				{"nzo_id":"SABnzbd_nzo_fail02","name":"https://nzb.example/getnzb/abc.nzb&i=1&r=LEAKMEKEY","status":"Failed"}]}}`)
+		default:
+			io.WriteString(w, `{"status":true}`)
+		}
+	}))
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: srv.URL, APIKey: "secret://sab"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://sab": "sabkey"}), "s", raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ action, in, want string }{
+		{"queue", `{}`, `Trying to fetch NZB from https://indexer.example/api`},
+		{"history", `{}`, `"name":"https://nzb.example/getnzb/abc.nzb"`},
+	} {
+		r, err := invoke(m, c.action, c.in, false)
+		if err != nil || strings.Contains(string(r.Output), "LEAKME") || !strings.Contains(string(r.Output), c.want) {
+			t.Fatalf("%s: %s %v", c.action, r.Output, err)
+		}
+	}
+	r, err := invoke(m, "pause", `{"jobs":["SABnzbd_nzo_grab01"]}`, true)
+	if b, _ := json.Marshal(r.Plan); err != nil || r.Plan == nil || strings.Contains(string(b), "LEAKME") {
+		t.Fatalf("%s %v", b, err)
+	}
+	if safeName("Show.S01E01.1080p_WEB_DL_GROUPNAME_LONG") != "Show.S01E01.1080p_WEB_DL_GROUPNAME_LONG" {
+		t.Fatal("a plain name was changed")
+	}
+}

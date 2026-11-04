@@ -177,13 +177,15 @@ func (c *conn) call(ctx context.Context, q url.Values, out any) error {
 		if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
 			msg = msg[:i]
 		}
+		// Redact before cutting, so a key at the cut isn't half shown.
+		msg = rest.Redact(msg)
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}
 		if msg == "" {
 			msg = "the request failed"
 		}
-		return errors.New("SABnzbd: " + rest.Redact(msg))
+		return errors.New("SABnzbd: " + msg)
 	}
 	if out != nil {
 		if err := json.Unmarshal(raw, out); err != nil {
@@ -271,6 +273,31 @@ func (c *conn) history(ctx context.Context, limit int, failed bool, ids []string
 	return out.History.Slots, out.History.Count, err
 }
 
+// safeName hides an indexer's key in a job's name or folder: while SABnzbd
+// fetches an NZB from a URL, the job is named "Trying to fetch NZB from
+// <url>", and a failed fetch goes to history named by the URL itself (and
+// a fallback folder name can be the URL's last part, query and all). Any URL
+// loses its query (and anything after an "&" in its path, where Newznab
+// download links carry the key), and the rest passes through the redaction
+// filter; names without a URL or a key= are left alone.
+func safeName(s string) string {
+	low := strings.ToLower(s)
+	if !strings.Contains(low, "://") && !strings.Contains(low, "key=") {
+		return s
+	}
+	fields := strings.Fields(s)
+	for i, f := range fields {
+		if strings.Contains(f, "://") {
+			f = rest.CleanURL(f)
+			if j := strings.IndexByte(f, '&'); j >= 0 {
+				f = f[:j]
+			}
+			fields[i] = f
+		}
+	}
+	return rest.Redact(strings.Join(fields, " "))
+}
+
 func num(s string) float64 {
 	f, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	return f
@@ -335,7 +362,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		jobs := []map[string]any{}
 		for _, s := range q.Slots {
-			jobs = append(jobs, map[string]any{"id": s.ID, "name": s.Name, "status": s.Status, "progress": num(s.Percentage),
+			jobs = append(jobs, map[string]any{"id": s.ID, "name": safeName(s.Name), "status": s.Status, "progress": num(s.Percentage),
 				"sizeMB": num(s.MB), "leftMB": num(s.MBLeft), "timeLeft": s.TimeLeft, "category": s.Category, "priority": s.Priority})
 		}
 		return sdk.JSON(map[string]any{"status": q.Status, "paused": q.Paused, "speedKiBs": num(q.KBPerSec), "leftMB": num(q.MBLeft),
@@ -347,7 +374,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		out := []map[string]any{}
 		for _, s := range slots {
-			e := map[string]any{"id": s.ID, "name": s.Name, "status": s.Status, "sizeMB": s.Bytes >> 20, "category": s.Category,
+			e := map[string]any{"id": s.ID, "name": safeName(s.Name), "status": s.Status, "sizeMB": s.Bytes >> 20, "category": s.Category,
 				"downloadSeconds": s.DownloadTime}
 			if s.Completed > 0 {
 				e["completed"] = time.Unix(s.Completed, 0).UTC().Format(time.RFC3339)
@@ -356,7 +383,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				e["failure"] = rest.Redact(s.FailMessage)
 			}
 			if s.Storage != "" {
-				e["path"] = s.Storage
+				e["path"] = safeName(s.Storage)
 			}
 			out = append(out, e)
 		}
@@ -458,7 +485,7 @@ func (c *conn) pauseResume(ctx context.Context, call sdk.Call, in []string) (sdk
 		}
 		change = append(change, id)
 		b, _ := json.Marshal(s.Status)
-		changes = append(changes, sdk.Change{Target: s.Name, Op: call.Action, Before: b})
+		changes = append(changes, sdk.Change{Target: safeName(s.Name), Op: call.Action, Before: b})
 	}
 	if len(change) == 0 {
 		return sdk.JSON(map[string]any{"changed": []string{}, "note": "nothing to change"})
@@ -566,13 +593,13 @@ func (c *conn) delete(ctx context.Context, dry bool, p input) (sdk.Result, error
 	for _, s := range q.Slots {
 		if want[s.ID] && names[s.ID] == "" {
 			inQueue = append(inQueue, s.ID)
-			names[s.ID] = s.Name + " (queue)"
+			names[s.ID] = safeName(s.Name) + " (queue)"
 		}
 	}
 	for _, s := range hist {
 		if want[s.ID] && names[s.ID] == "" {
 			inHist = append(inHist, s.ID)
-			names[s.ID] = s.Name + " (history)"
+			names[s.ID] = safeName(s.Name) + " (history)"
 		}
 	}
 	for _, id := range ids {

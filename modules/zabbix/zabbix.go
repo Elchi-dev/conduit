@@ -93,7 +93,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "hosts", Title: "Hosts", Description: "Hosts with their visible name, whether they're monitored or in maintenance, groups, and interfaces with availability.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"query":{"type":"string","description":"Part of the name"},"limit":{"type":"integer","default":100,"minimum":1,"maximum":1000}}}`)},
 			{Name: "maintenances", Title: "Maintenance", Description: "Maintenance periods: name, window, whether data is collected, and the hosts and groups they cover.", Risk: sdk.RiskRead},
-			{Name: "acknowledge", Title: "Acknowledge problems", Description: "Marks problems as acknowledged, optionally with a message. Undo unacknowledges the ones that weren't (the message stays).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "acknowledge", Title: "Acknowledge problems", Description: "Marks problems as acknowledged, optionally with a message. Acknowledged problems stop escalations that wait for an acknowledgement, so this is destructive. Undo unacknowledges the ones that weren't (the message stays).", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["events"],"properties":{` + events + `,` + message + `}}`)},
 			{Name: "unacknowledge", Title: "Unacknowledge problems", Description: "Takes the acknowledgement off problems (Zabbix 5.0 or later). Undo acknowledges them again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["events"],"properties":{` + events + `}}`)},
@@ -172,10 +172,11 @@ func (e *apiError) err() error {
 	if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
 		msg = msg[:i]
 	}
+	msg = rest.Redact(msg) // before cutting, so a key at the cut isn't half shown
 	if len(msg) > 200 {
 		msg = msg[:200]
 	}
-	return errors.New("Zabbix: " + rest.Redact(msg))
+	return errors.New("Zabbix: " + msg)
 }
 
 // rpc calls one method; with auth, it sends the token.

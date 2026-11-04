@@ -32,4 +32,8 @@ names and categories be one line before anything is sent. NZB URLs from
 indexers usually carry the indexer's API key, so `add_url` is a sensitive
 action: its input stays out of the audit log, previews and output show the
 URL without its query, and history entries never include the NZB's
-source URL.
+source URL. While SABnzbd fetches an NZB it names the job after the URL,
+and a failed fetch goes to history under it: `queue`, `history` and
+previews show such names without the URL's query (or anything after an `&`
+in its path, where Newznab links carry the key), passed through the
+redaction filter.

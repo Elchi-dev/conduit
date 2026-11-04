@@ -17,7 +17,7 @@ hosts. For a self-signed certificate, set `fingerprint`.
 | `problems` | read | Current problems, newest first: event id, name, severity, hosts, since when, acknowledged and suppressed. Filter by `minSeverity`, `acknowledged` or `hosts` (host ids), up to `limit`. |
 | `hosts` | read | Id, technical and visible name, whether it's monitored or in maintenance, groups, and interfaces with type, address, port and availability. `query` matches part of the name. |
 | `maintenances` | read | Id, name, description, the active window, whether data is collected, and the hosts and groups covered. |
-| `acknowledge` | write | Acknowledges up to 100 problems by event id, optionally with a `message`. The preview lists the ones that change; undo unacknowledges those (the message stays in the history). |
+| `acknowledge` | destructive | Acknowledges up to 100 problems by event id, optionally with a `message`. The preview lists the ones that change; undo unacknowledges those (the message stays in the history). It is destructive because escalation steps that wait for an acknowledgement stop. |
 | `unacknowledge` | write | Takes the acknowledgement off problems. Undo acknowledges them again. |
 | `close_problems` | destructive | Closes problems by hand, optionally with a `message`. Their triggers must allow manual close. With a preview; no undo. |
 | `create_maintenance` | destructive | Puts `hosts` and/or `groups` into maintenance for `minutes` (5 to 43200) from now, with or without data collection (`collectData`, default on), which suppresses their problems and notifications. The preview names the hosts and groups and the window. Undo deletes it. |

@@ -35,4 +35,7 @@ before anything is sent. Tracker URLs, which carry private tracker
 passkeys, are never read; error text from trackers is passed through the
 redaction filter, and previews show added URLs without their query string.
 The URLs you add are in the action's input, so they're in the audit log:
-prefer magnet links over `.torrent` URLs with a passkey.
+prefer magnet links over `.torrent` URLs with a passkey. Transmission
+reads an entry that isn't a `magnet:?` link or a URL it recognises as a
+file on its own disk, so entries must start with a lowercase `magnet:?`,
+`http://` or `https://`, and URLs may not hold spaces or backslashes.

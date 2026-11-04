@@ -223,11 +223,11 @@ func (c *conn) rpc(ctx context.Context, method string, args, out any) error {
 			return errors.New("unexpected answer: is this Transmission's RPC address?")
 		}
 		if env.Result != "success" {
-			msg := env.Result
+			msg := rest.Redact(env.Result) // before cutting, so a key at the cut isn't half shown
 			if len(msg) > 200 {
 				msg = msg[:200]
 			}
-			return errors.New("Transmission: " + rest.Redact(msg))
+			return errors.New("Transmission: " + msg)
 		}
 		if out != nil && len(env.Arguments) > 0 {
 			if err := json.Unmarshal(env.Arguments, out); err != nil {
@@ -613,18 +613,22 @@ func (c *conn) add(ctx context.Context, dry bool, p input) (sdk.Result, error) {
 	for _, s := range p.URLs {
 		s = strings.TrimSpace(s)
 		u, err := url.Parse(s)
-		if err != nil || strings.ContainsAny(s, "\r\n") || len(s) > 8192 {
+		// Transmission reads a "filename" that isn't a magnet:? link or a
+		// URL it accepts (its scheme check is case-sensitive) as a path on
+		// its own disk, so the entry must start exactly as Transmission
+		// expects, and a URL hold no spaces or backslashes.
+		if err != nil || strings.ContainsAny(s, "\r\n") || len(s) > 8192 || !strings.HasPrefix(s, u.Scheme+":") {
 			return sdk.Result{}, errors.New("each entry is a magnet: link or an http(s) URL")
 		}
 		switch u.Scheme {
 		case "magnet":
 			h := magnetHash(u)
-			if h == "" {
+			if h == "" || !strings.HasPrefix(s, "magnet:?") {
 				return sdk.Result{}, errors.New("a magnet link needs its xt=urn:btih: (or btmh) hash")
 			}
 			items = append(items, item{raw: s, name: display(u), hash: h})
 		case "http", "https":
-			if u.Host == "" {
+			if u.Host == "" || !strings.HasPrefix(s, u.Scheme+"://") || strings.ContainsAny(s, "\t \\") {
 				return sdk.Result{}, errors.New("each entry is a magnet: link or an http(s) URL")
 			}
 			items = append(items, item{raw: s, name: display(u)})

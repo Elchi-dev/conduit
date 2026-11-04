@@ -209,13 +209,14 @@ func (e *rpcError) err() error {
 	if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
 		msg = msg[:i] // a traceback follows
 	}
+	msg = rest.Redact(msg) // before cutting, so a key at the cut isn't half shown
 	if len(msg) > 200 {
 		msg = msg[:200]
 	}
 	if msg == "" {
 		msg = fmt.Sprintf("error %d", e.Code)
 	}
-	return errors.New("Deluge: " + rest.Redact(msg))
+	return errors.New("Deluge: " + msg)
 }
 
 // login signs in and makes sure the Web UI is connected to a daemon.

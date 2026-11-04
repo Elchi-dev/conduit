@@ -244,6 +244,9 @@ func TestTransmissionValidation(t *testing.T) {
 	for _, c := range []struct{ action, in string }{
 		{"pause", `{}`}, {"pause", `{"hashes":["../x"]}`}, {"delete", `{"hashes":["abc"]}`},
 		{"add", `{"urls":["file:///etc/passwd"]}`}, {"add", `{"urls":["magnet:?dn=nohash"]}`}, {"add", `{}`},
+		// Transmission would read these as paths on its disk.
+		{"add", `{"urls":["HTTP://tracker.example/1.torrent"]}`}, {"add", `{"urls":["http://tracker.example/a b.torrent"]}`},
+		{"add", `{"urls":["MAGNET:?xt=urn:btih:` + strings.Repeat("a", 40) + `"]}`},
 		{"set_speed_limits", `{}`}, {"set_speed_limits", `{"downloadKBs":-1}`},
 		{"torrents", `{"status":"bogus"}`}, {"torrents", `{"sort":"bogus"}`},
 	} {

@@ -317,6 +317,9 @@ func (s *Server) registryUnrate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code, b, err := hubCall(r.Context(), http.MethodDelete, base+pkgPath(name)+"/reviews/mine", tok, nil)
+	if err == nil && code < 300 {
+		s.auditConfig(r, "module_unrated", "", map[string]any{"name": name})
+	}
 	passOn(w, code, b, err)
 }
 

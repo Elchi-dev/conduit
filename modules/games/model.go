@@ -66,7 +66,10 @@ func (l launchSpec) describe() string {
 	if l.URI != "" {
 		return l.URI
 	}
-	return strings.TrimSpace(l.Exe + " " + strings.Join(l.Args, " "))
+	if l.Exe == "" {
+		return ""
+	}
+	return commandLine(l.Exe, l.Args)
 }
 
 // launcherInfo describes a launcher the module knows.

@@ -353,12 +353,12 @@ func (s *Server) clientIP(r *http.Request) string {
 	return host
 }
 
-// limited allows each client address n requests per 10 minutes on an
-// endpoint.
+// limited allows each client address (an IPv6 client by its /64) n
+// requests per 10 minutes on an endpoint.
 func (s *Server) limited(name string, n int, h http.HandlerFunc) http.HandlerFunc {
 	w := ratelimit.New(n, 10*time.Minute, 50000)
 	return func(rw http.ResponseWriter, r *http.Request) {
-		if !w.Add(s.clientIP(r)) {
+		if !w.Add(s.sourceKey(r)) {
 			rw.Header().Set("Retry-After", "600")
 			writeErr(rw, http.StatusTooManyRequests, "too many attempts; try again in a few minutes")
 			return

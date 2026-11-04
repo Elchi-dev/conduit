@@ -105,7 +105,7 @@ actions return the new ones. Most actions that change messages also take
 | `send_draft` | write, sensitive | Sends a draft (threading kept) and removes it from Drafts |
 | `delete_draft` | destructive | |
 | `tls_status` | read | The certificates IMAP and SMTP present, the pins, whether they match |
-| `trust_certificate` | write | Pin a fingerprint for `imap`, `smtp` or `both`; empty forgets the pin. Undo restores the previous one. |
+| `trust_certificate` | destructive, dry run | Pin a fingerprint for `imap`, `smtp` or `both`; empty forgets the pin. It changes which server the mailbox trusts with its password and mail, so the preview shows the old and the new fingerprint of each endpoint. Undo restores the previous one. |
 
 `reply`, `reply_all` and `forward` take `draft: true` to save to Drafts
 instead of sending.
@@ -125,6 +125,10 @@ events, only the preview does.
 to the mailbox's **attachments folder** (`attachmentsDir`, for example the
 Files module's folder). Paths can't leave that folder. All attachments of one
 message together are capped at `maxAttachmentMB` (25 by default, at most 50).
+An optional `type` must be a valid media type (`text/plain`,
+`application/pdf; name=x`): it's parsed and written out again, and one with
+line breaks or that doesn't parse is refused; without it the type comes from
+the file name, else `application/octet-stream`.
 
 **Labels.** With `labelMode: folders` (Proton, Gmail) a label is a folder:
 labelling copies the message into `<labelPrefix><label>` (`Labels/Work` on

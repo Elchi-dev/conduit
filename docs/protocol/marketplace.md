@@ -51,7 +51,10 @@ directly. Images no longer on a listing are deleted.
 name, tags and description, filters by `category`, and sorts by:
 
 - `relevance` (default): an exact or module-name match, then a name match,
-  then a tag match, then a description match; ties go to more installs;
+  then a tag match, then a description match. Ties go to the order of
+  magnitude of `installs` (under 10, 10 to 99, 100 to 999, … 100,000 and
+  more), then to the weighted rating below, then to the name, so the raw
+  install count (which anonymous pings feed) can't decide on its own;
 - `installs`: daemons that have it now;
 - `rating`: a weighted average, as if every package also had two 3-star
   ratings, so one 5-star rating doesn't beat fifty 4.8s;
@@ -73,8 +76,14 @@ which packages one daemon has. The hub hashes it again before storing it.
 - `downloads` counts installs, once per daemon per package per day.
 - `installs` counts daemons that sent an install or heartbeat in the last 45
   days and no uninstall since.
-- Pings are rate-limited per address. Turn them off on a daemon with the
-  setting `registry.pings` = `off`.
+- Pings are rate-limited per address (300 per 10 minutes); an IPv6 client
+  counts by its /64, the block one holder usually has.
+- One source (an address, or an IPv6 /64) can add at most 3 daemon ids a
+  package doesn't count yet per package per UTC day; further new ids still
+  get `202` with `"counted": false`. Heartbeats, updates and uninstalls of
+  daemons the package already counts aren't limited by this. The hub keeps
+  these per-source counts in memory only, for the current day.
+- Turn pings off on a daemon with the setting `registry.pings` = `off`.
 
 ## Ratings and reviews
 

@@ -38,6 +38,7 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/netguard"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -234,34 +235,9 @@ func noPrivate(ctx context.Context, network, addr string) (net.Conn, error) {
 	return d.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
 }
 
-// Ranges a sandboxed module must never reach besides the stdlib's loopback,
-// private and link-local checks: carrier-grade NAT (also Tailscale), NAT64
-// (which can embed any IPv4 address, private ones included), benchmarking,
-// 6to4, Teredo and the "this network" block.
-var reservedNets = func() []*net.IPNet {
-	var out []*net.IPNet
-	for _, c := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "198.18.0.0/15", "64:ff9b::/96", "64:ff9b:1::/48", "2002::/16", "2001::/32", "fc00::/7"} {
-		_, n, _ := net.ParseCIDR(c)
-		out = append(out, n)
-	}
-	return out
-}()
-
-func reserved(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
-		return true
-	}
-	if v4 := ip.To4(); v4 != nil {
-		ip = v4
-	}
-	for _, n := range reservedNets {
-		if n.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
+// reserved is the shared "local or reserved address" check (carrier-grade
+// NAT, NAT64, 6to4, Teredo and the rest besides loopback and private).
+func reserved(ip net.IP) bool { return netguard.Reserved(ip) }
 
 // Options tune Start (tests allow local servers).
 type Options struct {

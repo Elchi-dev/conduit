@@ -155,17 +155,52 @@ func (a *account) loadAttachment(in AttachmentIn, room int64) (part, error) {
 		name = "attachment"
 	}
 	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
-	ct := in.Type
-	if ct == "" {
-		ct = mime.TypeByExtension(filepath.Ext(name))
-	}
-	if ct == "" {
-		ct = "application/octet-stream"
+	ct, err := attachmentType(in.Type, name)
+	if err != nil {
+		return part{}, err
 	}
 	return part{Attachment: Attachment{Name: name, Type: ct, SizeKB: len(data) / 1024}, Data: data}, nil
 }
 
-func bracket(id string) string { return "<" + strings.Trim(id, "<> ") + ">" }
+// attachmentType checks and normalises an attachment's media type: it must
+// parse as one (type/subtype with optional parameters) and is re-formatted,
+// so nothing the caller sends reaches the MIME header raw. Empty uses the
+// file name's extension, else application/octet-stream.
+func attachmentType(t, name string) (string, error) {
+	if strings.ContainsAny(t, "\r\n") {
+		return "", userErr("attachment %q has an invalid type", name)
+	}
+	t = strings.TrimSpace(t)
+	if t == "" {
+		t = mime.TypeByExtension(filepath.Ext(name))
+		if t == "" {
+			return "application/octet-stream", nil
+		}
+	}
+	mt, params, err := mime.ParseMediaType(t)
+	if err != nil || !strings.Contains(mt, "/") {
+		return "", userErr("attachment %q has an invalid type %q", name, t)
+	}
+	out := mime.FormatMediaType(mt, params)
+	if out == "" || strings.ContainsAny(out, "\r\n") {
+		return "", userErr("attachment %q has an invalid type %q", name, t)
+	}
+	return out, nil
+}
+
+// bracket makes a message id for In-Reply-To and References: angle brackets
+// around it, with CR, LF and other control characters and any brackets or
+// spaces inside removed, so an id taken from a received message can't add
+// header lines.
+func bracket(id string) string {
+	id = strings.Map(func(r rune) rune {
+		if r < 0x21 || r == 0x7f || r == '<' || r == '>' {
+			return -1
+		}
+		return r
+	}, id)
+	return "<" + id + ">"
+}
 
 // build turns a Compose into a go-mail message. With forDraft the Bcc list
 // is kept as a header so the draft remembers it.
@@ -195,14 +230,16 @@ func (a *account) build(c *Compose, forDraft bool) (*gomail.Msg, error) {
 			return nil, err
 		}
 	}
-	if c.inReplyTo != "" {
-		msg.SetGenHeaderPreformatted(gomail.HeaderInReplyTo, bracket(c.inReplyTo))
+	if id := bracket(c.inReplyTo); id != "<>" {
+		msg.SetGenHeaderPreformatted(gomail.HeaderInReplyTo, id)
 	}
-	if len(c.references) > 0 {
-		refs := make([]string, 0, len(c.references))
-		for _, r := range c.references {
-			refs = append(refs, bracket(r))
+	refs := make([]string, 0, len(c.references))
+	for _, r := range c.references {
+		if id := bracket(r); id != "<>" {
+			refs = append(refs, id)
 		}
+	}
+	if len(refs) > 0 {
 		msg.SetGenHeaderPreformatted(gomail.HeaderReferences, strings.Join(refs, "\r\n "))
 	}
 	msg.Subject(c.Subject)

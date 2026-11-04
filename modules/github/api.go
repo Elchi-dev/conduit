@@ -8,18 +8,20 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
+
+	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
 // The generic REST and GraphQL actions reach anything the token allows that
-// the dedicated actions don't cover. Their risk follows what the call can
-// do: GET is read, POST/PATCH/PUT are write and DELETE is destructive, each
-// a separate action so the policy engine (and approvals) see the real risk.
-// GraphQL queries are read; anything with a mutation must go through
-// graphql_mutate (write).
+// the dedicated actions don't cover. GET is read; POST/PATCH/PUT and DELETE
+// are destructive, because a generic write reaches what the dedicated
+// actions rate destructive (merging, transferring, changing visibility or
+// branch protection). GraphQL documents whose operations are all queries are
+// read; anything else must go through graphql_mutate (destructive).
 
 // apiPath checks a path relative to the API base: it must start with "/",
 // stay on the API (no scheme, no host, no "//", no ".." segments) and may
@@ -72,8 +74,8 @@ func init() {
 		func(ctx context.Context, a *account, _ args, c sdk.Call) (sdk.Result, error) {
 			return a.apiCall(ctx, c, http.MethodGet)
 		})
-	def(sdk.ActionSpec{Name: "api_write", Title: "GitHub API (write)", Risk: sdk.RiskWrite, DryRun: true, Input: apiSchema(http.MethodPost, http.MethodPatch, http.MethodPut),
-		Description: "Any POST, PATCH or PUT request to the GitHub REST API."},
+	def(sdk.ActionSpec{Name: "api_write", Title: "GitHub API (write)", Risk: sdk.RiskDestructive, DryRun: true, Input: apiSchema(http.MethodPost, http.MethodPatch, http.MethodPut),
+		Description: "Any POST, PATCH or PUT request to the GitHub REST API. Destructive, because it reaches merges, transfers, visibility and branch protection."},
 		func(ctx context.Context, a *account, _ args, c sdk.Call) (sdk.Result, error) {
 			var in apiIn
 			if err := sdk.Decode(c, &in); err != nil {
@@ -94,13 +96,16 @@ func init() {
 		Description: "A GraphQL query. Mutations are refused here; use graphql_mutate.",
 		Input:       schema("query", pText("query", "GraphQL query"), pObj("variables", ""))},
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
-			if isMutation(p.Query) {
-				return sdk.Result{}, errors.New("this GraphQL document contains a mutation or subscription; use graphql_mutate")
+			if err := needText("query", p.Query); err != nil {
+				return sdk.Result{}, err
+			}
+			if err := queryOnly(p.Query); err != nil {
+				return sdk.Result{}, err
 			}
 			return a.graphql(ctx, p.Query, p.Variables)
 		})
-	def(sdk.ActionSpec{Name: "graphql_mutate", Title: "GitHub GraphQL (mutation)", Risk: sdk.RiskWrite, DryRun: true,
-		Description: "A GraphQL document that changes something.",
+	def(sdk.ActionSpec{Name: "graphql_mutate", Title: "GitHub GraphQL (mutation)", Risk: sdk.RiskDestructive, DryRun: true,
+		Description: "A GraphQL document that changes something. Destructive, because mutations include deletes, merges and transfers.",
 		Input:       schema("query", pText("query", "GraphQL mutation"), pObj("variables", ""))},
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			if err := needText("query", p.Query); err != nil {
@@ -113,21 +118,24 @@ func init() {
 		})
 }
 
-// mutationRe finds a mutation or subscription operation. It looks at the
-// document with comments and strings removed, so a word inside a string
-// doesn't count, while any real operation of those kinds does.
-var (
-	mutationRe   = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])(mutation|subscription)([^A-Za-z0-9_]|$)`)
-	gqlStringRe  = regexp.MustCompile(`"""(?s:.*?)"""|"(?:[^"\\\n]|\\.)*"`)
-	gqlCommentRe = regexp.MustCompile(`#[^\n]*`)
-)
-
-func isMutation(q string) bool {
-	s := gqlStringRe.ReplaceAllString(q, `""`)
-	s = gqlCommentRe.ReplaceAllString(s, "")
-	// A field or alias named "mutation" is refused too; being conservative
-	// only costs a switch to graphql_mutate.
-	return mutationRe.MatchString(s)
+// queryOnly parses q as a GraphQL document and accepts it only when every
+// operation in it is a query (fragments are fine). A document that doesn't
+// parse is refused: GitHub's parser and ours could disagree about it, and a
+// read must not be able to smuggle a mutation past this check.
+func queryOnly(q string) error {
+	doc, err := parser.ParseQueryWithTokenLimit(&ast.Source{Input: q}, 100000)
+	if err != nil {
+		return fmt.Errorf("the GraphQL document doesn't parse: %v", err)
+	}
+	if len(doc.Operations) == 0 {
+		return errors.New("the GraphQL document has no operation")
+	}
+	for _, op := range doc.Operations {
+		if op.Operation != ast.Query {
+			return errors.New("this GraphQL document contains a mutation or subscription; use graphql_mutate")
+		}
+	}
+	return nil
 }
 
 func (a *account) graphqlURL() string {

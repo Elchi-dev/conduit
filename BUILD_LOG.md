@@ -3,6 +3,34 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · Phases 34–38 — Signed releases, owner requests, fourth review
+
+- **Phase 34, releases:** v0.3.0 (all platforms, macOS runners back) and
+  v0.3.1, the first signed release: checksums, desktop updates and the
+  Android APK are signed with the owner's keys (stored as secrets on 4 Nov).
+  The F-Droid step needs a repository address ending in `/repo`, which
+  release downloads can't give; it no longer fails releases. Upgrade test
+  from every release and a load test run in CI. API stability promise
+  (`docs/api/stability.md`). MIT license.
+- **Phase 35, owner requests:** marketplace (listings, install counts,
+  ratings, reviews, reports, moderation, advisories), a game library across
+  ten launchers with play tracking, the standards module for AI (MCP
+  resources and prompts), Milanote, Proton Mail Bridge with full mailbox
+  management, Spotify listening history and playback (after Spotify's
+  February 2026 API changes), GitHub with most of its REST API by token,
+  and WireGuard networks that module instances can use.
+- **Phase 36, fourth security review** of everything since v0.3.0. Fixed:
+  a GraphQL mutation hidden in comments passed the read-only check (now a
+  real parser); raw GitHub writes reached destructive operations (now
+  destructive); custom games could run any command at write risk (programs
+  now destructive, launch links allow-listed); cover downloads could be
+  redirected to internal addresses (`internal/netguard`: public addresses
+  only, checked at connect time); mail attachment types could inject
+  headers; install pings could inflate counts (capped per source, IPv6 by
+  /64); re-pinning the mail certificate is destructive; registry icon ids
+  from a hub are checked.
+- **Not done:** daemon passkeys (the helper was stopped).
+
 ## 2026-11-04 · Phases 31–33 — German, six modules, third review
 
 - **Phase 31, German:** every string in the web app goes through `t()` /

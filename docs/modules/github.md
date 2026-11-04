@@ -62,8 +62,8 @@ agents may read, writes ask, destructive actions ask more firmly):
   re-running, dispatching a workflow, setting a secret.
 - **destructive**: deleting a repository, branch, tag, release, label,
   milestone, webhook, environment, deploy key, secret or variable,
-  transferring a repository, removing people or teams, merging, and
-  `api_delete`.
+  transferring a repository, removing people or teams, merging, and the
+  generic `api_write`, `api_delete` and `graphql_mutate`.
 
 Every write and destructive action (apart from the first-generation ones
 listed below) supports a dry run, so an approval shows what will happen:
@@ -96,16 +96,21 @@ generic API call. Undo is offered where it's natural:
 For anything the dedicated actions don't cover (rulesets, Pages, packages,
 Dependabot, projects ...):
 
-- `api_read` sends a GET, `api_write` a POST, PATCH or PUT and `api_delete`
-  a DELETE, so each call carries the risk of what it does. `path` must be an
+- `api_read` sends a GET (read), `api_write` a POST, PATCH or PUT and
+  `api_delete` a DELETE. `api_write` is destructive, like `api_delete`: a
+  generic write reaches what the dedicated actions rate destructive (merging
+  a pull request, transferring or archiving a repository, changing its
+  visibility or branch protection), so it can't be a cheaper way to do them. `path` must be an
   API path starting with `/` (absolute URLs, `//host`, `..` segments and
   whitespace are refused); the token is only ever sent to the configured API
   host. `query` is an object of string parameters and `body` any JSON. The
   answer has the status, the body (cut at 1 MB) and the `Link` header for
   paging.
-- `graphql_read` runs queries and refuses any document containing a
-  `mutation` or `subscription` (outside strings and comments);
-  `graphql_mutate` runs mutations as a write.
+- `graphql_read` parses the document with a GraphQL parser and runs it
+  only if every operation in it is a query (fragments are fine); a
+  `mutation` or `subscription` operation, or a document that doesn't parse,
+  is refused. `graphql_mutate` runs anything else and is destructive, since
+  mutations include deletes, merges and transfers.
 
 ## Limits
 
@@ -138,5 +143,5 @@ Health shows the signed-in user, and turns degraded when fewer than 100 API
 calls are left in the hour.
 
 Recommended policy: let agents read; ask for writes; keep destructive
-actions, `set_secret` and `api_write`/`api_delete` on ask (destructive ones
-are by default).
+actions (which include `api_write`, `api_delete` and `graphql_mutate`) and
+`set_secret` on ask (destructive ones are by default).

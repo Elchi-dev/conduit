@@ -251,7 +251,7 @@ function Icon({ id, name }: { id?: string; name: string }) {
       </span>
     );
   }
-  return <img className="reg-icon" src={`/api/v1/registry/media/${id}`} alt="" width={40} height={40} onError={() => setFailed(true)} />;
+  return <img className="reg-icon" src={`/api/v1/registry/media/${encodeURIComponent(id)}`} alt="" width={40} height={40} onError={() => setFailed(true)} />;
 }
 
 function Verified() {
@@ -347,7 +347,7 @@ function Details({ name, installedVersion }: { name: string; installedVersion?: 
         <div className="reg-shots">
           {l.screenshots.map((s) => (
             <figure key={s.id}>
-              <img src={`/api/v1/registry/media/${s.id}`} alt={s.caption || t("Screenshot")} loading="lazy" />
+              <img src={`/api/v1/registry/media/${encodeURIComponent(s.id ?? "")}`} alt={s.caption || t("Screenshot")} loading="lazy" />
               {s.caption && <figcaption className="xs muted">{s.caption}</figcaption>}
             </figure>
           ))}

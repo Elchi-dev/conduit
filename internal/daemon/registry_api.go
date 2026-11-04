@@ -201,6 +201,14 @@ func (s *Server) registrySearch(w http.ResponseWriter, r *http.Request) {
 	if out == nil {
 		out = []regListing{}
 	}
+	// The app builds /api/v1/registry/media/{icon} from this, so only a
+	// media id the daemon would serve passes; anything else is dropped.
+	for i := range out {
+		if !regMediaRe.MatchString(out[i].Icon) {
+			out[i].Icon = ""
+		}
+		out[i].Source = httpsOnly(out[i].Source)
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

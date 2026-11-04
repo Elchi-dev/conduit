@@ -347,7 +347,7 @@ func TestPaginationBounded(t *testing.T) {
 func TestAPIRiskSplit(t *testing.T) {
 	m, f := setupFake(t, false)
 	must := mustT(t)
-	want := map[string]sdk.Risk{"api_read": sdk.RiskRead, "api_write": sdk.RiskWrite, "api_delete": sdk.RiskDestructive, "graphql_read": sdk.RiskRead, "graphql_mutate": sdk.RiskWrite}
+	want := map[string]sdk.Risk{"api_read": sdk.RiskRead, "api_write": sdk.RiskDestructive, "api_delete": sdk.RiskDestructive, "graphql_read": sdk.RiskRead, "graphql_mutate": sdk.RiskDestructive}
 	for name, risk := range want {
 		s, ok := findSpec(m, name)
 		if !ok || s.Risk != risk {

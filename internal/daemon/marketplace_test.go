@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/internal/hub"
 )
 
@@ -205,6 +206,25 @@ func TestMarketplaceThroughHub(t *testing.T) {
 	kc := client{t: t, base: c.base, token: k.Secret}
 	if st := kc.do("POST", "/api/v1/registry/reports", map[string]string{"name": "acme/echo", "reason": "spam"}, nil); st != 403 {
 		t.Fatalf("key reports: %d", st)
+	}
+	// Removing a rating follows the same rules as rating: people only, a
+	// valid name, and it's audited.
+	if st := kc.do("DELETE", "/api/v1/registry/reviews?name=acme/echo", nil, nil); st != 403 {
+		t.Fatalf("key unrates: %d", st)
+	}
+	if st := c.do("DELETE", "/api/v1/registry/reviews?name=../../v1/admin", nil, nil); st != 400 {
+		t.Fatalf("unrate with a bad name: %d", st)
+	}
+	if st := c.do("DELETE", "/api/v1/registry/reviews?name=acme/echo", nil, nil); st != 204 {
+		t.Fatalf("unrate %d", st)
+	}
+	var audit []core.Entry
+	c.do("GET", "/api/v1/audit?limit=5", nil, &audit)
+	if len(audit) == 0 || audit[0].Action != "module_unrated" || !strings.Contains(string(audit[0].Input), "acme/echo") {
+		t.Fatalf("unrate not audited: %+v", audit)
+	}
+	if st := c.do("PUT", "/api/v1/registry/reviews", map[string]any{"name": "acme/echo", "rating": 4, "body": "Does what it says"}, nil); st != 201 {
+		t.Fatalf("rate again %d", st)
 	}
 
 	// Report it; the operator yanks the version as malware.

@@ -359,6 +359,15 @@ func TestProtonBridgeTrustOnFirstUse(t *testing.T) {
 	}
 	// The person checks the new fingerprint and trusts it.
 	x2 := tester{t, m2, "proton"}
+	// The preview shows the old and the new fingerprint and changes nothing.
+	dr, err := x2.try("trust_certificate", map[string]any{"fingerprint": mm.Got, "endpoint": "imap"}, true)
+	if err != nil || dr.Plan == nil || len(dr.Plan.Changes) != 1 || !strings.Contains(string(dr.Plan.Changes[0].Before), want) ||
+		!strings.Contains(string(dr.Plan.Changes[0].After), mm.Got) {
+		t.Fatalf("trust preview %v %+v", err, dr.Plan)
+	}
+	if h := m2.Health(ctx, "proton"); h.Status != "down" {
+		t.Fatalf("the preview changed the pin: %+v", h)
+	}
 	r := x2.call("trust_certificate", map[string]any{"fingerprint": strings.ToLower(strings.ReplaceAll(mm.Got, ":", ""))})
 	if h := m2.Health(ctx, "proton"); h.Status != "ok" {
 		t.Fatalf("after trusting: %+v", h)

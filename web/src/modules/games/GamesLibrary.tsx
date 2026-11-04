@@ -595,7 +595,8 @@ function AddGame({ instance, onDone }: { instance: string; onDone: () => void })
       if (f.workingDir.trim()) input.workingDir = f.workingDir.trim();
       if (f.uri.trim()) input.uri = f.uri.trim();
       if (f.coverUrl.trim()) input.coverUrl = f.coverUrl.trim();
-      return act(instance, "add_custom", input);
+      // A launch link alone is a write (add_link); a program is destructive.
+      return act(instance, input.executable ? "add_custom" : "add_link", input);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["games", instance] });

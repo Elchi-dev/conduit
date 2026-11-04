@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -131,8 +132,8 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{
 					"id":{"type":"string","description":"Game id"},
 					"timeoutSeconds":{"type":"integer","minimum":1,"maximum":120,"default":10,"description":"How long to wait before ending it"}}}`)},
-			{Name: "add_custom", Title: "Add a game", Risk: sdk.RiskWrite, Reversible: true,
-				Description: "Adds a game by hand: a program (with arguments and working folder) or a launch link. It registers a program Conduit can start.",
+			{Name: "add_custom", Title: "Add a game", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Description: "Adds a game by hand: a program (with arguments and working folder) or a launch link. It registers a program Conduit will run on play, so it's as powerful as running that command; the preview shows the full command line.",
 				Input: sdk.Schema(`{"type":"object","required":["title"],"properties":{
 					"title":{"type":"string"},
 					"executable":{"type":"string","description":"Program to run (full path, or a name on PATH)"},
@@ -141,6 +142,14 @@ func (m *Module) Manifest() sdk.Manifest {
 					"uri":{"type":"string","description":"Or a launch link, e.g. steam://rungameid/… or heroic://…"},
 					"coverUrl":{"type":"string","description":"https link to a portrait (2:3) cover image"},
 					"processNames":{"type":"array","items":{"type":"string"},"description":"Process names that mean it's running, when it isn't the program itself"},
+					"installPath":{"type":"string","description":"Folder the game lives in, to recognise it running"}}}`)},
+			{Name: "add_link", Title: "Add a game by launch link", Risk: sdk.RiskWrite, Reversible: true,
+				Description: "Adds a game by hand that starts through a launcher's link (steam://, heroic://, goggalaxy:// …). Programs need add_custom.",
+				Input: sdk.Schema(`{"type":"object","required":["title","uri"],"properties":{
+					"title":{"type":"string"},
+					"uri":{"type":"string","description":"A launcher link, e.g. steam://rungameid/… or heroic://…"},
+					"coverUrl":{"type":"string","description":"https link to a portrait (2:3) cover image"},
+					"processNames":{"type":"array","items":{"type":"string"},"description":"Process names that mean it's running"},
 					"installPath":{"type":"string","description":"Folder the game lives in, to recognise it running"}}}`)},
 			{Name: "remove_custom", Title: "Remove an added game", Risk: sdk.RiskWrite, Reversible: true,
 				Description: "Removes a game you added by hand. Its play history stays.", Input: sdk.Schema(idInput)},
@@ -419,6 +428,9 @@ func startProgram(exe string, args []string, dir string) error {
 func (m *Module) start(g Game) error {
 	switch {
 	case g.launch.URI != "":
+		if !validURI(g.launch.URI) {
+			return fmt.Errorf("%s has a launch link Conduit won't open (only launcher links such as steam:// are)", g.Title)
+		}
 		if err := m.Open(g.launch.URI); err != nil {
 			return fmt.Errorf("couldn't hand %s to %s: %w", g.Title, launcherName(g.Launcher), err)
 		}
@@ -564,7 +576,7 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		return sdk.JSON(map[string]any{"launched": g.Title, "id": g.ID, "launcher": g.Launcher, "via": g.launch.describe()})
 	case "stop":
 		return m.stop(ctx, c)
-	case "add_custom":
+	case "add_custom", "add_link":
 		return m.addCustom(c)
 	case "remove_custom":
 		return m.removeCustom(c)
@@ -794,21 +806,35 @@ func customGame(c CustomGame) Game {
 	return g
 }
 
+// launchSchemes are the link schemes the module itself generates for
+// launchers. Only these are handed to the system: on Windows rundll32 (and
+// xdg-open or open elsewhere) passes any link to its protocol handler, and
+// some handlers (ms-msdt:, search-ms:, ms-officecmd: …) run code or open
+// remote files.
+var launchSchemes = map[string]bool{
+	"steam": true, "heroic": true, "com.epicgames.launcher": true, "goggalaxy": true,
+	"battlenet": true, "origin2": true, "uplay": true, "msxbox": true, "itch": true, "lutris": true,
+}
+
 func validURI(u string) bool {
 	scheme, rest, ok := strings.Cut(u, ":")
-	if !ok || rest == "" || len(scheme) < 2 {
+	if !ok || rest == "" || strings.ContainsAny(u, "\x00\r\n\t ") {
 		return false
 	}
-	switch strings.ToLower(scheme) {
-	case "file", "javascript", "data", "vbscript":
-		return false
-	}
-	for _, r := range scheme {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.') {
-			return false
+	return launchSchemes[strings.ToLower(scheme)]
+}
+
+// commandLine shows a program and its arguments as one line, quoting any
+// argument with spaces or quotes so the preview shows exactly what runs.
+func commandLine(exe string, args []string) string {
+	parts := make([]string, 0, len(args)+1)
+	for _, a := range append([]string{exe}, args...) {
+		if a == "" || strings.ContainsAny(a, " \t\r\n\"'\\") {
+			a = strconv.Quote(a)
 		}
+		parts = append(parts, a)
 	}
-	return true
+	return strings.Join(parts, " ")
 }
 
 func (m *Module) addCustom(c sdk.Call) (sdk.Result, error) {
@@ -818,15 +844,30 @@ func (m *Module) addCustom(c sdk.Call) (sdk.Result, error) {
 	}
 	in.Title = strings.TrimSpace(in.Title)
 	in.Executable = strings.TrimSpace(in.Executable)
+	in.URI = strings.TrimSpace(in.URI)
+	if c.Action == "add_link" {
+		// add_link is a write: it can't register a program.
+		if in.Executable != "" || len(in.Args) > 0 || in.WorkingDir != "" {
+			return sdk.Result{}, errors.New("add_link only takes a launch link; a program needs add_custom")
+		}
+		if in.URI == "" {
+			return sdk.Result{}, errors.New("give the launch link (uri)")
+		}
+	}
 	switch {
 	case in.Title == "":
 		return sdk.Result{}, errors.New("give the game a title")
 	case in.Executable == "" && in.URI == "":
 		return sdk.Result{}, errors.New("say how to start it: a program or a launch link")
+	case in.Executable != "" && in.URI != "":
+		return sdk.Result{}, errors.New("give a program or a launch link, not both")
 	case in.URI != "" && !validURI(in.URI):
-		return sdk.Result{}, errors.New("the launch link needs a scheme such as steam:// or heroic:// (file and script links aren't allowed)")
+		return sdk.Result{}, errors.New("the launch link must be a launcher link: steam, heroic, com.epicgames.launcher, goggalaxy, battlenet, origin2, uplay, msxbox, itch or lutris")
 	case in.CoverURL != "" && !strings.HasPrefix(in.CoverURL, "https://"):
 		return sdk.Result{}, errors.New("the cover must be an https link")
+	}
+	if c.DryRun {
+		return addPlan(in), nil
 	}
 	st, err := m.store()
 	if err != nil {
@@ -865,6 +906,30 @@ func (m *Module) addCustom(c sdk.Call) (sdk.Result, error) {
 	return r, err
 }
 
+// addPlan previews add_custom: the full command line, working folder and
+// arguments of the program play will run, or the link it will open.
+func addPlan(in CustomGame) sdk.Result {
+	j := func(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
+	target := "game " + strconv.Quote(in.Title)
+	if in.Executable == "" {
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Add %q; play opens the link %s", in.Title, in.URI),
+			Changes: []sdk.Change{{Target: target, Op: "create", After: j(map[string]any{"uri": in.URI})}}}}
+	}
+	dir := in.WorkingDir
+	if dir == "" {
+		dir = "(the daemon's working folder)"
+	}
+	args := in.Args
+	if args == nil {
+		args = []string{}
+	}
+	cmd := commandLine(in.Executable, in.Args)
+	return sdk.Result{Plan: &sdk.Plan{
+		Summary: fmt.Sprintf("Add %q; play will run this command on this computer as the daemon's user: %s (in %s)", in.Title, cmd, dir),
+		Changes: []sdk.Change{{Target: target, Op: "create", After: j(map[string]any{
+			"commandLine": cmd, "executable": in.Executable, "args": args, "workingDir": in.WorkingDir})}}}}
+}
+
 func (m *Module) removeCustom(c sdk.Call) (sdk.Result, error) {
 	var in struct {
 		ID string `json:"id"`
@@ -899,7 +964,11 @@ func (m *Module) removeCustom(c sdk.Call) (sdk.Result, error) {
 	}
 	m.invalidate()
 	r, err := sdk.JSON(map[string]string{"removed": removed.Title, "id": removed.ID})
-	r.Undo = sdk.UndoWith("add_custom", removed, "Add "+removed.Title+" back")
+	undo := "add_custom"
+	if removed.Executable == "" {
+		undo = "add_link"
+	}
+	r.Undo = sdk.UndoWith(undo, removed, "Add "+removed.Title+" back")
 	return r, err
 }
 

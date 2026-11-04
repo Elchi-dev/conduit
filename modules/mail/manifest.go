@@ -100,7 +100,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "send_draft", Title: "Send a draft", Risk: sdk.RiskWrite, DryRun: true, Sensitive: true, Input: sdk.Schema(draftUID)},
 			{Name: "delete_draft", Title: "Delete a draft", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(draftUID)},
 			{Name: "tls_status", Title: "Server certificates", Description: "The certificates the IMAP and SMTP servers present, and the pinned ones.", Risk: sdk.RiskRead},
-			{Name: "trust_certificate", Title: "Trust a certificate", Description: "Pin a new certificate fingerprint (after Proton Bridge regenerated its certificate). Empty forgets the pin, so the next connection pins again.", Risk: sdk.RiskWrite, Reversible: true,
+			{Name: "trust_certificate", Title: "Trust a certificate", Description: "Pin a new certificate fingerprint (after Proton Bridge regenerated its certificate). Empty forgets the pin, so the next connection pins again. Destructive: it changes which certificate the mailbox trusts; the preview shows the old and new fingerprints.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"endpoint":{"type":"string","enum":["imap","smtp","both"],"default":"both"},"fingerprint":{"type":"string","description":"SHA-256, as tls_status shows it"}}}`)},
 		},
 		Resources: []sdk.ResourceSpec{{Kind: "message", Title: "Messages", ListAction: "inbox", GetAction: "read", ViewHint: "table"}},

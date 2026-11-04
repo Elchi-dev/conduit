@@ -23,7 +23,7 @@ once from the launcher's image server and kept.
 | itch.io | yes | yes | yes | the itch app's `db/butler.db` (SQLite): caves, games, install locations, seconds played | `itch://caves/<cave>/launch` |
 | Lutris | no | no | yes, also Flatpak | `~/.local/share/lutris/pga.db` (SQLite), covers from `coverart/` | `lutris:rungameid/<id>` |
 | Other installed games | yes | no | no | the Windows list of installed programs (both registry views and the current user), for known game publishers (Rockstar, Bethesda, CD PROJEKT, Mojang, HoYoverse, …), skipping launchers, redistributables and anti-cheat | the program from the entry's icon |
-| Added by you | yes | yes | yes | `add_custom` | the program with its arguments and working folder, or a launch link |
+| Added by you | yes | yes | yes | `add_custom` (a program), `add_link` (a launcher link) | the program with its arguments and working folder, or a launcher link |
 
 **Not supported:** Microsoft Store apps that aren't Xbox games (listing
 them needs the AppX APIs, which Conduit doesn't call); the EA app, Ubisoft
@@ -88,16 +88,26 @@ are kept. Set `"track": false` to stop recording.
 | `running` | read | Games running now: processes (pid, name, program), since when, seconds |
 | `play` | write | Starts a game (`id`) through its launcher link or its program. Refused when it's already running |
 | `stop` | destructive, dry run | Asks the game's processes to close (SIGTERM; on Windows `taskkill` without `/F`, which sends a close message), waits `timeoutSeconds` (default 10, at most 120), then ends the rest (SIGKILL; `taskkill /F /T`). The preview names the game and each process with its pid. Only processes matched to that game are touched |
-| `add_custom` | write, undoable | Adds a game: `title`, and a program (`executable`, `args`, `workingDir`) or a launch link (`uri`); optional `coverUrl` (https), `processNames`, `installPath`. `file:`, `javascript:` and `data:` links are refused. Undo removes it |
+| `add_custom` | destructive, dry run, undoable | Adds a game: `title`, and a program (`executable`, `args`, `workingDir`) or a launcher link (`uri`), not both; optional `coverUrl` (https), `processNames`, `installPath`. The preview shows the full command line, the working folder and each argument. Undo removes it |
+| `add_link` | write, undoable | Adds a game that starts through a launcher link (`title`, `uri`; optional `coverUrl`, `processNames`, `installPath`). It refuses `executable`, `args` and `workingDir`. Undo removes it |
 | `remove_custom` | write, undoable | Removes a game you added; its play history stays. Undo adds it back with the same id |
 | `refresh` | read | Looks at every launcher now (the library is otherwise cached for a minute) and reports each one: supported here, found, how many games, any error |
 | `owned` | read | Owned Steam games and hours (needs a Steam Web API key and your Steam id) |
 | `launch` | write | Starts a Steam game by `appId`. Kept for automations written before `play` |
 
 `add_custom` registers a program the daemon will start on `play`, so it is
-as powerful as running that program. Agent rules apply to it like any other
-write; if agents run with writes allowed, consider a rule that asks before
-`add_custom`.
+as powerful as running that command (like `servers.run`) and is rated
+destructive: by default an agent's call waits for approval, which shows the
+command line. A game with only a launcher link can be added with `add_link`
+as a write.
+
+Launch links are handed to the system (`rundll32 url.dll,FileProtocolHandler`
+on Windows, `open` on macOS, `xdg-open` elsewhere), which passes them to
+whatever handles the scheme. Some Windows handlers (`ms-msdt:`,
+`search-ms:`, `ms-officecmd:` …) run code or open remote files, so only the
+schemes the module itself generates are accepted, when adding a game and
+again on `play`: `steam`, `heroic`, `com.epicgames.launcher`, `goggalaxy`,
+`battlenet`, `origin2`, `uplay`, `msxbox`, `itch` and `lutris`.
 
 | Event | When | Data |
 | --- | --- | --- |
@@ -134,6 +144,11 @@ the plain action list.
 Covers come through the daemon at `GET /api/v1/games/covers/{id}` (needs
 `modules:games:read`), so the page never loads images from other sites:
 from the launcher's local cache when there is one, else downloaded once over
-https (not from addresses on the local network; JPEG, PNG, WebP, GIF or AVIF
-only, at most 8 MB) and kept. The page refreshes when `games.started` or
+https (JPEG, PNG, WebP, GIF or AVIF only, at most 8 MB) and kept. The
+download uses its own client: no proxy, https only, at most 3 redirects
+(each to https), and every connection is checked when it's made, so it can
+only reach public addresses (not loopback, private, link-local,
+carrier-grade NAT `100.64.0.0/10`, unique local, multicast, NAT64
+`64:ff9b::/96` or their IPv4-mapped forms), whatever the name resolves to or
+a redirect points at. The page refreshes when `games.started` or
 `games.stopped` arrives.

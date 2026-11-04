@@ -126,6 +126,11 @@ func likeEscape(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
+// installTier groups install counts by order of magnitude (fewer than 10,
+// 10 to 99, … 100,000 and more), for relevance ties.
+const installTier = `(CASE WHEN p.installs >= 100000 THEN 5 WHEN p.installs >= 10000 THEN 4 WHEN p.installs >= 1000 THEN 3
+		WHEN p.installs >= 100 THEN 2 WHEN p.installs >= 10 THEN 1 ELSE 0 END)`
+
 // searchPackages answers listed (not delisted) packages, searched by q,
 // filtered by category and sorted. The total is in X-Total-Count.
 func (s *Server) searchPackages(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +157,10 @@ func (s *Server) searchPackages(w http.ResponseWriter, r *http.Request) {
 	var order string
 	switch sortBy {
 	case "relevance":
-		order = "score DESC, p.installs DESC, p.downloads DESC, p.name"
+		// Ties go to the order of magnitude of installs, then the weighted
+		// rating, so a few hundred pinged installs can't buy the top spot
+		// over a better-rated package of the same size class.
+		order = "score DESC, " + installTier + " DESC, (p.rating_sum + 6.0) / (p.rating_count + 2) DESC, p.name"
 	case "installs":
 		order = "p.installs DESC, p.downloads DESC, p.name"
 	case "rating":
@@ -616,6 +624,16 @@ func (s *Server) installPing(w http.ResponseWriter, r *http.Request) {
 	now := s.now().UTC()
 	day := now.Format("2006-01-02")
 	daemon := hash(req.Name + "\x00" + req.Daemon)
+	if req.Event != "uninstall" {
+		// A daemon id the package doesn't count yet is new: one source may
+		// add only a few a day, so made-up ids can't inflate the counts.
+		var known int
+		_ = s.db.Row(ctx, `SELECT COUNT(*) FROM registry_active_installs WHERE name = ? AND daemon = ?`, req.Name, daemon).Scan(&known)
+		if known == 0 && !s.newDaemons().allow(day, s.sourceKey(r), req.Name, daemon) {
+			writeJSON(w, 202, map[string]bool{"counted": false})
+			return
+		}
+	}
 	res, err := s.db.Exec(ctx, `INSERT INTO registry_install_pings (name, daemon, day, event) VALUES (?,?,?,?) ON CONFLICT DO NOTHING`, req.Name, daemon, day, req.Event)
 	if err != nil {
 		writeErr(w, 500, "could not count it")

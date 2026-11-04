@@ -19,6 +19,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/tetratelabs/wazero v1.12.0
+	github.com/vektah/gqlparser/v2 v2.5.64
 	github.com/wneessen/go-mail v0.8.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.58.0

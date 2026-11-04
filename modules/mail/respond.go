@@ -543,6 +543,26 @@ func (m *Module) trustCertificate(a *account, call sdk.Call) (sdk.Result, error)
 		}
 		norm[ep] = n
 	}
+	if call.DryRun {
+		cur := a.state.get()
+		plan := &sdk.Plan{Summary: "Change the certificate this mailbox trusts. Check the new fingerprint against the server (Proton Bridge shows it) before approving: a wrong one lets whoever presents it read the mail and the password."}
+		for _, ep := range []string{"imap", "smtp"} {
+			fp, ok := norm[ep]
+			if !ok {
+				continue
+			}
+			old := cur.Pins[ep].Fingerprint
+			before, _ := json.Marshal(map[string]string{"fingerprint": old})
+			after, _ := json.Marshal(map[string]string{"fingerprint": fp})
+			op := "update"
+			if fp == "" {
+				op = "delete"
+				after, _ = json.Marshal(map[string]string{"fingerprint": "", "note": "forgotten; the next connection pins whatever the server presents"})
+			}
+			plan.Changes = append(plan.Changes, sdk.Change{Target: strings.ToUpper(ep) + " certificate pin", Op: op, Before: before, After: after})
+		}
+		return sdk.Result{Plan: plan}, nil
+	}
 	prev := map[string]string{}
 	err := a.state.update(func(d *stateData) {
 		for ep, fp := range norm {

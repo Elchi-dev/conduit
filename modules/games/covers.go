@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/elchi-dev/conduit/internal/netguard"
 )
 
 // maxCover bounds a cover image's size.
@@ -19,6 +22,8 @@ const maxCover = 8 << 20
 
 // ErrNoCover means a game has no cover image.
 var ErrNoCover = errors.New("this game has no cover image")
+
+var errLocalCover = errors.New("covers can't come from the local network")
 
 // Cover returns a game's cover image: from the launcher's local cache when
 // it has one, else downloaded once from the launcher's image server and
@@ -61,33 +66,32 @@ func (m *Module) Cover(ctx context.Context, id string) ([]byte, string, error) {
 	return m.download(ctx, g.Cover)
 }
 
+// coverClient fetches covers from the internet only: no proxy, https only,
+// at most 3 redirects (each to https), and every connection checked when
+// it's made, so neither a second DNS answer, a rebinding name nor a redirect
+// can reach the local network.
+var coverClient = netguard.PublicHTTPSClient(20*time.Second, 3)
+
 func (m *Module) download(ctx context.Context, raw string) ([]byte, string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" && !(m.allowPrivateCovers && u.Scheme == "http") || u.Host == "" {
 		return nil, "", errors.New("covers are only fetched over https")
 	}
-	if !m.allowPrivateCovers {
-		// Covers come from launcher caches or from the person, so refuse
-		// anything that points into the local network.
-		ips, err := net.DefaultResolver.LookupIPAddr(ctx, u.Hostname())
-		if err != nil {
-			// Behind a proxy the name may only resolve there.
-			if p, _ := http.ProxyFromEnvironment(&http.Request{URL: u}); p == nil {
-				return nil, "", fmt.Errorf("couldn't find %s", u.Hostname())
-			}
-		}
-		for _, ip := range ips {
-			if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() || ip.IP.IsUnspecified() || ip.IP.IsMulticast() {
-				return nil, "", errors.New("covers can't come from the local network")
-			}
-		}
+	client := coverClient
+	if m.allowPrivateCovers {
+		client = m.HTTP // tests, with a local server
+	} else if ip, err := netip.ParseAddr(u.Hostname()); err == nil && netguard.ReservedAddr(ip) {
+		return nil, "", errLocalCover
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, "", err
 	}
-	res, err := m.HTTP.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
+		if errors.Is(err, netguard.ErrReserved) {
+			return nil, "", errLocalCover
+		}
 		return nil, "", fmt.Errorf("couldn't download the cover from %s", u.Hostname())
 	}
 	defer res.Body.Close()

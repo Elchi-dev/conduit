@@ -66,6 +66,9 @@ var riskLintAllow = map[string]string{
 	"github.remove_reviewers": "withdraws review requests; it can't satisfy a required review",
 	"paperless.remove_tag":    "untags documents; undo tags them again",
 	"games.remove_custom":     "removes a hand-added game from the local list; play history stays",
+
+	// Time tracking: stopping a timer records the time so far and loses nothing.
+	"kimai.stop_timer": "stops a running time-tracking timer, keeping the entry; undo starts a new timer on the same project and activity",
 }
 
 // TestRiskLint fails when a built-in action whose name says it's destructive
@@ -152,6 +155,16 @@ var sensitiveUndo = map[string]string{
 	"googleworkspace.schedule_meeting": "delete_event",       // deletes the meeting it added (attendees get a cancellation)
 	"microsoft365.create_event":        "delete_event",       // deletes the event it added, by id
 	"microsoft365.schedule_meeting":    "delete_event",       // deletes the meeting it added (attendees get a cancellation)
+
+	// Invoicing: the draft it created, by id (delete_invoice refuses anything but a draft).
+	"invoiceninja.create_invoice": "delete_invoice",
+
+	// App backends: a record create is undone by deleting it by its id
+	// (delete isn't sensitive: its preview names the record, never its values).
+	"pocketbase.create_record": "delete_record",
+	"directus.create_item":     "delete_item",
+	"strapi.create_entry":      "delete_entry",
+	"nocodb.create_record":     "delete_record",
 }
 
 // sensitiveUndoByID lists the entries of sensitiveUndo whose undo action is
@@ -166,6 +179,8 @@ var sensitiveUndoByID = map[string]bool{
 	"zammad.add_note":            true, // delete_note's preview quotes the note
 
 	"dropbox.create_shared_link": true, // revoke_shared_link takes a link; the token holds the file id alone
+
+	"invoiceninja.create_invoice": true, // delete_invoice's preview shows the draft's amount
 }
 
 // TestSensitiveUndo fails when a sensitive action claims an undo the audit

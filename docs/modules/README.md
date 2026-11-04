@@ -190,6 +190,10 @@ recommended policies.
 | Outline | [outline.md](outline.md) | team, developer |
 | Vikunja | [vikunja.md](vikunja.md) | homelab |
 | Firefly III | [firefly.md](firefly.md) | homelab |
+| Ghostfolio | [ghostfolio.md](ghostfolio.md) | homelab |
+| Invoice Ninja | [invoiceninja.md](invoiceninja.md) | team |
+| Kimai | [kimai.md](kimai.md) | team, developer |
+| WakaTime | [wakatime.md](wakatime.md) | developer |
 | Karakeep | [karakeep.md](karakeep.md) | homelab |
 | linkding | [linkding.md](linkding.md) | homelab |
 | wallabag | [wallabag.md](wallabag.md) | homelab |
@@ -241,6 +245,11 @@ recommended policies.
 | Google Workspace | [googleworkspace.md](googleworkspace.md) | team, developer |
 | Fastmail | [fastmail.md](fastmail.md) | developer, team |
 | Dropbox | [dropbox.md](dropbox.md) | team, developer |
+| PocketBase | [pocketbase.md](pocketbase.md) | developer, homelab |
+| Appwrite | [appwrite.md](appwrite.md) | developer |
+| Directus | [directus.md](directus.md) | developer, team |
+| Strapi | [strapi.md](strapi.md) | developer, team |
+| NocoDB | [nocodb.md](nocodb.md) | developer, team, homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

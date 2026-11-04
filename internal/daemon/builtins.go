@@ -7,6 +7,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/adguard"
 	"github.com/elchi-dev/conduit/modules/alertmanager"
 	"github.com/elchi-dev/conduit/modules/amp"
+	"github.com/elchi-dev/conduit/modules/appwrite"
 	"github.com/elchi-dev/conduit/modules/argocd"
 	"github.com/elchi-dev/conduit/modules/arr"
 	"github.com/elchi-dev/conduit/modules/asana"
@@ -45,6 +46,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/datadog"
 	"github.com/elchi-dev/conduit/modules/deluge"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
+	"github.com/elchi-dev/conduit/modules/directus"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/discourse"
 	"github.com/elchi-dev/conduit/modules/docker"
@@ -68,6 +70,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/gatus"
 	"github.com/elchi-dev/conduit/modules/gcp"
 	"github.com/elchi-dev/conduit/modules/ghost"
+	"github.com/elchi-dev/conduit/modules/ghostfolio"
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
@@ -89,6 +92,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/infisical"
 	"github.com/elchi-dev/conduit/modules/influxdb"
+	"github.com/elchi-dev/conduit/modules/invoiceninja"
 	"github.com/elchi-dev/conduit/modules/ionos"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
@@ -97,6 +101,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/kavita"
 	"github.com/elchi-dev/conduit/modules/keycloak"
 	"github.com/elchi-dev/conduit/modules/kick"
+	"github.com/elchi-dev/conduit/modules/kimai"
 	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/komga"
 	"github.com/elchi-dev/conduit/modules/kopia"
@@ -135,6 +140,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/netlify"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/nextcloudtalk"
+	"github.com/elchi-dev/conduit/modules/nocodb"
 	"github.com/elchi-dev/conduit/modules/nomad"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
@@ -162,6 +168,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/plane"
 	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
+	"github.com/elchi-dev/conduit/modules/pocketbase"
 	"github.com/elchi-dev/conduit/modules/porkbun"
 	"github.com/elchi-dev/conduit/modules/portainer"
 	"github.com/elchi-dev/conduit/modules/posthog"
@@ -196,6 +203,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
 	"github.com/elchi-dev/conduit/modules/steam"
+	"github.com/elchi-dev/conduit/modules/strapi"
 	"github.com/elchi-dev/conduit/modules/streamelements"
 	"github.com/elchi-dev/conduit/modules/streamerbot"
 	"github.com/elchi-dev/conduit/modules/stripe"
@@ -229,6 +237,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/vikunja"
 	"github.com/elchi-dev/conduit/modules/vlc"
 	"github.com/elchi-dev/conduit/modules/vultr"
+	"github.com/elchi-dev/conduit/modules/wakatime"
 	"github.com/elchi-dev/conduit/modules/wallabag"
 	"github.com/elchi-dev/conduit/modules/weather"
 	"github.com/elchi-dev/conduit/modules/web"
@@ -416,6 +425,10 @@ func builtins(app *App) []sdk.Module {
 		outline.New(),
 		vikunja.New(),
 		firefly.New(),
+		ghostfolio.New(),
+		invoiceninja.New(),
+		kimai.New(),
+		wakatime.New(),
 		karakeep.New(),
 		wallabag.New(),
 		miniflux.New(),
@@ -496,6 +509,11 @@ func builtins(app *App) []sdk.Module {
 		googleworkspace.New(),
 		fastmail.New(),
 		dropbox.New(),
+		pocketbase.New(),
+		appwrite.New(),
+		directus.New(),
+		strapi.New(),
+		nocodb.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

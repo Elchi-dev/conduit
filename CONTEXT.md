@@ -31,8 +31,8 @@ owner and a company equally; never tailor it to one setup.
   restricted vault folders for teams.
 - **Released v1.0.0 (Wed 4 Nov, 05:49 CET):** 105 modules, signed builds
   for every platform (39 files), owner tests it now.
-- **Now:** toward v1.1 before Thu 00:00: 219 modules, reviews through 19
-  fixed (review 20 and more batches running) (BUILD_LOG.md). More batches and their reviews in progress. A
+- **Now:** toward v1.1 before Thu 00:00: 241 modules, reviews through 24
+  fixed (review 25 and more batches running) (BUILD_LOG.md). More batches and their reviews in progress. A
   v1.0.1 (the brief fix, review 12) and v1.1 both wait for Actions.
 - **CI is down** since 06:43 on 4 Nov: GitHub Actions doesn't start jobs
   (probably the private repository's minutes; the owner was told). Verify

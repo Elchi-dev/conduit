@@ -3,6 +3,32 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · After 1.0, evening (241 modules, reviews 20–24)
+
+- **Modules 220–241:** clouds (Azure, Google Cloud, OVHcloud, IONOS),
+  books, ROMs and subtitles (Kavita, Calibre-Web, RomM, Bazarr, NZBGet),
+  home networks (OpenWrt, Omada, FRITZ!Box, ntopng, LibreNMS), office
+  (Microsoft 365, Google Workspace, Fastmail, Dropbox) and feature flags
+  (Unleash, Flagsmith, LaunchDarkly, GrowthBook). New shared helpers:
+  `modules/internal/oauth` and `modules/internal/mimemsg`.
+- **Decisions:** Emby is served by the Jellyfin module, so Bazarr took its
+  place. Starting a cloud server is write (like AWS and Hetzner); stop,
+  reboot and traffic changes are destructive. Sending mail, invitations,
+  Teams posts, shared links and flag toggles are destructive.
+- **Review 20:** Loki bounds ranges and offsets inside LogQL; Checkmk undo
+  only ends the downtime it created; YouTrack previews name mentions.
+- **Review 21:** NZBGet and SABnzbd hide indexer keys in scheme-less job
+  names.
+- **Review 22:** Cloud Run traffic changes use `updateMask=traffic`.
+- **Review 23:** network connection guards fail closed and cover public
+  addresses and names.
+- **Review 24:** LaunchDarkly toggles compare-and-set with JSON Patch;
+  Flagsmith hides environment keys in errors.
+- **Full local check at 15:50 UTC:** race tests, web and site builds and
+  i18n, 51 browser tests and upgrades from every release all pass.
+- **Note:** `make daemon` in a fresh worktree with linked node_modules
+  needs `CI=true` (pnpm refuses a non-interactive install otherwise).
+
 ## 2026-11-04 · After 1.0, afternoon (219 modules, reviews 16–19)
 
 - **Modules 186–219:** creators and streaming (YouTube, Kick,

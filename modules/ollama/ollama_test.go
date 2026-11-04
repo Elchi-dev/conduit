@@ -40,11 +40,14 @@ func TestOllama(t *testing.T) {
 				fmt.Fprintln(w, `{"error":"pull model manifest: file does not exist"}`)
 				return
 			}
-			for _, l := range []string{`{"status":"pulling manifest"}`, `{"status":"pulling","total":100,"completed":50}`, `{"status":"verifying sha256 digest"}`, `{"status":"success"}`} {
+			for _, l := range []string{`{"status":"pulling manifest"}`, `{"status":"pulling","total":100,"completed":50}`, `{"status":"verifying sha256 digest"}`} {
 				fmt.Fprintln(w, l)
 				fl.Flush()
 			}
+			// Installed before "success": the client may return as soon as
+			// it reads that line.
 			installed[model] = true
+			fmt.Fprintln(w, `{"status":"success"}`)
 		case "DELETE /api/delete":
 			if !installed[b["model"].(string)] {
 				w.WriteHeader(404)

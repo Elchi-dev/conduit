@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -21,6 +22,7 @@ type fakeLAPI struct {
 	seen      []string
 	logins    int
 	decisions map[int64][3]string // id → value, scope, duration
+	simulated map[int64]bool
 	next      int64
 }
 
@@ -50,7 +52,7 @@ func (f *fakeLAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	decs := func() string {
 		var parts []string
 		for id, d := range f.decisions {
-			parts = append(parts, fmt.Sprintf(`{"id":%d,"origin":"cscli","type":"ban","scope":%q,"value":%q,"duration":%q,"scenario":"manual"}`, id, d[1], d[0], d[2]))
+			parts = append(parts, fmt.Sprintf(`{"id":%d,"origin":"cscli","type":"ban","scope":%q,"value":%q,"duration":%q,"scenario":"manual","simulated":%t}`, id, d[1], d[0], d[2], f.simulated[id]))
 		}
 		return "[" + strings.Join(parts, ",") + "]"
 	}
@@ -98,7 +100,7 @@ func (f *fakeLAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 var secrets = map[string]string{"secret://pw": "pw-good", "secret://bad": "pw-bad", "secret://bk": "bouncer-good", "secret://bkbad": "bouncer-bad"}
 
 func setup(t *testing.T, cfg Config) (*Module, *fakeLAPI) {
-	f := &fakeLAPI{decisions: map[int64][3]string{}, next: 100}
+	f := &fakeLAPI{decisions: map[int64][3]string{}, simulated: map[int64]bool{}, next: 100}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	m := New()
@@ -199,8 +201,18 @@ func TestCrowdSecBanGuards(t *testing.T) {
 		`{"ip":"2001:db8::/32"}`, // wider than /48
 		`{"ip":"1.2.3.4/16"}`,    // not a network address
 		`{"ip":"::ffff:1.2.3.4/120"}`,
-		`{"ip":"224.0.0.1"}`,    // multicast
-		`{"ip":"fe80::1%eth0"}`, // zone
+		`{"ip":"::ffff:10.0.0.1"}`,      // IPv4-mapped private
+		`{"ip":"::ffff:203.0.113.200"}`, // IPv4-mapped self
+		`{"ip":"64:ff9b::a00:1"}`,       // NAT64 form of 10.0.0.1
+		`{"ip":"64:ff9b::cb00:71c8"}`,   // NAT64 form of this machine
+		`{"ip":"64:ff9b::/64"}`,         // every IPv4 address through NAT64
+		`{"ip":"64:ff9b:1::1"}`,         // local-use NAT64
+		`{"ip":"192.0.0.1"}`,            // IETF protocol assignments
+		`{"ip":"169.254.169.254"}`,      // link-local (cloud metadata)
+		`{"ip":"fe80::1"}`,              // link-local
+		`{"ip":"::1"}`,                  // loopback
+		`{"ip":"224.0.0.1"}`,            // multicast
+		`{"ip":"fe80::1%eth0"}`,         // zone
 		`{"ip":"example.com"}`,
 		`{"ip":"1.2.3.4; rm"}`,
 		`{"ip":""}`,
@@ -282,5 +294,81 @@ func TestCrowdSecRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "c"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestCrowdSecProtectsTheAPIHostName(t *testing.T) {
+	f := &fakeLAPI{decisions: map[int64][3]string{}, simulated: map[int64]bool{}, next: 100}
+	srv := httptest.NewServer(f)
+	t.Cleanup(srv.Close)
+	resolveErr := false
+	m := New()
+	m.Local = func() []netip.Addr { return nil }
+	m.Resolve = func(_ context.Context, host string) ([]netip.Addr, error) {
+		if host != "lapi.example" {
+			t.Errorf("resolved %q", host)
+		}
+		if resolveErr {
+			return nil, fmt.Errorf("no such host")
+		}
+		return []netip.Addr{netip.MustParseAddr("::ffff:198.51.100.77")}, nil
+	}
+	// The name stands for the test server: requests go to it, the guard
+	// looks the name up.
+	port := srv.URL[strings.LastIndex(srv.URL, ":"):]
+	tr := &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, "127.0.0.1"+port)
+	}}
+	m.HTTP = &http.Client{Transport: tr}
+	raw, _ := json.Marshal(Config{URL: "http://lapi.example" + port, Machine: "conduit", Password: "secret://pw"})
+	if err := m.Configure(context.Background(), fakehost.New(secrets), "c", raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{`{"ip":"198.51.100.77"}`, `{"ip":"198.51.0.0/16"}`, `{"ip":"64:ff9b::c633:644d"}`} {
+		if _, err := invoke(m, "ban", in, false); err == nil || !strings.Contains(err.Error(), "Local API") {
+			t.Fatalf("accepted %s: %v", in, err)
+		}
+	}
+	resolveErr = true
+	if _, err := invoke(m, "ban", `{"ip":"203.0.113.9"}`, false); err == nil {
+		t.Fatal("banned without knowing the Local API's address")
+	}
+	resolveErr = false
+	if _, err := invoke(m, "ban", `{"ip":"203.0.113.9"}`, false); err != nil || len(f.decisions) != 1 {
+		t.Fatal(err)
+	}
+}
+
+func TestCrowdSecDeleteDecisionUndo(t *testing.T) {
+	m, f := setup(t, Config{Machine: "conduit", Password: "secret://pw", BouncerKey: "secret://bk"})
+	f.decisions[5] = [3]string{"203.0.113.8", "Ip", "2h30m40s"}
+	f.decisions[6] = [3]string{"203.0.113.9", "Ip", "4h"}
+	f.simulated[6] = true
+	f.decisions[7] = [3]string{"203.0.113.10", "Ip", "30s"}
+	// Undo bans again for no longer than the time left.
+	r, err := invoke(m, "delete_decision", `{"decision":5}`, false)
+	if err != nil || r.Undo == nil || !strings.Contains(string(r.Undo.Input), `"duration":"2h30m0s"`) {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// A simulated decision blocked nothing: no ban as its undo.
+	if r, err := invoke(m, "delete_decision", `{"decision":6}`, false); err != nil || r.Undo != nil || len(f.decisions) != 1 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// Under a minute left: nothing to ban again.
+	if r, err := invoke(m, "delete_decision", `{"decision":7}`, false); err != nil || r.Undo != nil {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// An id that isn't an active local decision isn't sent to CrowdSec.
+	f.seen = nil
+	for _, dry := range []bool{true, false} {
+		r, err := invoke(m, "delete_decision", `{"decision":4242}`, dry)
+		if err != nil || r.Plan != nil || !strings.Contains(string(r.Output), "nothing to change") {
+			t.Fatalf("%+v %v", r, err)
+		}
+	}
+	for _, s := range f.seen {
+		if strings.HasPrefix(s, "DELETE") {
+			t.Fatalf("deleted an unknown decision: %v", f.seen)
+		}
 	}
 }

@@ -68,7 +68,14 @@ func (f *fakeDT) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var b map[string]any
 		json.Unmarshal(body, &b)
 		f.lastPut = b
-		f.analysis = map[string]any{"analysisState": b["analysisState"], "analysisJustification": b["analysisJustification"], "analysisResponse": b["analysisResponse"], "isSuppressed": b["isSuppressed"]}
+		details := ""
+		if f.analysis != nil {
+			details, _ = f.analysis["analysisDetails"].(string)
+		}
+		if d, ok := b["analysisDetails"].(string); ok {
+			details = d
+		}
+		f.analysis = map[string]any{"analysisState": b["analysisState"], "analysisJustification": b["analysisJustification"], "analysisResponse": b["analysisResponse"], "isSuppressed": b["isSuppressed"], "analysisDetails": details}
 		json.NewEncoder(w).Encode(f.analysis)
 	default:
 		w.WriteHeader(404)
@@ -182,5 +189,23 @@ func TestDependencyTrackRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "d"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestDependencyTrackUndoRestoresDetails(t *testing.T) {
+	m, f := setup(t, "secret://dt")
+	finding := proj + ":" + comp + ":" + vuln
+	f.analysis = map[string]any{"analysisState": "IN_TRIAGE", "analysisJustification": "NOT_SET", "analysisResponse": "NOT_SET", "isSuppressed": false, "analysisDetails": "first look"}
+	in := `{"finding":"` + finding + `","details":"only reachable from admin"}`
+	r, err := invoke(m, "audit_finding", in, true)
+	if err != nil || r.Plan == nil || !strings.Contains(string(r.Plan.Changes[0].Before), "first look") || !strings.Contains(string(r.Plan.Changes[0].After), "only reachable") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "audit_finding", in, false)
+	if err != nil || r.Undo == nil || !strings.Contains(string(r.Undo.Input), `"details":"first look"`) {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.analysis["analysisDetails"] != "first look" || f.analysis["analysisState"] != "IN_TRIAGE" {
+		t.Fatal(err, f.analysis)
 	}
 }

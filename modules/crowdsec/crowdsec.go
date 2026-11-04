@@ -51,6 +51,10 @@ type conn struct {
 	protect      []netip.Prefix
 	allowPrivate bool
 	local        func() []netip.Addr
+	// apiName is the Local API's host when it's a name rather than an
+	// address: what it resolves to is protected too.
+	apiName string
+	resolve func(ctx context.Context, host string) ([]netip.Addr, error)
 
 	mu      sync.Mutex
 	token   string
@@ -64,6 +68,8 @@ type Module struct {
 	HTTP *http.Client
 	// Local replaces the lookup of this machine's own addresses (tests).
 	Local func() []netip.Addr
+	// Resolve replaces the lookup of the Local API's host name (tests).
+	Resolve func(ctx context.Context, host string) ([]netip.Addr, error)
 }
 
 // New returns the CrowdSec module.
@@ -154,6 +160,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		a = a.Unmap()
 		protect = append(protect, netip.PrefixFrom(a, a.BitLen()))
 	}
+	apiName := ""
+	if _, err := netip.ParseAddr(strings.Trim(u.Hostname(), "[]")); err != nil {
+		apiName = u.Hostname()
+	}
 	client := m.HTTP
 	if client == nil {
 		client = sdk.HTTPClient(h, 30*time.Second)
@@ -169,9 +179,14 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	}
 	client = rest.SameHostOnly(client)
 	base := u.Scheme + "://" + u.Host + strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/v1")
-	cn := &conn{id: machine, pass: c.Password, host: h, protect: protect, allowPrivate: c.AllowPrivate, local: m.Local}
+	cn := &conn{id: machine, pass: c.Password, host: h, protect: protect, allowPrivate: c.AllowPrivate, local: m.Local, apiName: apiName, resolve: m.Resolve}
 	if cn.local == nil {
 		cn.local = localAddrs
+	}
+	if cn.resolve == nil {
+		cn.resolve = func(ctx context.Context, host string) ([]netip.Addr, error) {
+			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		}
 	}
 	if c.BouncerKey != "" {
 		ref := c.BouncerKey
@@ -341,8 +356,8 @@ func parseTarget(s string) (netip.Prefix, error) {
 var special = func() []netip.Prefix {
 	var out []netip.Prefix
 	for _, s := range []string{
-		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16",
-		"::1/128", "fc00::/7", "fe80::/10",
+		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16",
+		"::1/128", "64:ff9b:1::/48", "fc00::/7", "fe80::/10",
 	} {
 		out = append(out, netip.MustParsePrefix(s))
 	}
@@ -357,9 +372,13 @@ func value(p netip.Prefix) (scope, val string) {
 	return "Range", p.String()
 }
 
+// nat64 is the well-known NAT64 prefix: its last 32 bits are an IPv4
+// address, so a ban there bans that IPv4 address for NAT64 clients.
+var nat64 = netip.MustParsePrefix("64:ff9b::/96")
+
 // guard refuses targets whose ban would lock out this machine or the
 // protected addresses, a private network, or a huge range.
-func (c *conn) guard(p netip.Prefix) error {
+func (c *conn) guard(ctx context.Context, p netip.Prefix) error {
 	a := p.Addr()
 	if a.Is4() && p.Bits() < 16 {
 		return fmt.Errorf("refusing: %s is wider than a /16", p)
@@ -370,9 +389,30 @@ func (c *conn) guard(p netip.Prefix) error {
 	if a.IsUnspecified() || a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
 		return fmt.Errorf("refusing: %s isn't a host or network to ban", p)
 	}
+	if a.Is6() && p.Overlaps(nat64) {
+		if p.Bits() < nat64.Bits() {
+			return fmt.Errorf("refusing: %s covers the NAT64 range %s, which stands for every IPv4 address", p, nat64)
+		}
+		b := a.As16()
+		v4 := netip.PrefixFrom(netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}), p.Bits()-nat64.Bits())
+		if err := c.guard(ctx, v4); err != nil {
+			return fmt.Errorf("refusing: %s is the NAT64 form of %s: %s", p, v4, strings.TrimPrefix(err.Error(), "refusing: "))
+		}
+	}
 	for _, own := range c.local() {
-		if p.Contains(own) {
+		if p.Contains(own.Unmap()) {
 			return fmt.Errorf("refusing: %s covers this machine's own address %s, so the ban would cut Conduit off", p, own)
+		}
+	}
+	if c.apiName != "" {
+		as, err := c.resolve(ctx, c.apiName)
+		if err != nil || len(as) == 0 {
+			return fmt.Errorf("refusing: couldn't look up the Local API's host %s to check that the ban doesn't cover it", c.apiName)
+		}
+		for _, x := range as {
+			if p.Contains(x.Unmap()) {
+				return fmt.Errorf("refusing: %s covers the Local API's address %s (%s), so the ban would cut Conduit off", p, x.Unmap(), c.apiName)
+			}
 		}
 	}
 	for _, pr := range c.protect {
@@ -626,7 +666,7 @@ func (c *conn) active(ctx context.Context, ip string, community bool) ([]decisio
 		}
 		return ds, nil
 	}
-	q := url.Values{"has_active_decision": {"true"}, "include_capi": {strconv.FormatBool(community)}}
+	q := url.Values{"has_active_decision": {"true"}, "include_capi": {strconv.FormatBool(community)}, "limit": {strconv.Itoa(maxRows)}}
 	if ip != "" {
 		q.Set("ip", ip)
 	}
@@ -720,7 +760,7 @@ func (c *conn) ban(ctx context.Context, call sdk.Call, target, duration, reason 
 	if reason == "" {
 		reason = "manual ban from Conduit"
 	}
-	if err := c.guard(p); err != nil {
+	if err := c.guard(ctx, p); err != nil {
 		return sdk.Result{}, err
 	}
 	if c.machine == nil {
@@ -806,15 +846,15 @@ func (c *conn) deleteDecision(ctx context.Context, call sdk.Call, id int64) (sdk
 			found = &ds[i]
 		}
 	}
-	target := fmt.Sprintf("decision %d", id)
-	if found != nil {
-		target = fmt.Sprintf("decision %d (%s %s %s, %s left, %s)", id, clip(found.Type, 40), clip(found.Scope, 40), clip(found.Value, 64), left(found.Duration), clip(found.Scenario, 120))
+	if found == nil {
+		// Only a decision the preview can name is deleted: an expired or
+		// already deleted one, or one from the community blocklist (which
+		// CrowdSec would add back), isn't.
+		return sdk.JSON(map[string]any{"decision": id, "deleted": false, "note": "nothing to change: there's no active local decision with this id (community blocklist decisions aren't deleted here)"})
 	}
+	target := fmt.Sprintf("decision %d (%s %s %s, %s left, %s)", id, clip(found.Type, 40), clip(found.Scope, 40), clip(found.Value, 64), left(found.Duration), clip(found.Scenario, 120))
 	if call.DryRun {
-		var before json.RawMessage
-		if found != nil {
-			before, _ = json.Marshal(found.row())
-		}
+		before, _ := json.Marshal(found.row())
 		return sdk.Result{Plan: &sdk.Plan{Summary: "Delete " + target, Changes: []sdk.Change{{Target: target, Op: "delete", Before: before}}}}, nil
 	}
 	var r struct {
@@ -831,12 +871,14 @@ func (c *conn) deleteDecision(ctx context.Context, call sdk.Call, id int64) (sdk
 	}
 	out := map[string]any{"decision": id, "deleted": true}
 	res, err := sdk.JSON(out)
-	if found != nil && strings.EqualFold(found.Type, "ban") && (strings.EqualFold(found.Scope, "ip") || strings.EqualFold(found.Scope, "range")) {
+	// A simulated decision blocked nothing, so banning again would be more
+	// than undoing; other scopes (country, AS) aren't banned here at all.
+	if !found.Simulated && strings.EqualFold(found.Type, "ban") && (strings.EqualFold(found.Scope, "ip") || strings.EqualFold(found.Scope, "range")) {
 		if d, perr := time.ParseDuration(found.Duration); perr == nil && d >= minBan {
 			if d > maxBan {
 				d = maxBan
 			}
-			d = d.Round(time.Minute)
+			d = d.Truncate(time.Minute)
 			res.Undo = sdk.UndoWith("ban", map[string]string{"ip": found.Value, "duration": d.String(), "reason": clip(found.Scenario, 200)}, "Ban "+clip(found.Value, 64)+" again")
 		}
 	}

@@ -456,7 +456,7 @@ func (a agent) row() map[string]any {
 	for _, g := range a.Group {
 		groups = append(groups, clip(g, 100))
 	}
-	return map[string]any{"id": a.ID, "name": clip(a.Name, 128), "ip": clip(a.IP, 64), "status": a.Status, "os": strings.TrimSpace(clip(a.OS.Name, 60) + " " + clip(a.OS.Version, 40)),
+	return map[string]any{"id": clip(a.ID, 8), "name": clip(a.Name, 128), "ip": clip(a.IP, 64), "status": clip(a.Status, 30), "os": strings.TrimSpace(clip(a.OS.Name, 60) + " " + clip(a.OS.Version, 40)),
 		"version": clip(a.Version, 40), "groups": groups, "node": clip(a.NodeName, 64), "lastKeepAlive": clip(a.LastKeepAlive, 40)}
 }
 
@@ -478,7 +478,7 @@ func (c *conn) agents(ctx context.Context, status string) (sdk.Result, error) {
 			return sdk.Result{}, err
 		}
 		for _, a := range r.Data.Items {
-			byStatus[a.Status]++
+			byStatus[clip(a.Status, 30)]++
 			rows = append(rows, a.row())
 		}
 		if len(r.Data.Items) < 500 || len(rows) >= r.Data.Total {

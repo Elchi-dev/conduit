@@ -20,16 +20,20 @@ certificate, set `fingerprint`.
 | `alerts` | read | Alerts since `since` (default `24h`): scenario, source address, country, network and AS number, event count, start and stop, the machine that raised it and its decisions. `ip` and `scenario` filter. Event details are left out. |
 | `alert` | read, sensitive | One alert with its context and up to 50 events (request paths, user agents, target hosts), each value cut to 500 characters with credentials masked. |
 | `ban` | destructive | Bans an address or CIDR range for `duration` (default `4h`, 1 minute to 1 year), with `reason` as the decision's scenario. The preview shows the decision; an address already banned is left as it is. Undo deletes the decision. |
-| `delete_decision` | destructive | Removes one decision by id, which unblocks that address or range. The preview names the decision. Undo bans it again for the time it had left. |
+| `delete_decision` | destructive | Removes one decision by id, which unblocks that address or range. Only an active local decision is deleted (not one from the community blocklist); the preview names it. Undo bans it again for the time it had left, rounded down to the minute: for an IP or range ban that wasn't simulated and had at least a minute left. |
 
 **Ban guards.** `ban` refuses, before anything reaches CrowdSec:
 
-- this machine's own addresses and the Local API's address (a range
-  covering one of them too);
+- this machine's own addresses and the Local API's address, or what its
+  host name resolves to at the time of the ban (a range covering one of
+  them too; refused when the name can't be looked up);
 - the addresses and ranges in `protect`, such as your public address or
   your office network;
 - private, loopback, link-local, shared (100.64.0.0/10) and unique local
-  ranges, unless `allowPrivate` is on;
+  ranges and 192.0.0.0/24, unless `allowPrivate` is on;
+- IPv4-mapped (`::ffff:10.0.0.1`) and NAT64 (`64:ff9b::a00:1`) forms are
+  checked as the IPv4 address they stand for, and the local-use NAT64
+  range 64:ff9b:1::/48 counts as private;
 - ranges wider than /16 for IPv4 or /48 for IPv6, multicast and unspecified
   addresses, and ranges not written from their first address
   (`1.2.3.4/16`; write `1.2.0.0/16`).

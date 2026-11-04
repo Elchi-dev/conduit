@@ -245,6 +245,7 @@ type finding struct {
 	RiskAccepted    bool    `json:"risk_accepted"`
 	FalsePositive   bool    `json:"false_p"`
 	Duplicate       bool    `json:"duplicate"`
+	OutOfScope      bool    `json:"out_of_scope"`
 	Date            string  `json:"date"`
 	CWE             int     `json:"cwe"`
 	Component       string  `json:"component_name"`
@@ -292,8 +293,13 @@ func (f finding) row() map[string]any {
 }
 
 func (f finding) state() map[string]bool {
-	return map[string]bool{"active": f.Active, "verified": f.Verified, "mitigated": f.IsMitigated, "riskAccepted": f.RiskAccepted}
+	return map[string]bool{"active": f.Active, "verified": f.Verified, "mitigated": f.IsMitigated, "riskAccepted": f.RiskAccepted,
+		"falsePositive": f.FalsePositive, "duplicate": f.Duplicate, "outOfScope": f.OutOfScope}
 }
+
+// isOpen is the state reopen_finding sets: active, neither mitigated nor
+// risk-accepted. Only from there is reopening an exact undo.
+func (f finding) isOpen() bool { return f.Active && !f.IsMitigated && !f.RiskAccepted }
 
 // Invoke implements sdk.Module.
 func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) {
@@ -472,13 +478,17 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id int64, verified boo
 		done = func(x finding) bool { return !x.Active && x.IsMitigated }
 		after["active"], after["mitigated"] = false, true
 		send = func() error {
-			body := map[string]any{"is_mitigated": true, "mitigated": time.Now().UTC().Format(time.RFC3339), "false_p": false, "out_of_scope": false, "duplicate": false}
+			// DefectDojo's close sets false_p, out_of_scope and duplicate
+			// to what's sent, false when left out: send them as they are.
+			body := map[string]any{"is_mitigated": true, "mitigated": time.Now().UTC().Format(time.RFC3339), "false_p": f.FalsePositive, "out_of_scope": f.OutOfScope, "duplicate": f.Duplicate}
 			if note != "" {
 				body["note"] = note
 			}
 			return c.do(ctx, http.MethodPost, path+"close/", nil, body, nil)
 		}
-		undo = sdk.UndoWith("reopen_finding", map[string]int64{"finding": id}, fmt.Sprintf("Reopen finding %d", id))
+		if f.isOpen() {
+			undo = sdk.UndoWith("reopen_finding", map[string]int64{"finding": id}, fmt.Sprintf("Reopen finding %d", id))
+		}
 	case "verify_finding":
 		verb = "Verify"
 		if !verified {
@@ -499,7 +509,9 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id int64, verified boo
 			}
 			return err
 		}
-		undo = sdk.UndoWith("reopen_finding", map[string]int64{"finding": id}, fmt.Sprintf("Reopen finding %d", id))
+		if f.isOpen() {
+			undo = sdk.UndoWith("reopen_finding", map[string]int64{"finding": id}, fmt.Sprintf("Reopen finding %d", id))
+		}
 	case "reopen_finding":
 		verb = "Reopen"
 		done = func(x finding) bool { return x.Active && !x.IsMitigated && !x.RiskAccepted }
@@ -508,7 +520,14 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id int64, verified boo
 			return c.do(ctx, http.MethodPatch, path, nil, map[string]any{"active": true, "is_mitigated": false, "mitigated": nil, "risk_accepted": false}, nil)
 		}
 		switch {
+		case f.isOpen():
 		case !closed:
+			// Inactive without being closed or accepted (a false
+			// positive, a duplicate, or set inactive by hand): reopening
+			// would have no undo, and isn't what this action is for.
+			return sdk.Result{}, fmt.Errorf("finding %d is inactive but neither closed nor risk-accepted; change it in DefectDojo", id)
+		case f.RiskAccepted && f.IsMitigated:
+			// Undo can't set both back.
 		case f.RiskAccepted:
 			undo = sdk.UndoWith("risk_accept_finding", map[string]int64{"finding": id}, fmt.Sprintf("Risk-accept finding %d again", id))
 		default:
@@ -534,7 +553,11 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id int64, verified boo
 	if !done(now) {
 		return sdk.Result{}, fmt.Errorf("DefectDojo kept finding %d as it was", id)
 	}
-	res, err := sdk.JSON(map[string]any{"finding": id, "title": clean(f.Title, 200), "state": now.state()})
+	out := map[string]any{"finding": id, "title": clean(f.Title, 200), "state": now.state()}
+	if undo == nil {
+		out["note"] = "no undo: the finding's earlier state can't be set back exactly from here"
+	}
+	res, err := sdk.JSON(out)
 	res.Undo = undo
 	return res, err
 }

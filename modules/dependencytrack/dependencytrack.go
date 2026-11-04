@@ -518,7 +518,11 @@ type analysis struct {
 }
 
 func (a analysis) view() map[string]any {
-	return map[string]any{"state": a.State, "justification": a.Justification, "response": a.Response, "suppressed": a.Suppressed}
+	v := map[string]any{"state": a.State, "justification": a.Justification, "response": a.Response, "suppressed": a.Suppressed}
+	if a.Details != "" {
+		v["details"] = clean(a.Details, 500)
+	}
+	return v
 }
 
 func orNotSet(s string) string {
@@ -606,9 +610,13 @@ func (c *conn) audit(ctx context.Context, call sdk.Call, finding, state, just, r
 		return sdk.Result{}, errors.New("Dependency-Track kept the finding's analysis as it was")
 	}
 	res, err := sdk.JSON(map[string]any{"finding": strings.Join(parts, ":"), "analysis": got.view()})
-	if cur.State != want.State || cur.Justification != want.Justification || cur.Response != want.Response || cur.Suppressed != want.Suppressed {
-		res.Undo = sdk.UndoWith("audit_finding", map[string]any{"finding": strings.Join(parts, ":"), "state": cur.State, "justification": cur.Justification,
-			"response": cur.Response, "suppressed": cur.Suppressed}, "Set the finding's analysis back")
+	if cur != want {
+		back := map[string]any{"finding": strings.Join(parts, ":"), "state": cur.State, "justification": cur.Justification,
+			"response": cur.Response, "suppressed": cur.Suppressed}
+		if cur.Details != want.Details {
+			back["details"] = cur.Details
+		}
+		res.Undo = sdk.UndoWith("audit_finding", back, "Set the finding's analysis back")
 	}
 	return res, err
 }

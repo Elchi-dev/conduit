@@ -15,7 +15,7 @@ import (
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
-type state struct{ active, verified, mitigated, accepted bool }
+type state struct{ active, verified, mitigated, accepted, fp bool }
 
 type fakeDojo struct {
 	mu        sync.Mutex
@@ -28,9 +28,9 @@ type fakeDojo struct {
 func (d *fakeDojo) finding(id int64) string {
 	s := d.f[id]
 	return fmt.Sprintf(`{"id":%d,"title":"SQL injection in /login?token=LEAKMEsecretvalue123","severity":"High","active":%t,"verified":%t,"is_mitigated":%t,"risk_accepted":%t,
-		"false_p":false,"duplicate":false,"date":"2026-11-01","cwe":89,"component_name":"app","component_version":"1.2","file_path":"src/login.py","line":42,"test":3,
+		"false_p":%t,"duplicate":false,"out_of_scope":false,"date":"2026-11-01","cwe":89,"component_name":"app","component_version":"1.2","file_path":"src/login.py","line":42,"test":3,
 		"vulnerability_ids":[{"vulnerability_id":"CVE-2026-1234"}],"description":"payload: <script>LEAKME</script>","steps_to_reproduce":"LEAKME"}`,
-		id, s.active, s.verified, s.mitigated, s.accepted)
+		id, s.active, s.verified, s.mitigated, s.accepted, s.fp)
 }
 
 func (d *fakeDojo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +77,7 @@ func (d *fakeDojo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "POST" && r.URL.Path == "/api/v2/findings/10/close/":
 		d.lastClose = b
 		d.f[10].active, d.f[10].mitigated = false, true
+		d.f[10].fp, _ = b["false_p"].(bool)
 		io.WriteString(w, `{}`)
 	case r.Method == "PATCH" && r.URL.Path == "/api/v2/findings/10/":
 		s := d.f[10]
@@ -227,5 +228,36 @@ func TestDefectDojoRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "d"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestDefectDojoUndoOnlyWhenExact(t *testing.T) {
+	m, d := setup(t, "secret://dd")
+	// A false positive keeps its flag when closed (DefectDojo would clear
+	// it if it weren't sent), and has no undo: reopening wouldn't restore it.
+	d.f[10] = &state{fp: true}
+	r, err := invoke(m, "close_finding", `{"finding":10}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(string(r.Plan.Changes[0].Before), `"falsePositive":true`) || !strings.Contains(string(r.Plan.Changes[0].After), `"falsePositive":true`) {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "close_finding", `{"finding":10}`, false)
+	if err != nil || d.lastClose["false_p"] != true || !d.f[10].fp || r.Undo != nil || !strings.Contains(string(r.Output), "no undo") {
+		t.Fatalf("%s %+v %v %v", r.Output, r.Undo, d.lastClose, err)
+	}
+	// Inactive but not closed or accepted: reopen refuses.
+	d.f[10] = &state{fp: true}
+	d.seen = nil
+	if _, err := invoke(m, "reopen_finding", `{"finding":10}`, false); err == nil || !strings.Contains(err.Error(), "neither closed nor risk-accepted") {
+		t.Fatal(err)
+	}
+	// Risk-accepting a closed finding has no reopen as its undo.
+	d.simpleRA = true
+	d.f[10] = &state{mitigated: true}
+	if r, err := invoke(m, "risk_accept_finding", `{"finding":10}`, false); err != nil || r.Undo != nil || !d.f[10].accepted {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// Closed and accepted at once: reopening can't be undone exactly.
+	if r, err := invoke(m, "reopen_finding", `{"finding":10}`, false); err != nil || r.Undo != nil || !d.f[10].active {
+		t.Fatalf("%+v %v", r, err)
 	}
 }

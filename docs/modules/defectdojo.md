@@ -13,10 +13,10 @@ For a self-signed certificate, set `fingerprint`.
 | `products` | read | Id, name, product type, business criticality, lifecycle, finding count and when created. |
 | `engagements` | read | Id, name, product, type, status, start and end dates, and whether active, newest first. `product` limits it to one product. |
 | `findings` | read | Open findings (active, not mitigated, duplicate, false positive, out of scope or risk-accepted) counted by severity, and the most severe first with title, severity, CVE and other ids, CWE, CVSS, component and version, file and line, test and whether verified. `product`, `engagement` and `severity` filter; `limit` up to 200. |
-| `close_finding` | destructive | Marks a finding mitigated and inactive, with an optional `note`. The preview shows the finding and its state before and after. Undo reopens it. |
+| `close_finding` | destructive | Marks a finding mitigated and inactive, with an optional `note`; its false positive, duplicate and out of scope flags are kept as they are. The preview shows the finding and its state before and after. Undo reopens it, when it was open before (otherwise there's no undo). |
 | `verify_finding` | destructive | Marks a finding verified, or unverified with `verified: false`. Undo sets it back. |
-| `risk_accept_finding` | destructive | Accepts a finding's risk, which takes it out of open findings. Undo reopens it. |
-| `reopen_finding` | write | Makes a closed or risk-accepted finding active again. Undo closes or risk-accepts it as it was. |
+| `risk_accept_finding` | destructive | Accepts a finding's risk, which takes it out of open findings. Undo reopens it, when it was open before (otherwise there's no undo). |
+| `reopen_finding` | write | Makes a closed or risk-accepted finding active again; refused for an inactive finding that's neither (a false positive or duplicate). Undo closes or risk-accepts it as it was (none for a finding that was both; a formal risk acceptance comes back as a simple one). |
 
 A finding already in the state asked for is left as it is. After a change,
 the finding is read back; a server that kept it as it was makes the action

@@ -16,7 +16,7 @@ frontend, when they're separate). For a self-signed certificate, set
 | `projects` | read | Active projects (all with `includeInactive`) with UUID, name, version, classifier, last BOM import, vulnerabilities by severity and risk score. `search` matches names. |
 | `metrics` | read | Vulnerabilities by severity for the whole portfolio or one `project`, with vulnerable components (and projects), suppressed, audited and unaudited findings, policy violations, risk score and when measured. |
 | `findings` | read | A project's findings, most severe first: finding id, vulnerability id and aliases, source, severity, CVSS, EPSS, title, component and version, and analysis state. Suppressed ones only with `includeSuppressed`; `severity` filters; `limit` up to 500. |
-| `audit_finding` | destructive | Records an analysis on a finding (by its finding id from `findings`): `state`, `justification`, `response`, `details`, a `comment`, and `suppressed` to suppress or unsuppress it. The preview shows the analysis before and after. Undo sets the previous state, justification, response and suppression back. |
+| `audit_finding` | destructive | Records an analysis on a finding (by its finding id from `findings`): `state`, `justification`, `response`, `details`, a `comment`, and `suppressed` to suppress or unsuppress it. The preview shows the analysis before and after. Undo sets the previous state, justification, response, details and suppression back. |
 
 An analysis already as asked (with no new comment or details) is left as it
 is. After a change, a server that kept the state or suppression as it was

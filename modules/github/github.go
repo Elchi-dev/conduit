@@ -69,7 +69,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + repoProp + `,"state":{"type":"string","enum":["open","closed","all"],"default":"open"}}}`)},
 			{Name: "runs", Title: "Actions runs", Description: "Recent workflow runs and how they ended.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + repoProp + `,"failedOnly":{"type":"boolean","title":"Only failed runs"}}}`)},
-			{Name: "rerun", Title: "Re-run failed jobs", Risk: sdk.RiskWrite,
+			{Name: "rerun", Title: "Re-run failed jobs", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["repo","runId"],"properties":{"repo":{"type":"string"},"runId":{"type":"integer"}}}`)},
 			{Name: "create_issue", Title: "Open an issue", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","title"],"properties":{"repo":{"type":"string"},"title":{"type":"string"},"body":{"type":"string","format":"textarea"},"labels":{"type":"array","items":{"type":"string"}}}}`)},

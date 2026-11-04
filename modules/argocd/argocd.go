@@ -79,7 +79,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `}}`)},
 			{Name: "resource_tree", Title: "Resource tree", Description: "The app's live resources counted by kind and health, with the unhealthy ones listed.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `}}`)},
-			{Name: "sync", Title: "Sync", Description: "Applies the app's target revision to the cluster, without deleting anything (no pruning, no other revision: those are sync_prune and sync_revision). The preview lists the out-of-sync resources.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "sync", Title: "Sync", Description: "Applies the app's target revision to the cluster, without deleting anything (no pruning, no other revision: those are sync_prune and sync_revision). The preview lists the out-of-sync resources.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `,` + resources + `}}`)},
 			{Name: "sync_prune", Title: "Sync and prune", Description: "Applies the app's target revision and deletes the resources no longer in Git. The preview lists every resource that would be deleted.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `,` + resources + `}}`)},

@@ -11,9 +11,9 @@ Enter the address, such as `http://pi.hole`.
 | --- | --- | --- |
 | `summary` | read | Queries, blocked, percentage, active clients, domains on blocklists, and whether blocking is on |
 | `top_blocked` | read | The most blocked domains |
-| `disable` | write | Pause blocking for some seconds (default 300), or until switched back on (0). Undo turns it back on |
+| `disable` | destructive | Pause blocking for some seconds (default 300), or until switched back on (0). Undo turns it back on |
 | `enable` | write | Turn blocking back on. Undo pauses it again |
-| `domain_add` / `domain_remove` | write | An exact domain on the deny (default) or allow list. Each undoes the other |
+| `domain_add` / `domain_remove` | write / destructive | An exact domain on the deny (default) or allow list. Each undoes the other |
 
 Health is degraded while blocking is paused.
 

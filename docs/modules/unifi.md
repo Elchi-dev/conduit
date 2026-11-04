@@ -22,7 +22,7 @@ certificate checks.
 | `devices` | read | Name, model, MAC, IP, state, uptime, firmware |
 | `clients` | read | How many are connected and the busiest ones (traffic numbers need the local account) |
 | `restart_device` | destructive | By id or MAC; its clients lose the connection for a minute or two. Preview first |
-| `block_client` | write | By MAC; undo unblocks |
+| `block_client` | destructive | By MAC; undo unblocks |
 | `unblock_client` | write | Undo blocks again |
 
 Health is *degraded* while a device is offline.

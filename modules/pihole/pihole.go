@@ -62,11 +62,11 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "summary", Title: "Summary", Description: "Queries today, how many were blocked, and whether blocking is on.", Risk: sdk.RiskRead},
 			{Name: "top_blocked", Title: "Most blocked domains", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"count":{"type":"integer","default":10,"maximum":100}}}`)},
-			{Name: "disable", Title: "Pause blocking", Description: "For some seconds, or until switched back on (0).", Risk: sdk.RiskWrite, Reversible: true,
+			{Name: "disable", Title: "Pause blocking", Description: "For some seconds, or until switched back on (0).", Risk: sdk.RiskDestructive, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"seconds":{"type":"integer","default":300,"minimum":0,"maximum":86400}}}`)},
 			{Name: "enable", Title: "Turn blocking back on", Risk: sdk.RiskWrite, Reversible: true},
 			{Name: "domain_add", Title: "Block or allow a domain", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(domainIn)},
-			{Name: "domain_remove", Title: "Remove a domain from a list", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(domainIn)},
+			{Name: "domain_remove", Title: "Remove a domain from a list", Risk: sdk.RiskDestructive, Reversible: true, Input: sdk.Schema(domainIn)},
 		},
 	}
 }

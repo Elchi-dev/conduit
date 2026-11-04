@@ -27,7 +27,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "list", Title: "Automations", Risk: sdk.RiskRead},
 			{Name: "runs", Title: "Recent runs", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}`)},
-			{Name: "run", Title: "Run now", Risk: sdk.RiskWrite,
+			{Name: "run", Title: "Run now", Description: "Runs its steps with the permissions it was given when a person enabled it.", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}`)},
 			{Name: "draft", Title: "Draft an automation", Description: "Saved disabled; a person reviews and enables it.", Risk: sdk.RiskWrite,
 				Input: sdk.Schema(`{"type":"object","required":["name","trigger","steps"],"properties":{"name":{"type":"string"},"trigger":{"type":"object"},"steps":{"type":"array","items":{"type":"object"}}}}`)},

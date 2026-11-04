@@ -300,7 +300,7 @@ func TestArgoSyncWriteNeitherPrunesNorPicksRevision(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		risk[a.Name] = a.Risk
 	}
-	if risk["sync"] != sdk.RiskWrite || risk["sync_prune"] != sdk.RiskDestructive || risk["sync_revision"] != sdk.RiskDestructive {
+	if risk["sync"] != sdk.RiskDestructive || risk["sync_prune"] != sdk.RiskDestructive || risk["sync_revision"] != sdk.RiskDestructive {
 		t.Fatalf("%v", risk)
 	}
 	for _, in := range []string{

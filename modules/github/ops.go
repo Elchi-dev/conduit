@@ -125,11 +125,11 @@ func init() {
 			}
 			return sdk.JSON(map[string]any{"jobId": p.JobID, "lines": len(lines), "truncated": cut, "log": strings.Join(lines, "\n")})
 		})
-	def(write("rerun_run", "Re-run a workflow run", "Re-runs every job (rerun re-runs only the failed ones).", schema("repo,runId", pRepo, pInt("runId", "")), false),
+	def(destructive("rerun_run", "Re-run a workflow run", "Re-runs every job (rerun re-runs only the failed ones).", schema("repo,runId", pRepo, pInt("runId", "")), false),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			return a.post(ctx, c, p.Repo, fmt.Sprintf("/actions/runs/%d/rerun", p.RunID), p.RunID != 0, fmt.Sprintf("Re-run run %d", p.RunID))
 		})
-	def(write("rerun_job", "Re-run a job", "", schema("repo,jobId", pRepo, pInt("jobId", "")), false),
+	def(destructive("rerun_job", "Re-run a job", "", schema("repo,jobId", pRepo, pInt("jobId", "")), false),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			return a.post(ctx, c, p.Repo, fmt.Sprintf("/actions/jobs/%d/rerun", p.JobID), p.JobID != 0, fmt.Sprintf("Re-run job %d", p.JobID))
 		})

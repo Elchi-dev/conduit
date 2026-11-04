@@ -13,6 +13,6 @@ GitLab. `projects` lists projects to watch (`group/project`).
 | `merge_requests` | read | Open MRs in a project or your watched projects; with neither, the ones assigned to you |
 | `issues` | read | Same scoping as merge requests |
 | `pipelines` | read | `failedOnly` |
-| `retry_pipeline` | write | Retries failed jobs |
+| `retry_pipeline` | destructive | Retries failed jobs |
 | `create_issue` | write | Undo closes it |
 | `close_issue`, `reopen_issue` | write | Each undoes the other |

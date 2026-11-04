@@ -13,7 +13,7 @@ reference.
 | `query_log` | read | Recent queries, optionally only blocked ones |
 | `protection_off` | write | Pause protection for some minutes (default 10), or until switched back on (0). Undo turns it back on |
 | `protection_on` | write | Undo pauses it again |
-| `rule_add` / `rule_remove` | write | A custom filtering rule, such as `\|\|ads.example.com^` to block or `@@\|\|example.com^` to allow. Each undoes the other |
+| `rule_add` / `rule_remove` | write / destructive | A custom filtering rule, such as `\|\|ads.example.com^` to block or `@@\|\|example.com^` to allow. Each undoes the other |
 
 Health is degraded while protection is paused and down when DNS isn't
 running.

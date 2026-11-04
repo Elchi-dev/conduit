@@ -91,7 +91,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"limit":{"type":"integer","default":50,"maximum":500}}}`)},
 			{Name: "restart_device", Title: "Restart a device", Description: "Its clients lose the connection for a minute or two.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["device"],"properties":{"device":{"type":"string","description":"Device id (API key) or MAC address"}}}`)},
-			{Name: "block_client", Title: "Block a client", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(macIn)},
+			{Name: "block_client", Title: "Block a client", Risk: sdk.RiskDestructive, Reversible: true, Input: sdk.Schema(macIn)},
 			{Name: "unblock_client", Title: "Unblock a client", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(macIn)},
 		},
 	}

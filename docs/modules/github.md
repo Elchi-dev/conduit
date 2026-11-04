@@ -136,7 +136,7 @@ These keep their original names, inputs and outputs:
 | `pull_requests` | read | Open PRs in a repo or your watched repos; with neither, every open PR you're involved in |
 | `issues` | read | Pull requests are filtered out |
 | `runs` | read | Recent workflow runs; `failedOnly` |
-| `rerun` | write | Re-runs the failed jobs of a run |
+| `rerun` | destructive | Re-runs the failed jobs of a run |
 | `create_issue` | write | Undo closes it |
 | `close_issue`, `reopen_issue` | write | Each undoes the other |
 | `comment` | write | Undo deletes the comment |

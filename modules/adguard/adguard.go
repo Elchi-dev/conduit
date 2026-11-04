@@ -54,7 +54,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"minutes":{"type":"integer","default":10,"minimum":0,"maximum":1440}}}`)},
 			{Name: "protection_on", Title: "Turn protection back on", Risk: sdk.RiskWrite, Reversible: true},
 			{Name: "rule_add", Title: "Add a filtering rule", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(ruleIn)},
-			{Name: "rule_remove", Title: "Remove a filtering rule", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(ruleIn)},
+			{Name: "rule_remove", Title: "Remove a filtering rule", Risk: sdk.RiskDestructive, Reversible: true, Input: sdk.Schema(ruleIn)},
 		},
 	}
 }

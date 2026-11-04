@@ -56,7 +56,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "issues", Title: "Issues", Risk: sdk.RiskRead, Input: sdk.Schema(`{"type":"object","properties":{` + projProp + `}}`)},
 			{Name: "pipelines", Title: "Pipelines", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + projProp + `,"failedOnly":{"type":"boolean","title":"Only failed pipelines"}}}`)},
-			{Name: "retry_pipeline", Title: "Retry a pipeline", Description: "Retries its failed jobs.", Risk: sdk.RiskWrite,
+			{Name: "retry_pipeline", Title: "Retry a pipeline", Description: "Retries its failed jobs.", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["project","pipelineId"],"properties":{"project":{"type":"string"},"pipelineId":{"type":"integer"}}}`)},
 			{Name: "create_issue", Title: "Open an issue", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["project","title"],"properties":{"project":{"type":"string"},"title":{"type":"string"},"description":{"type":"string","format":"textarea"}}}`)},

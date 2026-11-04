@@ -146,6 +146,21 @@ func friendly(err error, what string) error {
 	return err
 }
 
+// hideKey takes an environment key out of an error. The key is part of the
+// request path, and rest.TransportError keeps a URL's path ("Get
+// \"https://host/api/v1/environments/<key>/featurestates/\": EOF"), as can
+// a server's error text. The HTTP status is kept for friendly.
+func hideKey(err error, key string) error {
+	if err == nil || key == "" || !strings.Contains(err.Error(), key) {
+		return err
+	}
+	var re *rest.Error
+	if errors.As(err, &re) {
+		return &rest.Error{Status: re.Status, Message: strings.ReplaceAll(re.Message, key, "[environment key]")}
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), key, "[environment key]"))
+}
+
 func clip(s string, n int) string {
 	r := []rune(strings.TrimSpace(s))
 	if len(r) > n {
@@ -394,7 +409,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			ss, err := list[featureState](ctx, c, "/environments/"+url.PathEscape(e.key)+"/featurestates/", nil, "environment "+env)
 			if err != nil {
-				return sdk.Result{}, err
+				return sdk.Result{}, hideKey(err, e.key)
 			}
 			for _, s := range ss {
 				switch {
@@ -465,7 +480,7 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, proj, envName, want st
 	}
 	ss, err := list[featureState](ctx, c, "/environments/"+url.PathEscape(e.key)+"/featurestates/", url.Values{"feature": {strconv.FormatInt(f.ID, 10)}}, "environment "+e.Name)
 	if err != nil {
-		return sdk.Result{}, err
+		return sdk.Result{}, hideKey(err, e.key)
 	}
 	var st *featureState
 	for i := range ss {
@@ -480,22 +495,24 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, proj, envName, want st
 		return sdk.JSON(map[string]any{"project": proj, "environment": e.Name, "flag": f.Name, "enabled": on, "note": "nothing to change"})
 	}
 	word, back := map[bool]string{true: "on", false: "off"}[on], map[bool]string{true: "turn_off", false: "turn_on"}[on]
+	// Refused before the preview too, so a preview never shows a change the
+	// action won't make.
+	if e.Versioning {
+		return sdk.Result{}, fmt.Errorf("environment %s uses feature versioning, where changes are published as versions; turn the flag %s in Flagsmith", e.Name, word)
+	}
 	if call.DryRun {
 		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Turn flag %s %s in %s (project %s); users get the change right away", f.Name, word, e.Name, proj),
 			Changes: []sdk.Change{{Target: fmt.Sprintf("flag %s in project %s, environment %s", f.Name, proj, e.Name), Op: "turn " + word,
 				Before: mustJSON(map[string]bool{"enabled": st.Enabled}), After: mustJSON(map[string]bool{"enabled": on})}}}}, nil
-	}
-	if e.Versioning {
-		return sdk.Result{}, fmt.Errorf("environment %s uses feature versioning, where changes are published as versions; turn the flag %s in Flagsmith", e.Name, word)
 	}
 	// Only enabled is sent: the flag's value and segment overrides stay as
 	// they are, whatever changed since the preview.
 	var after featureState
 	path := "/environments/" + url.PathEscape(e.key) + "/featurestates/" + strconv.FormatInt(st.ID, 10) + "/"
 	if _, err := c.api.Do(ctx, http.MethodPatch, path, nil, map[string]bool{"enabled": on}, &after); err != nil {
-		return sdk.Result{}, friendly(err, "flag "+f.Name+" in environment "+e.Name)
+		return sdk.Result{}, friendly(hideKey(err, e.key), "flag "+f.Name+" in environment "+e.Name)
 	}
-	if after.ID != 0 && after.Enabled != on {
+	if after.ID != 0 && (after.ID != st.ID || after.Enabled != on) {
 		return sdk.Result{}, fmt.Errorf("Flagsmith kept flag %s %s in %s", f.Name, map[bool]string{true: "off", false: "on"}[on], e.Name)
 	}
 	res, err := sdk.JSON(map[string]any{"project": proj, "environment": e.Name, "flag": f.Name, "enabled": on, "before": st.Enabled})

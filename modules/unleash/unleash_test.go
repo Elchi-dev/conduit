@@ -16,9 +16,10 @@ import (
 )
 
 type fakeUnleash struct {
-	mu   sync.Mutex
-	seen []string
-	on   map[string]bool // environment -> enabled, for feature new-checkout
+	mu     sync.Mutex
+	seen   []string
+	ignore bool            // answer the on and off endpoints without changing anything
+	on     map[string]bool // environment -> enabled, for feature new-checkout
 }
 
 func (f *fakeUnleash) feature(name string) string {
@@ -49,9 +50,13 @@ func (f *fakeUnleash) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /prefix/api/admin/projects/default/features/other":
 		io.WriteString(w, f.feature("new-checkout")) // answers with another feature
 	case "POST /prefix/api/admin/projects/default/features/new-checkout/environments/production/on":
-		f.on["production"] = true
+		if !f.ignore {
+			f.on["production"] = true
+		}
 	case "POST /prefix/api/admin/projects/default/features/new-checkout/environments/production/off":
-		f.on["production"] = false
+		if !f.ignore {
+			f.on["production"] = false
+		}
 	default:
 		w.WriteHeader(404)
 		io.WriteString(w, `{"name":"NotFoundError","message":"Could not find feature"}`)
@@ -108,6 +113,18 @@ func TestUnleash(t *testing.T) {
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.on["production"] {
 		t.Fatal(err)
+	}
+	if r, err := invoke(m, "turn_on", in, true); err != nil || strings.Contains(r.Plan.Summary, "default strategy") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	f.ignore = true
+	if _, err := invoke(m, "turn_on", in, false); err == nil || !strings.Contains(err.Error(), "kept") {
+		t.Fatal(err)
+	}
+	f.ignore = false
+	f.on["development"] = false
+	if r, err := invoke(m, "turn_on", `{"feature":"new-checkout","environment":"development"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "default strategy") {
+		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	if _, err := invoke(m, "turn_on", `{"feature":"new-checkout","environment":"staging"}`, false); err == nil || !strings.Contains(err.Error(), "development, production") {
 		t.Fatal(err)

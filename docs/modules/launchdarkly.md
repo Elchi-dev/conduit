@@ -18,11 +18,12 @@ those instances; the default is `app.launchdarkly.com`.
 | `turn_off` | destructive | Turns a flag's targeting off, so everyone gets its off variation. The preview and undo work the same way. |
 
 When the flag is already in the state asked for, the action answers
-"nothing to change" and leaves it alone. Both actions send a semantic patch
-(`turnFlagOn` or `turnFlagOff`) with a comment, which takes `comment` from
-the input or says it was done through Conduit. A semantic patch states the
-intent rather than the whole flag, so targets, rules and variations someone
-changed after the preview are kept.
+"nothing to change" and leaves it alone. Both actions send a JSON Patch with
+a comment (`comment` from the input, or that it was done through Conduit):
+a `test` that `/environments/<env>/on` still has the value just read, then a
+`replace` of that one field. LaunchDarkly applies both or neither, so if
+someone switched the flag in the meantime nothing is changed and the action
+says so; targets, rules and variations are never touched.
 
 **Security.** The token goes in the `Authorization` header, and the client
 won't follow a redirect to another host or from https to http. Project,
@@ -34,4 +35,5 @@ never returned.
 ## Notes
 
 - Environments that require approvals refuse direct changes; the action
-  then says to open an approval request in LaunchDarkly.
+  then says to open an approval request in LaunchDarkly. The change is
+  never retried another way.

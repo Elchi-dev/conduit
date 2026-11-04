@@ -24,7 +24,14 @@ When the feature is already in the state asked for, the action answers
 "nothing to change" and leaves it alone. Both actions use Unleash's on and
 off endpoints, which change only that environment's switch, so strategies,
 variants and other environments stay exactly as they are, including
-changes someone made after the preview.
+changes someone made after the preview. The endpoints answer without a
+body, so the action reads the feature back and fails if the switch didn't
+move.
+
+Turning a feature on in an environment with no active strategy makes
+Unleash add that environment's default strategy (usually a 100% rollout);
+the preview says so. Turning it off again (the undo) leaves that strategy
+in place, which has no effect while the feature is off.
 
 **Security.** The token goes in the `Authorization` header, and the client
 won't follow a redirect to another host or from https to http. Project,

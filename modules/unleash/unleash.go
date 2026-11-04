@@ -412,8 +412,23 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, proj, name, env string
 	if e.Type != "" {
 		target += " (" + e.Type + ")"
 	}
+	summary := fmt.Sprintf("Turn feature %s %s in %s (project %s); users get the change right away", f.Name, word, env, proj)
+	if on {
+		active := 0
+		for _, s := range e.Strategies {
+			if !s.Disabled {
+				active++
+			}
+		}
+		if active == 0 {
+			// Unleash then adds the environment's default strategy (by
+			// default a 100% rollout); turning it off again leaves that
+			// strategy in place.
+			summary += "; it has no active strategy, so Unleash adds its default strategy (usually everyone gets it)"
+		}
+	}
 	if call.DryRun {
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Turn feature %s %s in %s (project %s); users get the change right away", f.Name, word, env, proj),
+		return sdk.Result{Plan: &sdk.Plan{Summary: summary,
 			Changes: []sdk.Change{{Target: target, Op: "turn " + word, Before: mustJSON(map[string]bool{"enabled": e.Enabled}), After: mustJSON(map[string]bool{"enabled": on})}}}}, nil
 	}
 	// The on and off endpoints change this environment's switch alone, so a
@@ -421,6 +436,15 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, proj, name, env string
 	path := "/projects/" + url.PathEscape(proj) + "/features/" + url.PathEscape(f.Name) + "/environments/" + url.PathEscape(env) + "/" + word
 	if _, err := c.api.Do(ctx, http.MethodPost, path, nil, nil, nil); err != nil {
 		return sdk.Result{}, friendly(err, "feature "+f.Name+" in project "+proj)
+	}
+	// The endpoints answer with no body: read the feature back to be sure
+	// the switch moved (a change request, for one, can leave it as it was).
+	if g, err := c.feature(ctx, proj, f.Name); err == nil {
+		for _, ge := range g.Environment {
+			if ge.Name == env && ge.Enabled != on {
+				return sdk.Result{}, fmt.Errorf("Unleash kept feature %s %s in %s", f.Name, map[bool]string{true: "off", false: "on"}[on], env)
+			}
+		}
 	}
 	res, err := sdk.JSON(map[string]any{"project": proj, "feature": f.Name, "environment": env, "enabled": on, "before": e.Enabled})
 	res.Undo = sdk.UndoWith(back, map[string]string{"project": proj, "feature": f.Name, "environment": env},

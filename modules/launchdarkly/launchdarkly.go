@@ -2,19 +2,18 @@
 // API access token: projects, environments (never their SDK, mobile or
 // client-side keys), flags with their state in an environment (counts of
 // targets and rules, never who they match), and turning a flag on or off in
-// one environment with a semantic patch.
+// one environment with a JSON Patch that first tests the switch is still as
+// it was read.
 //
 // Turning a flag on or off changes what users get right away, so both are
 // destructive; each is the other's undo.
 package launchdarkly
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -50,6 +49,10 @@ var regions = map[string]string{"": "https://app.launchdarkly.com", "us": "https
 
 // keyRe matches LaunchDarkly project, environment and flag keys.
 var keyRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$`)
+
+// jsonPointer escapes a key for a JSON Pointer (RFC 6901). keyRe already
+// leaves out both characters; this keeps the patch right if it ever doesn't.
+var jsonPointer = strings.NewReplacer("~", "~0", "/", "~1")
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
@@ -421,25 +424,28 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, proj, env, key, commen
 	if comment == "" {
 		comment = "Turned " + word + " through Conduit"
 	}
-	// A semantic patch says what to do (turn targeting on or off), not
-	// what the flag should look like: rules, targets and variations someone
-	// changed since the preview are kept as they are.
-	body, _ := json.Marshal(map[string]any{"environmentKey": env, "comment": comment, "instructions": []map[string]string{{"kind": "turnFlag" + strings.ToUpper(word[:1]) + word[1:]}}})
-	hdr := http.Header{"Content-Type": {"application/json; domain-model=launchdarkly.semanticpatch"}}
-	res, err := c.api.Send(ctx, http.MethodPatch, "/flags/"+url.PathEscape(proj)+"/"+url.PathEscape(f.Key), nil, bytes.NewReader(body), hdr)
-	if err != nil {
+	// A JSON Patch that touches only this environment's on switch, with a
+	// test first: LaunchDarkly applies it only if the switch is still as it
+	// was read, so a change someone made in the meantime isn't overwritten,
+	// and rules, targets and variations stay as they are.
+	ptr := "/environments/" + jsonPointer.Replace(env) + "/on"
+	body := map[string]any{"comment": comment, "patch": []map[string]any{
+		{"op": "test", "path": ptr, "value": e.On},
+		{"op": "replace", "path": ptr, "value": on},
+	}}
+	var after flag
+	if _, err := c.api.Do(ctx, http.MethodPatch, "/flags/"+url.PathEscape(proj)+"/"+url.PathEscape(f.Key), nil, body, &after); err != nil {
+		// No retry: a 405 means the environment needs an approval request,
+		// and a failed test means the flag changed since it was read.
+		if rest.IsStatus(err, http.StatusBadRequest) || rest.IsStatus(err, http.StatusConflict) {
+			if _, now, rerr := c.flag(ctx, proj, env, key); rerr == nil && now.On != e.On {
+				return sdk.Result{}, fmt.Errorf("flag %s was turned %s in %s by someone else since it was read; nothing was changed", f.Key, word, env)
+			}
+		}
 		return sdk.Result{}, friendly(err, "flag "+f.Key+" in project "+proj)
 	}
-	var after flag
-	raw, _ := io.ReadAll(io.LimitReader(res.Body, 8<<20))
-	res.Body.Close()
-	if res.StatusCode >= 300 {
-		return sdk.Result{}, fmt.Errorf("LaunchDarkly answered %s", res.Status)
-	}
-	if json.Unmarshal(raw, &after) == nil {
-		if ae, ok := after.Environments[env]; ok && ae.On != on {
-			return sdk.Result{}, fmt.Errorf("LaunchDarkly kept flag %s %s in %s", f.Key, map[bool]string{true: "off", false: "on"}[on], env)
-		}
+	if ae, ok := after.Environments[env]; ok && ae.On != on {
+		return sdk.Result{}, fmt.Errorf("LaunchDarkly kept flag %s %s in %s", f.Key, map[bool]string{true: "off", false: "on"}[on], env)
 	}
 	out, err := sdk.JSON(map[string]any{"project": proj, "environment": env, "flag": f.Key, "on": on, "before": e.On})
 	out.Undo = sdk.UndoWith(back, map[string]string{"project": proj, "environment": env, "flag": f.Key},

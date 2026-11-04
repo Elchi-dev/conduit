@@ -27,13 +27,15 @@ are. The undo names the environment and flag by id.
 won't follow a redirect to another host or from https to http. Project ids,
 flag names and environment names are checked before any request.
 Environment keys (the SDK keys) are read only to build request paths and
-are never returned or kept in an undo. Flag values and identity overrides,
+are never returned or kept in an undo; since a transport error or a
+server's error text can quote the request path, the key is cut out of
+every error. Flag values and identity overrides,
 which can hold configuration or user identifiers, are never returned.
 
 ## Notes
 
 - In an environment with feature versioning, changes are published as
-  versions; the actions explain this and leave the flag to the Flagsmith
-  dashboard.
+  versions; the actions (previews included) explain this and leave the
+  flag to the Flagsmith dashboard.
 - Flagsmith's feature states don't take a version, so a turn is a plain
   on or off rather than a compare-and-set.

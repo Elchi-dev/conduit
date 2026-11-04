@@ -128,8 +128,10 @@ func TestFlagsmith(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.versioned = true
-	if _, err := invoke(m, "turn_on", in, false); err == nil || !strings.Contains(err.Error(), "versioning") || f.on {
-		t.Fatal(err)
+	for _, dry := range []bool{true, false} {
+		if r, err := invoke(m, "turn_on", in, dry); err == nil || !strings.Contains(err.Error(), "versioning") || f.on || r.Plan != nil {
+			t.Fatal(dry, err)
+		}
 	}
 	for _, a := range m.Manifest().Actions {
 		if strings.HasPrefix(a.Name, "turn_") && (a.Risk != sdk.RiskDestructive || !a.DryRun || !a.Reversible) {
@@ -167,6 +169,42 @@ func TestFlagsmithValidation(t *testing.T) {
 	bad, _ := setup(t, "secret://bad")
 	if h := bad.Health(context.Background(), "f"); h.Status != "down" || h.Message != "Flagsmith refused the API key" {
 		t.Fatalf("%+v", h)
+	}
+}
+
+// The environment key is in the request path, which a transport error
+// quotes and a server may echo; neither reaches the error.
+func TestFlagsmithHidesEnvironmentKeyInErrors(t *testing.T) {
+	m, f := setup(t, "secret://fs")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/featurestates/") {
+			if r.Method == http.MethodPatch {
+				w.WriteHeader(400)
+				io.WriteString(w, `{"detail":"bad request for /environments/LEAKMEprodkey/featurestates/501/"}`)
+				return
+			}
+			if r.URL.Query().Get("feature") == "" {
+				// Drop the connection: Go's error quotes the URL.
+				conn, _, _ := w.(http.Hijacker).Hijack()
+				conn.Close()
+				return
+			}
+		}
+		f.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	raw, _ := json.Marshal(Config{URL: srv.URL, APIKey: "secret://fs"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://fs": "fs_good"}), "f", raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ action, in string }{
+		{"flags", `{"project":7,"environment":"Production"}`},
+		{"turn_on", `{"project":7,"environment":"Production","flag":"new_checkout"}`},
+	} {
+		_, err := invoke(m, c.action, c.in, false)
+		if err == nil || strings.Contains(strings.ToLower(err.Error()), "leakme") {
+			t.Fatalf("%s: %v", c.action, err)
+		}
 	}
 }
 

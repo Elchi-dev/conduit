@@ -22,6 +22,9 @@ type fakeLD struct {
 	on      bool // new-checkout in production
 	version int
 	ignore  bool
+	// flipFirst turns the flag on just before a patch is applied;
+	// approvals answers every patch with 405.
+	flipFirst, approvals bool
 }
 
 func (f *fakeLD) flag(key string) string {
@@ -60,21 +63,41 @@ func (f *fakeLD) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /api/v2/flags/default/other":
 		io.WriteString(w, f.flag("new-checkout")) // answers with another flag
 	case "PATCH /api/v2/flags/default/new-checkout":
-		if r.Header.Get("Content-Type") != "application/json; domain-model=launchdarkly.semanticpatch" {
+		if r.Header.Get("Content-Type") != "application/json" {
 			w.WriteHeader(400)
-			io.WriteString(w, `{"message":"expected a semantic patch"}`)
+			io.WriteString(w, `{"message":"expected a JSON patch"}`)
 			return
 		}
 		f.patches = append(f.patches, string(body))
+		if f.approvals {
+			w.WriteHeader(405)
+			io.WriteString(w, `{"code":"method_not_allowed","message":"approval required"}`)
+			return
+		}
+		if f.flipFirst {
+			// Someone else turns it on between the read and the patch.
+			f.on, f.flipFirst = true, false
+		}
 		var in struct {
-			Env          string `json:"environmentKey"`
-			Instructions []struct {
-				Kind string `json:"kind"`
-			} `json:"instructions"`
+			Patch []struct {
+				Op    string `json:"op"`
+				Path  string `json:"path"`
+				Value bool   `json:"value"`
+			} `json:"patch"`
 		}
 		json.Unmarshal(body, &in)
-		if in.Env == "production" && len(in.Instructions) == 1 && !f.ignore {
-			f.on = in.Instructions[0].Kind == "turnFlagOn"
+		if len(in.Patch) != 2 || in.Patch[0].Op != "test" || in.Patch[1].Op != "replace" || in.Patch[0].Path != "/environments/production/on" || in.Patch[1].Path != in.Patch[0].Path {
+			w.WriteHeader(400)
+			io.WriteString(w, `{"message":"unexpected patch"}`)
+			return
+		}
+		if in.Patch[0].Value != f.on {
+			w.WriteHeader(409)
+			io.WriteString(w, `{"code":"conflict","message":"test operation failed"}`)
+			return
+		}
+		if !f.ignore {
+			f.on = in.Patch[1].Value
 			f.version++
 		}
 		io.WriteString(w, f.flag("new-checkout"))
@@ -131,15 +154,29 @@ func TestLaunchDarkly(t *testing.T) {
 	if err != nil || !f.on || r.Undo == nil || r.Undo.Action != "turn_off" || string(r.Undo.Input) != `{"environment":"production","flag":"new-checkout","project":"default"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if f.patches[0] != `{"comment":"launch","environmentKey":"production","instructions":[{"kind":"turnFlagOn"}]}` {
+	if f.patches[0] != `{"comment":"launch","patch":[{"op":"test","path":"/environments/production/on","value":false},{"op":"replace","path":"/environments/production/on","value":true}]}` {
 		t.Fatal(f.patches[0])
 	}
 	if r, err := invoke(m, "turn_on", in, false); err != nil || r.Undo != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatalf("no-op: %+v %v", r, err)
 	}
-	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.on || !strings.Contains(f.patches[1], "turnFlagOff") || !strings.Contains(f.patches[1], `"comment":"Turned off through Conduit"`) {
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.on || !strings.Contains(f.patches[1], `"value":true},{"op":"replace","path":"/environments/production/on","value":false}`) || !strings.Contains(f.patches[1], `"comment":"Turned off through Conduit"`) {
 		t.Fatal(err, f.patches)
 	}
+	// Someone else turns it on between the read and the patch: the test
+	// fails, nothing is changed and the action says why.
+	f.flipFirst = true
+	if _, err := invoke(m, "turn_on", in, false); err == nil || !strings.Contains(err.Error(), "someone else") {
+		t.Fatal(err)
+	}
+	f.on = false
+	// An environment that needs approvals: one patch, no retry.
+	f.approvals = true
+	n := len(f.patches)
+	if _, err := invoke(m, "turn_on", in, false); err == nil || !strings.Contains(err.Error(), "approval request") || len(f.patches) != n+1 || f.on {
+		t.Fatal(err, f.patches)
+	}
+	f.approvals = false
 	f.ignore = true
 	if _, err := invoke(m, "turn_on", in, false); err == nil || !strings.Contains(err.Error(), "kept") {
 		t.Fatal(err)

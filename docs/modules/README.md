@@ -125,6 +125,16 @@ recommended policies.
 | Vikunja | [vikunja.md](vikunja.md) | homelab |
 | Firefly III | [firefly.md](firefly.md) | homelab |
 | Karakeep | [karakeep.md](karakeep.md) | homelab |
+| MikroTik | [mikrotik.md](mikrotik.md) | homelab |
+| NetBox | [netbox.md](netbox.md) | homelab, team |
+| Caddy | [caddy.md](caddy.md) | homelab, developer |
+| PowerDNS | [powerdns.md](powerdns.md) | homelab, team |
+| Technitium DNS | [technitium.md](technitium.md) | homelab |
+| Pterodactyl (Pelican) | [pterodactyl.md](pterodactyl.md) | gamer, homelab |
+| Crafty Controller | [crafty.md](crafty.md) | gamer, homelab |
+| AMP | [amp.md](amp.md) | gamer, homelab |
+| Steam | [steam.md](steam.md) | gamer |
+| Xbox (OpenXBL) | [openxbl.md](openxbl.md) | gamer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

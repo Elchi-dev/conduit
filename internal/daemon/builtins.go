@@ -5,6 +5,7 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/modules/adguard"
+	"github.com/elchi-dev/conduit/modules/amp"
 	"github.com/elchi-dev/conduit/modules/argocd"
 	"github.com/elchi-dev/conduit/modules/arr"
 	"github.com/elchi-dev/conduit/modules/audiobookshelf"
@@ -16,10 +17,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/bitbucket"
 	"github.com/elchi-dev/conduit/modules/bluesky"
 	"github.com/elchi-dev/conduit/modules/bookstack"
+	"github.com/elchi-dev/conduit/modules/caddy"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/consul"
 	"github.com/elchi-dev/conduit/modules/containerregistry"
+	"github.com/elchi-dev/conduit/modules/crafty"
 	"github.com/elchi-dev/conduit/modules/database"
 	"github.com/elchi-dev/conduit/modules/datadog"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
@@ -59,10 +62,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/mattermost"
 	"github.com/elchi-dev/conduit/modules/mealie"
 	"github.com/elchi-dev/conduit/modules/metrics"
+	"github.com/elchi-dev/conduit/modules/mikrotik"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
 	"github.com/elchi-dev/conduit/modules/navidrome"
+	"github.com/elchi-dev/conduit/modules/netbox"
 	"github.com/elchi-dev/conduit/modules/netlify"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/nomad"
@@ -73,6 +78,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/nut"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
+	"github.com/elchi-dev/conduit/modules/openxbl"
 	"github.com/elchi-dev/conduit/modules/opnsense"
 	"github.com/elchi-dev/conduit/modules/outline"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
@@ -81,7 +87,9 @@ import (
 	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
 	"github.com/elchi-dev/conduit/modules/portainer"
+	"github.com/elchi-dev/conduit/modules/powerdns"
 	"github.com/elchi-dev/conduit/modules/proxmox"
+	"github.com/elchi-dev/conduit/modules/pterodactyl"
 	"github.com/elchi-dev/conduit/modules/qbittorrent"
 	"github.com/elchi-dev/conduit/modules/railway"
 	"github.com/elchi-dev/conduit/modules/redis"
@@ -98,6 +106,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/speedtest"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
+	"github.com/elchi-dev/conduit/modules/steam"
 	"github.com/elchi-dev/conduit/modules/stripe"
 	"github.com/elchi-dev/conduit/modules/supabase"
 	"github.com/elchi-dev/conduit/modules/syncthing"
@@ -106,6 +115,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/tailscale"
 	"github.com/elchi-dev/conduit/modules/tasmota"
 	"github.com/elchi-dev/conduit/modules/tautulli"
+	"github.com/elchi-dev/conduit/modules/technitium"
 	"github.com/elchi-dev/conduit/modules/telegram"
 	"github.com/elchi-dev/conduit/modules/terraformcloud"
 	"github.com/elchi-dev/conduit/modules/todoist"
@@ -264,6 +274,16 @@ func builtins(app *App) []sdk.Module {
 		vikunja.New(),
 		firefly.New(),
 		karakeep.New(),
+		mikrotik.New(),
+		netbox.New(),
+		caddy.New(),
+		powerdns.New(),
+		technitium.New(),
+		pterodactyl.New(),
+		crafty.New(),
+		amp.New(),
+		steam.New(),
+		openxbl.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

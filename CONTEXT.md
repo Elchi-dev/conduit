@@ -31,10 +31,13 @@ owner and a company equally; never tailor it to one setup.
   restricted vault folders for teams.
 - **Released v1.0.0 (Wed 4 Nov, 05:49 CET):** 105 modules, signed builds
   for every platform (39 files), owner tests it now.
-- **Now:** toward v1.1 before Thu 00:00: smart-home devices (Hue, Shelly,
-  ESPHome, Zigbee2MQTT, Tasmota) and analytics/uptime (Plausible, Umami,
-  UptimeRobot, Healthchecks.io, Better Stack); each batch gets a security
-  review before the release.
+- **Now:** toward v1.1 before Thu 00:00: 155 modules, reviews through 11
+  fixed (BUILD_LOG.md). More batches and their reviews in progress.
+- **CI is down** since 06:43 on 4 Nov: GitHub Actions doesn't start jobs
+  (probably the private repository's minutes; the owner was told). Verify
+  everything locally before pushing (`go test -race ./...`, web and site
+  builds and i18n, `make daemon && cd web && pnpm test:e2e`). Releases
+  also need Actions.
 - **Backlog** (take the next item when a phase ends; the build runs until
   Thu 2026-11-05 00:00 CET):
   1. Daemon passkeys (serve the desktop app on localhost, which WebAuthn

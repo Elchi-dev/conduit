@@ -3,6 +3,37 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · After 1.0 — toward v1.1 (155 modules, reviews 8–11)
+
+- **Modules 106–155**, in batches, each followed by an independent review:
+  smart home (Hue, Shelly, ESPHome, Zigbee2MQTT, Tasmota), analytics and
+  uptime (Plausible, Umami, UptimeRobot, Healthchecks.io, Better Stack),
+  social and publishing (Bluesky, Matrix, Signal, listmonk, Ghost),
+  knowledge and money (BookStack, Outline, Vikunja, Firefly III, Karakeep),
+  game panels and networks (Pterodactyl, Crafty, AMP, Steam, OpenXBL,
+  MikroTik, NetBox, Caddy, PowerDNS, Technitium), AI tools (LiteLLM,
+  OpenRouter, ComfyUI, Hugging Face, OpenAI-compatible servers), support
+  desks (Zendesk, Freshdesk, Chatwoot, Zammad, PostHog), cloud hosts and
+  reading (Linode, Vultr, Scaleway, UpCloud, Porkbun, Miniflux, FreshRSS,
+  wallabag, weather, Komga). The weather appears in the daily brief.
+- **Review 8 (smart home):** default-deny for Zigbee2MQTT writes, locked
+  relays for garage openers and door strikes (Shelly, Tasmota), Hue chains
+  checked against the Philips/Signify roots, critical lights.
+- **Review 9 (privacy):** the engine redacts plans of sensitive actions in
+  the audit log, events and approvals (only people who decide approvals see
+  them; migration 0015); dry runs return redacted plans to actors denied a
+  read; undo never copies private text; public posting is destructive.
+- **Review 10 (DNS):** add_record at write can't override or delegate;
+  blocking DNS is destructive; backups that rotate are destructive.
+- **Review 11 (help desks, AI):** no customer data in previews; resolving
+  tickets (which can email customers) is destructive; interrupting work and
+  spending are bounded or destructive; the risk check learned interrupt,
+  abort, cancel, suspend, pause and scale-to-zero.
+- **CI:** GitHub Actions stopped starting jobs at 06:43 (probably the
+  private repository's minutes); everything since is verified locally
+  (full race tests, web and site builds, translations, e2e) before pushing.
+  A v1.1 release needs Actions back.
+
 ## 2026-11-04 · v1.0.0
 
 Released 05:49 CET from ff2d970: 105 modules, signed for every platform,

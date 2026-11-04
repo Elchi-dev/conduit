@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -59,8 +61,35 @@ var (
 	// detailKeyRe and the words below keep game-specific details to plain
 	// settings (map, version, mode), never addresses or credentials.
 	detailKeyRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,40}$`)
-	secretish   = []string{"ip", "address", "rcon", "password", "token", "key", "secret", "steamid", "owner"}
+	secretish   = []string{"ip", "address", "addr", "host", "port", "connect", "endpoint", "url", "rcon", "password", "token", "key", "secret", "steamid", "owner"}
+	// addrRe finds what looks like a server address in free text (a message
+	// of the day, a server name): an IPv4 address with or without a port, a
+	// bracketed or bare IPv6 address, a host:port, or a connect link.
+	addrRe = regexp.MustCompile(`(?i)\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b|\[[0-9a-f:.]{2,}\](?::\d{1,5})?|\b[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){2,7}:[0-9a-f]{1,4}\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}:\d{1,5}\b|\b[a-z][a-z0-9+.-]*://\S*connect\S*|\bconnect\s+\S+`)
 )
+
+// line makes server text one line of at most n bytes (cut on a rune start),
+// without control characters.
+func line(s string, n int) string {
+	s = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)), " ")
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
+// cleanName is a server name on one line with any address in it hidden.
+func cleanName(s string) string {
+	return line(addrRe.ReplaceAllString(s, "[address]"), 120)
+}
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
@@ -231,7 +260,7 @@ func (c *conn) server(ctx context.Context, id string) (server, error) {
 
 func summary(s server) map[string]any {
 	a := s.Attributes
-	out := map[string]any{"id": s.ID, "name": a.Name, "status": a.Status, "players": a.Players, "maxPlayers": a.MaxPlayers,
+	out := map[string]any{"id": s.ID, "name": cleanName(a.Name), "status": line(a.Status, 20), "players": a.Players, "maxPlayers": a.MaxPlayers,
 		"url": "https://www.battlemetrics.com/servers/"}
 	game := s.Relationships.Game.Data.ID
 	if gameRe.MatchString(game) {
@@ -243,8 +272,8 @@ func summary(s server) map[string]any {
 	if a.Rank != nil {
 		out["rank"] = *a.Rank
 	}
-	if a.Country != "" {
-		out["country"] = a.Country
+	if c := line(a.Country, 8); c != "" {
+		out["country"] = c
 	}
 	return out
 }
@@ -269,7 +298,9 @@ next:
 		}
 		switch v := d[k].(type) {
 		case string:
-			if len(v) <= 120 {
+			// A value naming an address (a message of the day with the
+			// connect string, say) is left out whole.
+			if v = line(v, 1<<20); len(v) <= 120 && !addrRe.MatchString(v) {
 				out[k] = rest.Redact(v)
 			}
 		case float64, bool:
@@ -390,7 +421,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		out := summary(s)
 		if s.Attributes.UpdatedAt != "" {
-			out["updated"] = s.Attributes.UpdatedAt
+			out["updated"] = line(s.Attributes.UpdatedAt, 40)
 		}
 		if s.Attributes.Private {
 			out["private"] = true
@@ -430,7 +461,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		for i, d := range r.Data {
 			a := d.Attributes
 			if len(points) < 1000 {
-				points = append(points, point{Time: a.Timestamp, Players: a.Value})
+				points = append(points, point{Time: line(a.Timestamp, 40), Players: a.Value})
 			}
 			l, h := a.Value, a.Value
 			if a.Min != nil {

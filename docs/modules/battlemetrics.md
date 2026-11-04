@@ -21,8 +21,12 @@ online; with no servers listed it just checks the token.
 **Security.** The token goes in the `Authorization` header and the client
 won't follow a redirect to another host. Server ids must be numbers before
 they reach a request. Server addresses and IPs aren't returned, and game
-details are cut down to plain settings: anything that looks like an
-address, RCON setting, password, key or owner id is dropped.
+details are cut down to plain one-line settings: a detail whose name
+suggests an address, port, host, connect link, URL, RCON setting, password,
+key or owner id is dropped, and so is any text value that contains an IP
+address, a host:port or a connect link (a message of the day with the
+connect string, for example). An address inside a server's name is shown as
+`[address]`.
 
 ## Notes
 

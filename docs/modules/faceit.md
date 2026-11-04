@@ -25,6 +25,9 @@ avatars, platform ids, friends, settings or chat.
 ## Notes
 
 - Stat names differ per game and come straight from FACEIT, so they may
-  change; nested per-map segments are left out.
+  change; nested per-map segments are left out. At most 40 stats are passed
+  on: a name must be one line of up to 64 bytes, a value a number, true or
+  false, or text of up to 64 bytes made one line, and a list keeps its
+  first 10 such values; nested objects are dropped.
 - A refused request (HTTP 429) waits once for the time FACEIT asks (up to 30
   seconds) and is tried again.

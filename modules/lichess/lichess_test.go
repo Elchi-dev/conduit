@@ -3,6 +3,7 @@ package lichess
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -259,5 +260,34 @@ func TestLichessRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if _, err := invoke(m, "games", `{"username":"magnus"}`); err == nil || leaked != "" {
 		t.Fatalf("followed the redirect: %v %q", err, leaked)
+	}
+}
+
+// A caller waiting for the shared slot, or pausing after a 429 inside it,
+// gives up when its context ends and never keeps the slot.
+func TestLichessSlotHonoursCancellation(t *testing.T) {
+	m, f := setup(t, Config{Username: "magnus"}, "")
+	slot <- struct{}{} // another request holds the slot
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	_, err := m.Invoke(ctx, sdk.Call{Instance: "l", Action: "profile", Input: json.RawMessage(`{}`)})
+	cancel()
+	<-slot
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waited past the deadline: %v", err)
+	}
+	c, _ := m.set.Get("l")
+	c.sleep = wait // the real pause, a full minute without Retry-After
+	f.busy = 1
+	ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := m.Invoke(ctx, sdk.Call{Instance: "l", Action: "profile", Input: json.RawMessage(`{}`)}); err == nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("pause ignored cancellation: %v", err)
+	}
+	select {
+	case slot <- struct{}{}:
+		<-slot
+	default:
+		t.Fatal("the slot was kept after a cancelled pause")
 	}
 }

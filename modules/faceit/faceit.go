@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -231,6 +233,7 @@ func (c *conn) player(ctx context.Context, w who) (player, error) {
 	if !idRe.MatchString(p.ID) {
 		return p, errors.New("unexpected answer from FACEIT")
 	}
+	p.Nickname = line(p.Nickname, 64)
 	return p, nil
 }
 
@@ -251,11 +254,30 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 	return sdk.Health{Status: "ok", Message: msg}
 }
 
-// scalar keeps a stat value that's a short string, number or bool.
+// line makes FACEIT text one line of at most n bytes (cut on a rune start),
+// without control characters.
+func line(s string, n int) string {
+	s = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)), " ")
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
+}
+
+// scalar keeps a stat value that's a short string (made one line), number
+// or bool.
 func scalar(v any) (any, bool) {
 	switch x := v.(type) {
 	case string:
-		if len(x) <= 64 {
+		if x = line(x, 1<<20); len(x) <= 64 {
 			return x, true
 		}
 	case float64, bool:
@@ -322,13 +344,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if !gameRe.MatchString(k) {
 				continue
 			}
-			row := map[string]any{"level": g.SkillLevel, "elo": g.Elo, "region": g.Region}
-			if g.Name != "" {
-				row["inGameName"] = g.Name
+			row := map[string]any{"level": g.SkillLevel, "elo": g.Elo, "region": line(g.Region, 16)}
+			if n := line(g.Name, 64); n != "" {
+				row["inGameName"] = n
 			}
 			games[k] = row
 		}
-		out := map[string]any{"playerId": p.ID, "nickname": p.Nickname, "country": strings.ToUpper(p.Country), "games": games,
+		out := map[string]any{"playerId": p.ID, "nickname": p.Nickname, "country": strings.ToUpper(line(p.Country, 8)), "games": games,
 			"url": "https://www.faceit.com/en/players/" + url.PathEscape(p.Nickname)}
 		if p.Verified {
 			out["verified"] = true
@@ -353,13 +375,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		sort.Strings(keys)
 		stats := map[string]any{}
 		for _, k := range keys {
-			if len(stats) >= 40 || len(k) > 64 {
+			// A stat name is kept only when it's already one short line.
+			name := line(k, 64)
+			if len(stats) >= 40 || name != k || name == "" {
 				continue
 			}
 			if v, ok := scalar(r.Lifetime[k]); ok {
 				stats[k] = v
 			} else if list, ok := r.Lifetime[k].([]any); ok {
-				var short []any
+				short := []any{}
 				for _, x := range list {
 					if v, ok := scalar(x); ok && len(short) < 10 {
 						short = append(short, v)
@@ -421,7 +445,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 					}
 				}
 			}
-			row := map[string]any{"matchId": it.MatchID, "mode": it.GameMode, "competition": it.Competition, "region": it.Region, "status": it.Status}
+			row := map[string]any{"matchId": line(it.MatchID, 64), "mode": line(it.GameMode, 32), "competition": line(it.Competition, 100), "region": line(it.Region, 16), "status": line(it.Status, 20)}
 			if s := when(it.Started); s != "" {
 				row["started"] = s
 			}
@@ -430,10 +454,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			names := map[string]string{}
 			for faction, t := range it.Teams {
-				names[faction] = t.Nickname
+				if len(names) < 4 {
+					names[line(faction, 16)] = line(t.Nickname, 64)
+				}
 			}
 			row["teams"] = names
-			if len(it.Results.Score) > 0 {
+			if n := len(it.Results.Score); n > 0 && n <= 4 {
 				row["score"] = it.Results.Score
 			}
 			if mine != "" && it.Results.Winner != "" {

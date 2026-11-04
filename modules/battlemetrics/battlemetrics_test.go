@@ -27,7 +27,8 @@ type fakeBM struct {
 
 func srv(id, name, status string, players int) string {
 	return fmt.Sprintf(`{"type":"server","id":%q,"attributes":{"id":%q,"name":%q,"address":"play.example.com","ip":"203.0.113.9","port":28015,"players":%d,"maxPlayers":100,"rank":42,"status":%q,"country":"DE","updatedAt":"2026-11-04T10:00:00Z",
-		"details":{"map":"Procedural Map","rust_type":"community","version":"2600","serverSteamId":"90000000000LEAK","rconActive":true,"rcon_ip":"LEAKIP","long":"%s","nested":{"x":"LEAK"}}},
+		"details":{"map":"Procedural Map","rust_type":"community","version":"2600","serverSteamId":"90000000000LEAK","rconActive":true,"rcon_ip":"LEAKIP","long":"%s","nested":{"x":"LEAK"},
+		"minecraft_motd":"Join us at 198.51.100.7:25565","welcome":"steam://run/252490//+connect%%20LEAKHOST","alt":"play.LEAKHOST.net:28015","v6":"2001:db8::7:1","queryPort":28017,"pve":false,"mode":"Line one\nLine two"}},
 		"relationships":{"game":{"data":{"type":"game","id":"rust"}}}}`, id, id, name, players, status, strings.Repeat("x", 200))
 }
 
@@ -100,7 +101,7 @@ func TestBattleMetrics(t *testing.T) {
 		want       []string
 	}{
 		{"servers", `{}`, []string{`"online":1`, `"total":2`, `"players":80`, `"servers":[{"country":"DE","game":"rust","id":"111"`, `"rank":42`, `"url":"https://www.battlemetrics.com/servers/rust/111"`}},
-		{"server", `{"server":"111"}`, []string{`"details":{"map":"Procedural Map","rust_type":"community","version":"2600"}`, `"updated":"2026-11-04T10:00:00Z"`}},
+		{"server", `{"server":"111"}`, []string{`"details":{"map":"Procedural Map","mode":"Line one Line two","pve":false,"rust_type":"community","version":"2600"}`, `"updated":"2026-11-04T10:00:00Z"`}},
 		{"player_history", `{"server":"111","hours":72}`, []string{`"low":40`, `"high":70`, `"average":50`, `"resolutionMinutes":60`, `"points":[{"time":"2026-11-04T08:00:00.000Z","players":40}`}},
 	} {
 		r, err := invoke(m, c.action, c.in)
@@ -113,7 +114,7 @@ func TestBattleMetrics(t *testing.T) {
 				t.Fatalf("%s: want %s in %s", c.action, w, out)
 			}
 		}
-		for _, bad := range []string{"LEAK", "203.0.113.9", "play.example.com", "GOOD0123", "xxxxxxxx"} {
+		for _, bad := range []string{"LEAK", "203.0.113.9", "198.51.100", "2001:db8", "28017", "connect", "play.example.com", "GOOD0123", "xxxxxxxx"} {
 			if strings.Contains(out, bad) {
 				t.Fatalf("%s shows %s: %s", c.action, bad, out)
 			}
@@ -144,6 +145,23 @@ func TestBattleMetrics(t *testing.T) {
 	}
 	if _, err := invoke(none, "servers", `{}`); err == nil {
 		t.Fatal("servers without any in the settings")
+	}
+}
+
+func TestBattleMetricsHidesAddressesInText(t *testing.T) {
+	for in, want := range map[string]string{
+		"Rust Main":                          "Rust Main",
+		"EU Main | 198.51.100.7:28015":       "EU Main | [address]",
+		"Main [2001:db8::1]:28015 \x1b[31mx": "Main [address] [31mx",
+		"Two\nlines":                         "Two lines",
+		"v1.2.3 build 4":                     "v1.2.3 build 4",
+	} {
+		if got := cleanName(in); got != want {
+			t.Errorf("cleanName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := cleanName(strings.Repeat("é", 100)); len(got) > 124 || !strings.HasSuffix(got, "…") {
+		t.Errorf("long name kept: %q", got)
 	}
 }
 

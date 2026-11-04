@@ -59,7 +59,7 @@ func (f *fakeFaceit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/players/" + pid:
 		io.WriteString(w, pl)
 	case "/players/" + pid + "/stats/cs2":
-		io.WriteString(w, `{"player_id":"`+pid+`","game_id":"cs2","lifetime":{"Matches":"1200","Win Rate %":"61","Average K/D Ratio":"1.4","Recent Results":["1","0","1","1","1"],"Nested":{"x":1}},"segments":[{"label":"Mirage","stats":{"Matches":"300"}}]}`)
+		io.WriteString(w, `{"player_id":"`+pid+`","game_id":"cs2","lifetime":{"Matches":"1200","Win Rate %":"61","Average K/D Ratio":"1.4","Recent Results":["1","0","1","1","1"],"Nested":{"x":1},"Bad\nKey":"LEAK","Clutch\u001b[2J":"LEAK","Longest Win Streak":"12\r\n","Empty":[{"x":"LEAK"}]},"segments":[{"label":"Mirage","stats":{"Matches":"300"}}]}`)
 	case "/players/" + pid + "/history":
 		io.WriteString(w, `{"items":[
 			{"match_id":"1-aaaa-bbbb","game_id":"cs2","region":"EU","match_type":"","game_mode":"5v5","max_players":10,"competition_name":"CS2 5v5 PREMIUM","started_at":1762000000,"finished_at":1762002000,"status":"finished",
@@ -101,7 +101,7 @@ func TestFaceit(t *testing.T) {
 	}{
 		{"player", `{}`, []string{`"playerId":"` + pid, `"country":"UA"`, `"cs2":{"elo":3500,"inGameName":"s1mple","level":10,"region":"EU"}`, `"dota2":`}},
 		{"player", `{"playerId":"` + strings.ToUpper(pid) + `"}`, []string{`"nickname":"s1mple"`}},
-		{"stats", `{}`, []string{`"Matches":"1200"`, `"Win Rate %":"61"`, `"Recent Results":["1","0","1","1","1"]`, `"elo":3500`}},
+		{"stats", `{}`, []string{`"Matches":"1200"`, `"Win Rate %":"61"`, `"Recent Results":["1","0","1","1","1"]`, `"Longest Win Streak":"12"`, `"Empty":[]`, `"elo":3500`}},
 		{"matches", `{"count":5,"days":7}`, []string{`"results":{"loss":1,"win":1}`, `"score":{"faction1":13,"faction2":7}`, `"team":"team_s1mple"`, `"competition":"CS2 5v5 PREMIUM"`, `"started":"2025-11-01T12:26:40Z"`}},
 	} {
 		r, err := invoke(m, c.action, c.in)

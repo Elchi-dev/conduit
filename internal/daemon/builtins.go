@@ -64,6 +64,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/elevenlabs"
 	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/fastmail"
+	"github.com/elchi-dev/conduit/modules/fathom"
 	"github.com/elchi-dev/conduit/modules/filebrowser"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/firefly"
@@ -84,6 +85,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
 	"github.com/elchi-dev/conduit/modules/gocd"
+	"github.com/elchi-dev/conduit/modules/googleanalytics"
 	"github.com/elchi-dev/conduit/modules/googleworkspace"
 	"github.com/elchi-dev/conduit/modules/gotify"
 	"github.com/elchi-dev/conduit/modules/grafana"
@@ -138,6 +140,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mailchimp"
 	"github.com/elchi-dev/conduit/modules/mailgun"
 	"github.com/elchi-dev/conduit/modules/mastodon"
+	"github.com/elchi-dev/conduit/modules/matomo"
 	"github.com/elchi-dev/conduit/modules/matrix"
 	"github.com/elchi-dev/conduit/modules/mattermost"
 	"github.com/elchi-dev/conduit/modules/mealie"
@@ -219,6 +222,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/scaleway"
 	"github.com/elchi-dev/conduit/modules/scrutiny"
 	"github.com/elchi-dev/conduit/modules/seafile"
+	"github.com/elchi-dev/conduit/modules/searchconsole"
 	"github.com/elchi-dev/conduit/modules/seerr"
 	"github.com/elchi-dev/conduit/modules/sendgrid"
 	"github.com/elchi-dev/conduit/modules/sentry"
@@ -437,6 +441,10 @@ func builtins(app *App) []sdk.Module {
 		seerr.New(),
 		plausible.New(),
 		umami.New(),
+		googleanalytics.New(),
+		searchconsole.New(),
+		matomo.New(),
+		fathom.New(),
 		uptimerobot.New(),
 		healthchecks.New(),
 		betterstack.New(),

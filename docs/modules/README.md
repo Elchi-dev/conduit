@@ -163,6 +163,10 @@ recommended policies.
 | Overseerr / Jellyseerr | [seerr.md](seerr.md) | homelab |
 | Plausible Analytics | [plausible.md](plausible.md) | developer, team, homelab |
 | Umami | [umami.md](umami.md) | developer, homelab, team |
+| Google Analytics | [googleanalytics.md](googleanalytics.md) | developer, team |
+| Google Search Console | [searchconsole.md](searchconsole.md) | developer, team |
+| Matomo | [matomo.md](matomo.md) | developer, team, homelab |
+| Fathom Analytics | [fathom.md](fathom.md) | developer, team |
 | UptimeRobot | [uptimerobot.md](uptimerobot.md) | developer, homelab, team |
 | Healthchecks.io | [healthchecks.md](healthchecks.md) | developer, homelab, team |
 | Better Stack Uptime | [betterstack.md](betterstack.md) | developer, team |

@@ -18,8 +18,8 @@ the Argo version and checks the token can list workflows in the namespace.
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `workflows` | read | The last `limit` workflows (up to 100), newest first, optionally by `phase`: phase, progress, template, start, finish, duration, message, and whether it's suspended. |
-| `workflow` | read | One workflow: everything `workflows` shows plus entrypoint, parameters (values hidden for names containing password, secret, token, key or credential) and its steps (pods, suspends, skipped steps) in order with phase, duration and message, up to 100. |
-| `workflow_templates` | read | Workflow templates with their entrypoint and parameters: default (hidden for secret-looking names), allowed values, description, and whether the value comes from elsewhere. |
+| `workflow` | read | One workflow: everything `workflows` shows plus entrypoint, parameters (values hidden for names containing password, secret, token, key or credential, and redacted where they look like a credential) and its steps (pods, suspends, skipped steps) in order with phase, duration and message, up to 100. |
+| `workflow_templates` | read | Workflow templates with their entrypoint and parameters: default (hidden for secret-looking names, redacted where it looks like a credential), allowed values, description, and whether the value comes from elsewhere. |
 | `submit_workflow` | destructive | Submits a new workflow from a workflow `template`, with `parameters`. It runs the template's containers with their service account and can deploy. Only declared parameters are accepted, values must be among the allowed ones when the template lists them, and parameters filled from elsewhere (`valueFrom`) or whose name looks secret are refused. The preview shows every value passed. |
 | `stop_workflow` | destructive | Stops a running workflow; exit handlers still run. A finished workflow answers "nothing to change". |
 | `terminate_workflow` | destructive | Terminates a running workflow at once, skipping exit handlers. A finished workflow answers "nothing to change". |

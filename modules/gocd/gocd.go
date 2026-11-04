@@ -429,7 +429,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		if call.DryRun {
 			before, _ := json.Marshal(map[string]any{"paused": st.Paused})
-			after, _ := json.Marshal(map[string]any{"paused": pause})
+			want := map[string]any{"paused": pause}
+			if reason != "" {
+				want["reason"] = reason
+			}
+			after, _ := json.Marshal(want)
 			sum := "Pause " + name + " so no new runs start"
 			if !pause {
 				sum = "Unpause " + name + "; it can run at once on changes it missed"
@@ -451,7 +455,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			res.Undo = sdk.UndoWith("unpause_pipeline", map[string]string{"pipeline": name}, "Unpause "+name+" again")
 		} else {
 			in := map[string]string{"pipeline": name}
-			if cause := text(st.PausedCause, 255); cause != "" {
+			// 254 and the "…" of a cut reason stay within the 255
+			// pause_pipeline takes, so the undo isn't refused.
+			if cause := text(st.PausedCause, 254); cause != "" {
 				in["reason"] = cause
 			}
 			res.Undo = sdk.UndoWith("pause_pipeline", in, "Pause "+name+" again")
@@ -587,12 +593,17 @@ func (c *conn) trigger(ctx context.Context, call sdk.Call, name string, vars map
 		}
 		decl := map[string]bool{}
 		for _, e := range cfg.Env {
-			decl[e.Name] = e.Secure
+			decl[e.Name] = decl[e.Name] || e.Secure
 		}
 		for _, k := range names {
 			secure, ok := decl[k]
 			if !ok {
 				return sdk.Result{}, fmt.Errorf("%s declares no environment variable %q", name, k)
+			}
+			// A secure variable whose name differs only in case is
+			// refused too, in case GoCD matches names that way.
+			for n, s := range decl {
+				secure = secure || (s && strings.EqualFold(n, k))
 			}
 			if secure {
 				return sdk.Result{}, fmt.Errorf("%s is a secure variable; Conduit doesn't pass those (its stored value is used)", k)

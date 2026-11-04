@@ -6,6 +6,7 @@ package teamcity
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -67,7 +68,23 @@ var (
 	// secretNameRe matches parameter names that look like they hold a secret;
 	// their values are hidden like password parameters.
 	secretNameRe = regexp.MustCompile(`(?i)password|passwd|secret|token|key|credential`)
+	// refRe matches a parameter reference (%name%, %vault:path!/key%), which
+	// TeamCity resolves when the build starts; %% is a literal %.
+	refRe = regexp.MustCompile(`%[^%]+%`)
 )
+
+// validBranch checks a branch name for a request: the characters branchRe
+// allows, and nothing Git would read as an option, a forced refspec or a
+// range (-x, +refs/..., a..b).
+func validBranch(s string) bool {
+	return branchRe.MatchString(s) && !strings.ContainsAny(s[:1], "-+/.") && !strings.HasSuffix(s, "/") && !strings.HasSuffix(s, ".") &&
+		!strings.Contains(s, "..") && !strings.Contains(s, "//") && !strings.HasSuffix(s, ".lock")
+}
+
+// tokenByte is a byte that can be part of a credential (see rest.Redact).
+func tokenByte(r rune) bool {
+	return r < 0x80 && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._~+/=-", r))
+}
 
 func validID(s, what string) (string, error) {
 	v := strings.TrimSpace(s)
@@ -499,7 +516,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if x.hidden() {
 				row["default"] = "[hidden]"
 			} else {
-				row["default"] = clip(x.Value, 300)
+				row["default"] = clip(rest.Redact(x.Value), 300)
 			}
 			params = append(params, row)
 		}
@@ -610,7 +627,7 @@ func (c *conn) builds(ctx context.Context, p input) (sdk.Result, error) {
 		return sdk.Result{}, errors.New("state is queued, running, finished or any")
 	}
 	if b := strings.TrimSpace(p.Branch); b != "" {
-		if !branchRe.MatchString(b) {
+		if !validBranch(b) {
 			return sdk.Result{}, errors.New("that isn't a branch name")
 		}
 		loc = append(loc, "branch:(name:"+b+")")
@@ -684,13 +701,22 @@ func tail(r io.Reader, n int) (lines []string, read int64, more bool, err error)
 	ring := make([]string, 0, n)
 	start := 0
 	var cur []byte
+	cut := false
 	push := func(b []byte) {
+		if cut {
+			// The line was cut while it was read: drop what may be the first
+			// part of a credential, which Redact wouldn't recognize.
+			b = bytes.TrimRightFunc(b, tokenByte)
+		}
 		s := strings.TrimRight(strings.ToValidUTF8(string(b), "�"), "\r\n")
 		s = ansiRe.ReplaceAllString(s, "")
 		if i := strings.LastIndexByte(s, '\r'); i >= 0 {
 			s = s[i+1:]
 		}
 		s = clip(rest.Redact(s), maxLineLen)
+		if cut && !strings.HasSuffix(s, "…") {
+			s += "…"
+		}
 		if len(ring) < n {
 			ring = append(ring, s)
 			return
@@ -703,13 +729,15 @@ func tail(r io.Reader, n int) (lines []string, read int64, more bool, err error)
 		read += int64(len(chunk))
 		if len(cur) < maxLineLen*4 {
 			cur = append(cur, chunk...)
+		} else if len(chunk) > 0 {
+			cut = true
 		}
 		if e == bufio.ErrBufferFull {
 			continue
 		}
 		if len(chunk) > 0 && chunk[len(chunk)-1] == '\n' || (e == io.EOF && len(cur) > 0) {
 			push(cur)
-			cur = cur[:0]
+			cur, cut = cur[:0], false
 		}
 		if e == io.EOF {
 			break
@@ -728,12 +756,14 @@ func tail(r io.Reader, n int) (lines []string, read int64, more bool, err error)
 // takes, checking it against the parameter's type.
 func value(d param, raw any) (string, error) {
 	var v string
+	fixed := false // a value the configuration defines (a choice, a checkbox's)
 	switch x := raw.(type) {
 	case string:
 		v = x
 	case bool:
 		v = strconv.FormatBool(x)
 		if d.kind() == "checkbox" {
+			fixed = true
 			a := d.attrs()
 			on, off := "true", "false"
 			if s, ok := a["checkedValue"]; ok {
@@ -764,6 +794,12 @@ func value(d param, raw any) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("parameter %s is one of %s", d.Name, strings.Join(ch, ", "))
 		}
+		fixed = true
+	}
+	// A reference would be resolved by TeamCity, so a value could pull in a
+	// password parameter or a secret from a vault plugin and send it on.
+	if !fixed && refRe.MatchString(strings.ReplaceAll(v, "%%", "")) {
+		return "", fmt.Errorf("parameter %s refers to another parameter (%%name%%); Conduit doesn't pass references (write %%%% for a literal %%)", d.Name)
 	}
 	return v, nil
 }
@@ -774,7 +810,7 @@ func (c *conn) trigger(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 		return sdk.Result{}, err
 	}
 	branch := strings.TrimSpace(p.Branch)
-	if branch != "" && !branchRe.MatchString(branch) {
+	if branch != "" && !validBranch(branch) {
 		return sdk.Result{}, errors.New("that isn't a branch name")
 	}
 	names := make([]string, 0, len(p.Parameters))

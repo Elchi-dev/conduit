@@ -19,9 +19,9 @@ the signed-in user and the GoCD version.
 | `pipelines` | read | Every pipeline with its group, whether it's locked or paused (by whom and why), whether it comes from a config repository, and its last run's label, counter, trigger and stage statuses. |
 | `pipeline_history` | read | A pipeline's last `limit` runs (up to 50), newest first: counter, label, when, what triggered it (and whether by hand), and each stage's status and result. |
 | `stages` | read | The stages of one run (`counter`, or the latest) with their approval type, who approved them, and their jobs' state, result and schedule time. |
-| `trigger_pipeline` | destructive | Schedules a run, checking materials for new revisions first unless `updateMaterials` is false. A run executes the pipeline's code with its credentials and can deploy. `variables` must be environment variables the pipeline declares; secure ones are refused (their stored value is used). A paused, locked or unschedulable pipeline is refused with the reason. The preview shows each value passed, with secret-looking names hidden. |
-| `pause_pipeline` | destructive | Pauses a pipeline with an optional `reason`, so changes and timers stop starting it (runs in progress go on). Undo unpauses it. |
-| `unpause_pipeline` | destructive | Unpauses a pipeline; it can run at once on changes that arrived while it was paused. The preview names who paused it. Undo pauses it again with the same reason. |
+| `trigger_pipeline` | destructive | Schedules a run, checking materials for new revisions first unless `updateMaterials` is false. A run executes the pipeline's code with its credentials and can deploy. `variables` must be environment variables the pipeline declares; secure ones are refused (their stored value is used), also when the name differs only in case. A paused, locked or unschedulable pipeline is refused with the reason. The preview shows each value passed, with secret-looking names hidden. |
+| `pause_pipeline` | destructive | Pauses a pipeline with an optional `reason` (shown in the preview), so changes and timers stop starting it (runs in progress go on). Undo unpauses it. |
+| `unpause_pipeline` | destructive | Unpauses a pipeline; it can run at once on changes that arrived while it was paused. The preview names who paused it. Undo pauses it again with the same reason (redacted, and cut to fit the 255 characters `reason` takes). |
 
 Pausing a paused pipeline, or unpausing one that isn't, answers "nothing
 to change".

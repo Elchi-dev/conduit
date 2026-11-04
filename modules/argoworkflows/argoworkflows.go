@@ -254,7 +254,9 @@ func paramsOut(ps []paramSpec, withEnum bool) []map[string]any {
 			if p.hidden() {
 				row["value"] = "[hidden]"
 			} else {
-				row["value"] = clip(v, 300)
+				// Redacted before it's cut: a value can hold a credential
+				// even when its name doesn't say so.
+				row["value"] = clip(rest.Redact(v), 300)
 			}
 		}
 		if withEnum && len(p.Enum) > 0 {

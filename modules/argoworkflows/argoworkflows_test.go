@@ -33,7 +33,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.seen = append(f.seen, r.Method+" "+r.URL.Path)
 	wf := func(name, phase, created string) string {
 		return `{"metadata":{"name":"` + name + `","namespace":"argo","creationTimestamp":"` + created + `","labels":{"workflows.argoproj.io/phase":"` + phase + `"}},
-			"spec":{"entrypoint":"main","workflowTemplateRef":{"name":"deploy"},"arguments":{"parameters":[{"name":"env","value":"prod"},{"name":"api_token","value":"tok-plain-xyz"}]},
+			"spec":{"entrypoint":"main","workflowTemplateRef":{"name":"deploy"},"arguments":{"parameters":[{"name":"env","value":"prod"},{"name":"api_token","value":"tok-plain-xyz"},{"name":"repo","value":"https://ci:glfake-abcdefghijklmnopqrstu@git.example.com/x"}]},
 			"templates":[{"name":"main","container":{"env":[{"name":"PW","value":"inline-secret-123"}]}}]},
 			"status":{"phase":"` + phase + `","startedAt":"2026-11-04T10:00:00Z","finishedAt":"2026-11-04T10:02:00Z","progress":"1/2","message":"child failed: password=hunter2hunter2",
 			"nodes":{"a":{"displayName":"build","templateName":"build","type":"Pod","phase":"Succeeded","startedAt":"2026-11-04T10:00:00Z","finishedAt":"2026-11-04T10:01:00Z"},
@@ -108,7 +108,7 @@ func TestArgoReads(t *testing.T) {
 				t.Fatalf("%s %s: want %s in %s %v", c.action, c.in, w, r.Output, err)
 			}
 		}
-		for _, leak := range []string{"tok-plain-xyz", "inline-secret-123", "hunter2", "plain-default-pw"} {
+		for _, leak := range []string{"tok-plain-xyz", "inline-secret-123", "hunter2", "plain-default-pw", "glpat-"} {
 			if strings.Contains(string(r.Output), leak) {
 				t.Fatalf("%s leaks %s: %s", c.action, leak, r.Output)
 			}

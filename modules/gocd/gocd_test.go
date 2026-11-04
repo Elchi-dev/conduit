@@ -66,7 +66,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /go/api/pipelines/web/7":
 		io.WriteString(w, runJSON)
 	case "GET /go/api/admin/pipelines/web":
-		io.WriteString(w, `{"name":"web","environment_variables":[{"name":"TARGET","secure":false,"value":"staging"},{"name":"DEPLOY_KEY","secure":true,"encrypted_value":"AES:enc-value-xyz"}]}`)
+		io.WriteString(w, `{"name":"web","environment_variables":[{"name":"TARGET","secure":false,"value":"staging"},{"name":"DEPLOY_KEY","secure":true,"encrypted_value":"AES:enc-value-xyz"},{"name":"deploy_key","secure":false,"value":"x"}]}`)
 	case "POST /go/api/pipelines/web/schedule":
 		json.NewDecoder(r.Body).Decode(&f.scheduled)
 		w.WriteHeader(202)
@@ -144,6 +144,7 @@ func TestGoCDTrigger(t *testing.T) {
 	}
 	for _, bad := range []string{
 		`{"pipeline":"web","variables":{"DEPLOY_KEY":"x"}}`,
+		`{"pipeline":"web","variables":{"deploy_key":"x"}}`,
 		`{"pipeline":"web","variables":{"UNDECLARED":"x"}}`,
 		`{"pipeline":"web","variables":{"TARGET":["x"]}}`,
 	} {
@@ -163,7 +164,7 @@ func TestGoCDPauseUnpause(t *testing.T) {
 	if r, err := invoke(m, "unpause_pipeline", `{"pipeline":"web"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") || f.unpaused {
 		t.Fatalf("%s %v", r.Output, err)
 	}
-	if p, err := invoke(m, "pause_pipeline", `{"pipeline":"web","reason":"maintenance"}`, true); err != nil || p.Plan == nil || f.paused {
+	if p, err := invoke(m, "pause_pipeline", `{"pipeline":"web","reason":"maintenance"}`, true); err != nil || p.Plan == nil || f.paused || string(p.Plan.Changes[0].After) != `{"paused":true,"reason":"maintenance"}` {
 		t.Fatalf("%+v %v", p, err)
 	}
 	r, err := invoke(m, "pause_pipeline", `{"pipeline":"web","reason":"maintenance"}`, false)
@@ -253,5 +254,33 @@ func TestGoCDRisks(t *testing.T) {
 		if a.Risk != want || a.Sensitive {
 			t.Errorf("%s is %s sensitive=%v", a.Name, a.Risk, a.Sensitive)
 		}
+	}
+}
+
+func TestGoCDUnpauseUndoLongReason(t *testing.T) {
+	// A reason longer than pause_pipeline takes is cut so the undo works.
+	long := strings.Repeat("a ", 200)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/go/api/pipelines/web/status":
+			json.NewEncoder(w).Encode(map[string]any{"paused": true, "pausedCause": long, "pausedBy": "kim"})
+		case "/go/api/pipelines/web/unpause", "/go/api/pipelines/web/pause":
+			io.WriteString(w, `{}`)
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: srv.URL, Token: "secret://go"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://go": "gotok"}), "g", raw); err != nil {
+		t.Fatal(err)
+	}
+	r, err := invoke(m, "unpause_pipeline", `{"pipeline":"web"}`, false)
+	if err != nil || r.Undo == nil {
+		t.Fatal(r, err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), true); err != nil {
+		t.Fatalf("undo refused: %v", err)
 	}
 }

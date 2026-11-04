@@ -195,6 +195,15 @@ recommended policies.
 | AMP | [amp.md](amp.md) | gamer, homelab |
 | Steam | [steam.md](steam.md) | gamer |
 | Xbox (OpenXBL) | [openxbl.md](openxbl.md) | gamer |
+| Coolify | [coolify.md](coolify.md) | developer, homelab |
+| Dokploy | [dokploy.md](dokploy.md) | developer, homelab |
+| CapRover | [caprover.md](caprover.md) | developer, homelab |
+| Gotify | [gotify.md](gotify.md) | homelab |
+| Transmission | [transmission.md](transmission.md) | homelab |
+| Deluge | [deluge.md](deluge.md) | homelab |
+| SABnzbd | [sabnzbd.md](sabnzbd.md) | homelab |
+| Netdata | [netdata.md](netdata.md) | homelab, developer, team |
+| Zabbix | [zabbix.md](zabbix.md) | homelab, team |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

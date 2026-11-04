@@ -141,6 +141,7 @@ var sensitiveUndo = map[string]string{
 	"nextcloud.share":            "unshare",            // removes the link by its id
 	"nextcloudtalk.send_message": "delete_message",     // deletes the message it sent, by conversation and id
 	"rocketchat.send_message":    "delete_message",     // deletes the message it sent, by room and id
+	"sabnzbd.add_url":            "delete",             // deletes the job it queued, by id (the URL holds an indexer key)
 	"zammad.add_note":            "delete_note",        // deletes the note it added, by number
 	"zulip.send_message":         "delete_message",     // deletes the message it sent, by id
 }

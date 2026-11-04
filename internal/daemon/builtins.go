@@ -21,6 +21,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/buildkite"
 	"github.com/elchi-dev/conduit/modules/caddy"
 	"github.com/elchi-dev/conduit/modules/calendar"
+	"github.com/elchi-dev/conduit/modules/caprover"
 	"github.com/elchi-dev/conduit/modules/chatwoot"
 	"github.com/elchi-dev/conduit/modules/circleci"
 	"github.com/elchi-dev/conduit/modules/clickhouse"
@@ -29,13 +30,16 @@ import (
 	"github.com/elchi-dev/conduit/modules/comfyui"
 	"github.com/elchi-dev/conduit/modules/consul"
 	"github.com/elchi-dev/conduit/modules/containerregistry"
+	"github.com/elchi-dev/conduit/modules/coolify"
 	"github.com/elchi-dev/conduit/modules/crafty"
 	"github.com/elchi-dev/conduit/modules/database"
 	"github.com/elchi-dev/conduit/modules/datadog"
+	"github.com/elchi-dev/conduit/modules/deluge"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/discourse"
 	"github.com/elchi-dev/conduit/modules/docker"
+	"github.com/elchi-dev/conduit/modules/dokploy"
 	"github.com/elchi-dev/conduit/modules/doppler"
 	"github.com/elchi-dev/conduit/modules/drone"
 	"github.com/elchi-dev/conduit/modules/elasticsearch"
@@ -52,6 +56,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
+	"github.com/elchi-dev/conduit/modules/gotify"
 	"github.com/elchi-dev/conduit/modules/grafana"
 	"github.com/elchi-dev/conduit/modules/grocy"
 	"github.com/elchi-dev/conduit/modules/harbor"
@@ -101,6 +106,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/navidrome"
 	"github.com/elchi-dev/conduit/modules/netbird"
 	"github.com/elchi-dev/conduit/modules/netbox"
+	"github.com/elchi-dev/conduit/modules/netdata"
 	"github.com/elchi-dev/conduit/modules/netlify"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/nextcloudtalk"
@@ -139,6 +145,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/restic"
 	"github.com/elchi-dev/conduit/modules/rocketchat"
 	"github.com/elchi-dev/conduit/modules/s3"
+	"github.com/elchi-dev/conduit/modules/sabnzbd"
 	"github.com/elchi-dev/conduit/modules/scaleway"
 	"github.com/elchi-dev/conduit/modules/scrutiny"
 	"github.com/elchi-dev/conduit/modules/seerr"
@@ -170,6 +177,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/terraformcloud"
 	"github.com/elchi-dev/conduit/modules/todoist"
 	"github.com/elchi-dev/conduit/modules/traefik"
+	"github.com/elchi-dev/conduit/modules/transmission"
 	"github.com/elchi-dev/conduit/modules/trello"
 	"github.com/elchi-dev/conduit/modules/truenas"
 	"github.com/elchi-dev/conduit/modules/twitch"
@@ -191,6 +199,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
 	"github.com/elchi-dev/conduit/modules/youtube"
+	"github.com/elchi-dev/conduit/modules/zabbix"
 	"github.com/elchi-dev/conduit/modules/zammad"
 	"github.com/elchi-dev/conduit/modules/zendesk"
 	"github.com/elchi-dev/conduit/modules/zigbee2mqtt"
@@ -404,6 +413,15 @@ func builtins(app *App) []sdk.Module {
 		streamelements.New(),
 		streamerbot.New(),
 		vlc.New(),
+		coolify.New(),
+		dokploy.New(),
+		caprover.New(),
+		gotify.New(),
+		transmission.New(),
+		deluge.New(),
+		sabnzbd.New(),
+		netdata.New(),
+		zabbix.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

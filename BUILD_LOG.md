@@ -3,6 +3,21 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · After 1.0, afternoon (195 modules, review 16)
+
+- **Modules 186–195:** creators and streaming (YouTube, Kick,
+  StreamElements, Streamer.bot, VLC) and VPN, identity and backups
+  (Headscale, NetBird, Zitadel, restic, Kopia). restic runs the restic
+  program with a fresh, allow-listed environment and no shell; Kopia
+  loads the server's page once for its session cookie and CSRF token.
+- **Decision:** NetBird has no disable call, so `disable_peer` requires
+  approval again; if the server ignores it the action fails rather than
+  claiming success.
+- **In progress:** review 16 of these ten; downloads and monitoring
+  (Transmission, Deluge, SABnzbd, Netdata, Zabbix), business (Shopify,
+  HubSpot, Paddle, Twilio, Cal.com) and self-hosted platforms (Coolify,
+  Dokploy, CapRover, Nginx Proxy Manager, Gotify).
+
 ## 2026-11-04 · After 1.0, continued (185 modules, reviews 12–15)
 
 - **Modules 156–185:** CI and code quality (CircleCI, Buildkite, Codecov,

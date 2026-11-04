@@ -1,6 +1,7 @@
-// Package aispend holds what the AI provider usage modules (anthropic,
-// openai) share: a bounded range of whole UTC days, exact money sums as
-// decimal strings, and checked group-by choices.
+// Package aispend holds what the AI provider modules (anthropic, openai,
+// mistral, groq) share: a bounded range of whole UTC days, exact money
+// sums as decimal strings, checked group-by choices and currencies, and
+// vendor-reported names made fit to show.
 package aispend
 
 import (
@@ -11,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // MaxDays is the longest range a usage or cost report may cover.
@@ -70,10 +73,15 @@ func ParseRange(from, to string, now time.Time) (Range, error) {
 	return r, nil
 }
 
+// amountRe is a plain decimal with an optional short exponent. big.Rat
+// alone would also take fractions ("1/3"), hex, octal and binary ("0x10",
+// "010", "0b11"), underscores and exponents of a million digits.
+var amountRe = regexp.MustCompile(`^[-+]?[0-9]{1,30}(\.[0-9]{1,30})?([eE][-+]?[0-9]{1,2})?$`)
+
 // Amount parses a decimal amount ("123.78912", "0.06", "1e-5") exactly.
 func Amount(s string) (*big.Rat, error) {
 	s = strings.TrimSpace(s)
-	if s == "" || len(s) > 64 {
+	if len(s) > 64 || !amountRe.MatchString(s) {
 		return nil, errors.New("invalid amount")
 	}
 	r, ok := new(big.Rat).SetString(s)
@@ -83,19 +91,89 @@ func Amount(s string) (*big.Rat, error) {
 	return r, nil
 }
 
-// Format writes an amount with at least two and at most six decimals.
+// maxDecimals is the most decimals Format writes. Sums of amounts Amount
+// accepts (and those divided by 100) are exact within it in practice;
+// anything longer is rounded.
+const maxDecimals = 12
+
+// Format writes an amount exactly, with at least two decimals (rounded
+// only beyond maxDecimals).
 func Format(r *big.Rat) string {
-	s := r.FloatString(6)
-	s = strings.TrimRight(s, "0")
+	n, exact := r.FloatPrec()
+	if !exact || n > maxDecimals {
+		n = maxDecimals
+	}
+	s := r.FloatString(max(n, 2))
 	if i := strings.IndexByte(s, '.'); i >= 0 {
-		for len(s)-i-1 < 2 {
-			s += "0"
+		for len(s)-i-1 > 2 && s[len(s)-1] == '0' {
+			s = s[:len(s)-1]
 		}
 	}
-	if s == "-0.00" {
+	if strings.Trim(s, "-0.") == "" {
 		s = "0.00"
 	}
 	return s
+}
+
+var currencyRe = regexp.MustCompile(`^[A-Z]{3}$`)
+
+// Currency checks a vendor's currency code (ISO 4217, any case); empty is
+// USD. Amounts are summed per currency, never across.
+func Currency(s string) (string, error) {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if s == "" {
+		return "USD", nil
+	}
+	if !currencyRe.MatchString(s) {
+		return "", errors.New("invalid currency")
+	}
+	return s, nil
+}
+
+// maxLabel is the longest name Label passes on, in bytes.
+const maxLabel = 120
+
+// personalRe matches what shouldn't reach an answer from a vendor's name
+// for a model, cost line or owner: email addresses, API keys (sk-...,
+// gsk_...) and account, user and key ids (user_01..., user-..., apikey_...).
+var personalRe = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+|\b(sk|gsk|xai)[-_][A-Za-z0-9_-]{8,}|\b(user|usr|apikey|api_key|key|account|acct)[-_][A-Za-z0-9]{8,}`)
+
+// Label makes a name a vendor reports (a model, a cost line, a service
+// tier, an organization) fit to show: one line of at most maxLabel bytes,
+// cut after email addresses, keys and user or key ids are replaced.
+func Label(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return ' '
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	s = personalRe.ReplaceAllString(s, "[redacted]")
+	if len(s) <= maxLabel {
+		return s
+	}
+	cut := maxLabel
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
+}
+
+var idOwnerRe = regexp.MustCompile(`(?i)^(user|org|organization|proj|project|key|acct|account)[-_][A-Za-z0-9]{6,}$|^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$`)
+
+// Owner is a model's owner as shown: a vendor or provider name passes
+// (through Label); a user, organization or project id, which fine-tuned
+// models carry, becomes "your organization".
+func Owner(s string) string {
+	s = strings.TrimSpace(s)
+	if idOwnerRe.MatchString(s) {
+		return "your organization"
+	}
+	if l := Label(s); !strings.Contains(l, "[redacted]") {
+		return l
+	}
+	return "your organization"
 }
 
 // Sums adds amounts by key.

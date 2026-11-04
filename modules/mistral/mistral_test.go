@@ -27,7 +27,7 @@ const cards = `[
 	 "capabilities":{"completion_chat":true,"completion_fim":false,"function_calling":true,"fine_tuning":true,"vision":false}},
 	{"id":"open-mistral-7b","object":"model","created":1756746619,"owned_by":"mistralai","max_context_length":32768,"aliases":[],"deprecation":"2026-12-31T00:00:00Z","deprecation_replacement_model":"ministral-8b-latest","type":"base",
 	 "capabilities":{"completion_chat":true}},
-	{"id":"ft:open-mistral-7b:abc:20260101:x1","object":"model","created":1756746619,"owned_by":"org-123","job":"job-1","root":"open-mistral-7b","max_context_length":32768,"type":"fine-tuned","archived":false,
+	{"id":"ft:open-mistral-7b:abc:20260101:x1","object":"model","created":1756746619,"owned_by":"e8b0d5c2-1f3a-4b6c-9d8e-7f6a5b4c3d2e","job":"job-1","root":"open-mistral-7b","max_context_length":32768,"type":"fine-tuned","archived":false,
 	 "capabilities":{"completion_chat":true,"fine_tuning":false}}]`
 
 func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -79,11 +79,11 @@ func TestMistralModels(t *testing.T) {
 			{``, `"matching":3`},
 			{`{"search":"large"}`, `"capabilities":["completion_chat","fine_tuning","function_calling"],"aliases":["mistral-large-2411"]`},
 			{`{"search":"7b","type":"base"}`, `"deprecation":"2026-12-31","replacement":"ministral-8b-latest"`},
-			{`{"type":"fine-tuned"}`, `"type":"fine-tuned","ownedBy":"org-123"`},
+			{`{"type":"fine-tuned"}`, `"type":"fine-tuned","ownedBy":"your organization"`},
 			{`{"limit":1}`, `"matching":3`},
 		} {
 			r, err := invoke(m, "models", c.in)
-			if err != nil || !strings.Contains(string(r.Output), c.want) || strings.Contains(string(r.Output), key) || strings.Contains(string(r.Output), "job-1") {
+			if err != nil || !strings.Contains(string(r.Output), c.want) || strings.Contains(string(r.Output), key) || strings.Contains(string(r.Output), "job-1") || strings.Contains(string(r.Output), "e8b0d5c2") {
 				t.Fatalf("%s: %s %v", c.in, r.Output, err)
 			}
 		}

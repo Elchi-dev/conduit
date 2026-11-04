@@ -25,9 +25,16 @@ Health reads the organization (`/v1/organizations/me`) and shows its name.
 - A range covers at most 93 days and can't end after today. Days are
   whole UTC days, the same as in the Console.
 - Usage by API key or by user isn't offered, so no key ids or accounts
-  appear in answers. An answer keeps the 200 largest groups;
+  appear in answers. Names Anthropic reports (models, cost lines, the
+  organization) are cut to one line of 120 bytes, with email addresses
+  and anything shaped like a key or a user or key id replaced by
+  `[redacted]`. An answer keeps the 200 largest groups;
   `groupCount` says how many there were.
-- Anthropic reports costs in cents; they're converted to dollars exactly.
+- Anthropic reports costs in cents; they're converted to dollars and
+  summed exactly (shown with up to 12 decimals). An amount that isn't a
+  plain decimal, or a currency that isn't a three-letter code, fails the
+  answer rather than being guessed at; currencies are never summed
+  together.
   Priority Tier costs aren't in the cost report (Anthropic bills them
   separately), and code execution appears as its own cost line.
 - These are Anthropic's legacy Usage and Cost endpoints, which remain

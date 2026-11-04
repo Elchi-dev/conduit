@@ -76,7 +76,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				{"object":"organization.costs.result","amount":{"value":0.04,"currency":"usd"},"line_item":"gpt-6, input","project_id":"proj_abc"}]}],
 			"has_more":false,"next_page":null}`)
 	case "/models":
-		io.WriteString(w, `{"object":"list","data":[{"id":"gpt-6","object":"model","created":1793577600,"owned_by":"openai"},{"id":"whisper-1","object":"model","created":1677532384,"owned_by":"openai-internal"}]}`)
+		io.WriteString(w, `{"object":"list","data":[{"id":"gpt-6","object":"model","created":1793577600,"owned_by":"openai"},{"id":"whisper-1","object":"model","created":1677532384,"owned_by":"openai-internal"},{"id":"ft:gpt-5-mini:acme::AbCd1234","object":"model","created":1793577600,"owned_by":"user-abcdefghijklmnopqrstuvwx"}]}`)
 	default:
 		w.WriteHeader(404)
 	}
@@ -116,9 +116,10 @@ func TestOpenAIReads(t *testing.T) {
 			`"groups":[{"model":"gpt-6","inputTokens":3000`, `"groupCount":2`, `{"date":"2026-11-03","inputTokens":2000`}},
 		{"usage", `{` + rng + `,"groupBy":["project","model"]}`, []string{`"project":"default"`, `"project":"proj_abc"`, `"groupCount":3`}},
 		{"usage", `{` + rng + `,"groupBy":["batch"]}`, []string{`"batch":false`, `"groupCount":1`}},
-		{"costs", `{` + rng + `}`, []string{`"totals":{"USD":"1.334568"}`, `{"lineItem":"gpt-6, output","currency":"USD","amount":"1.234568"}`, `{"lineItem":"gpt-6, input","currency":"USD","amount":"0.10"}`, `{"date":"2026-11-03","totals":{"USD":"0.04"}}`}},
+		{"costs", `{` + rng + `}`, []string{`"totals":{"USD":"1.3345678"}`, `{"lineItem":"gpt-6, output","currency":"USD","amount":"1.2345678"}`, `{"lineItem":"gpt-6, input","currency":"USD","amount":"0.10"}`, `{"date":"2026-11-03","totals":{"USD":"0.04"}}`}},
 		{"costs", `{` + rng + `,"groupBy":["project"]}`, []string{`"project":"proj_abc","currency":"USD","amount":"0.10"`, `"project":"default"`}},
-		{"models", `{"search":"gpt"}`, []string{`{"id":"gpt-6","ownedBy":"openai","created":"2026-11-02"}`, `"matching":1`}},
+		{"models", `{"search":"gpt-6"}`, []string{`{"id":"gpt-6","ownedBy":"openai","created":"2026-11-02"}`, `"matching":1`}},
+		{"models", `{"search":"ft:"}`, []string{`"ownedBy":"your organization"`, `"matching":1`}},
 	} {
 		r, err := invoke(m, c.action, c.in)
 		if err != nil {
@@ -198,5 +199,26 @@ func TestOpenAIRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "o"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+func TestOpenAIHostileCosts(t *testing.T) {
+	for _, res := range []string{
+		`{"amount":{"value":1,"currency":"US dollars"},"line_item":"x"}`,
+		`{"amount":{"value":1e999999,"currency":"usd"},"line_item":"x"}`,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"data":[{"start_time":`+d3+`,"results":[`+res+`]}],"has_more":false}`)
+		}))
+		m := New()
+		m.Base = srv.URL
+		m.now = func() time.Time { return time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC) }
+		if err := m.Configure(context.Background(), fakehost.New(secrets), "o", json.RawMessage(`{"adminKey":"secret://admin"}`)); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := invoke(m, "costs", `{}`); err == nil {
+			t.Errorf("%s accepted: %s", res, out.Output)
+		}
+		srv.Close()
 	}
 }

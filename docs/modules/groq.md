@@ -17,6 +17,7 @@ Health lists the models and shows how many the key can use.
 
 - Usage and spend aren't included: Groq's API has no usage or billing
   endpoint. Usage is on the GroqCloud console's Usage page.
+- An owner that is an organization or user id shows as `your organization`.
 
 **Security.** The key goes in the `Authorization` header to `api.groq.com`
 only; redirects are followed within the same host only. Searches are

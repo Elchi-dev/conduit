@@ -27,8 +27,17 @@ Health asks for yesterday's costs, one bucket, to check the Admin key.
   generation). Embeddings, images, audio and other usage types have their
   own endpoints, which aren't read; their spend is in `costs`.
 - Grouping by user or API key isn't offered, so no user or key ids appear
-  in answers. An answer keeps the 200 largest groups; `groupCount` says
+  in answers. Model names and line items are cut to one line of 120
+  bytes, with email addresses and anything shaped like a key or a user or
+  key id replaced by `[redacted]`; a fine-tuned model's owner that is a
+  user or organization id shows as `your organization`. An answer keeps
+  the 200 largest groups; `groupCount` says
   how many there were.
+
+- Amounts are read as the exact digits OpenAI sent (never through a
+  float), summed exactly per currency and shown with up to 12 decimals.
+  An amount that isn't a plain decimal, or a currency that isn't a
+  three-letter code, fails the answer.
 
 **Security.** Each key goes in the `Authorization` header to
 `api.openai.com` only; redirects are followed within the same host only.

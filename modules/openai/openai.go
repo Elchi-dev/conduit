@@ -189,11 +189,15 @@ func pages[T any](ctx context.Context, c *rest.Client, path string, q url.Values
 
 func day(unix int64) string { return time.Unix(unix, 0).UTC().Format("2006-01-02") }
 
+// str is a name OpenAI reports, made fit to show (aispend.Label), or def.
 func str(p *string, def string) string {
-	if p == nil || *p == "" {
+	if p == nil {
 		return def
 	}
-	return *p
+	if s := aispend.Label(*p); s != "" {
+		return s
+	}
+	return def
 }
 
 type usageResult struct {
@@ -366,9 +370,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				if err != nil {
 					return sdk.Result{}, fmt.Errorf("unexpected amount from OpenAI for %s", day(b.StartTime))
 				}
-				cur := strings.ToUpper(strings.TrimSpace(x.Amount.Currency))
-				if cur == "" {
-					cur = "USD"
+				cur, err := aispend.Currency(x.Amount.Currency)
+				if err != nil {
+					return sdk.Result{}, fmt.Errorf("unexpected currency from OpenAI for %s", day(b.StartTime))
 				}
 				d.Add(cur, v)
 				totals.Add(cur, v)
@@ -431,7 +435,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if s != "" && !strings.Contains(strings.ToLower(x.ID), s) {
 				continue
 			}
-			mo := model{ID: x.ID, OwnedBy: x.OwnedBy}
+			mo := model{ID: x.ID, OwnedBy: aispend.Owner(x.OwnedBy)}
 			if x.Created > 0 {
 				mo.Created = day(x.Created)
 			}

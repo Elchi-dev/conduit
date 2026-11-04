@@ -128,7 +128,7 @@ func TestAnthropicReads(t *testing.T) {
 		{"usage", `{"from":"2026-11-02","to":"2026-11-03"}`, []string{`"total":{"inputTokens":310,"cacheWriteTokens":15,"cacheReadTokens":50,"outputTokens":105,"webSearches":1}`,
 			`"groups":[{"model":"claude-opus-5-5","inputTokens":300`, `"groupCount":2`, `{"date":"2026-11-03","inputTokens":200`}},
 		{"usage", `{"from":"2026-11-02","to":"2026-11-03","groupBy":["workspace","model"]}`, []string{`"workspace":"default"`, `"workspace":"wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ"`, `"groupCount":3`}},
-		{"costs", `{"from":"2026-11-02","to":"2026-11-03"}`, []string{`"totals":{"USD":"1.70"}`, `"amount":"1.30"`, `"model":"claude-opus-5-5"`, `{"date":"2026-11-02","totals":{"USD":"1.637891"}}`}},
+		{"costs", `{"from":"2026-11-02","to":"2026-11-03"}`, []string{`"totals":{"USD":"1.70"}`, `"amount":"1.30"`, `"model":"claude-opus-5-5"`, `{"date":"2026-11-02","totals":{"USD":"1.6378912"}},{"date":"2026-11-03","totals":{"USD":"0.0621088"}}`}},
 		{"models", `{"search":"haiku"}`, []string{`"id":"claude-haiku-4-5-20251001"`, `"matching":1`}},
 		{"models", ``, []string{`"maxInputTokens":1000000`, `"matching":2`}},
 	} {
@@ -218,5 +218,46 @@ func TestAnthropicRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "a"); h.Status != "down" || hit || strings.Contains(h.Message, adminKey) {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// hostile answers a cost report with body.
+func hostile(t *testing.T, body string) *Module {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/organizations/me" {
+			io.WriteString(w, `{"name":"Acme jane@example.com‮"}`)
+			return
+		}
+		io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	m := New()
+	m.Base = srv.URL
+	m.now = func() time.Time { return time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC) }
+	if err := m.Configure(context.Background(), fakehost.New(secrets), "a", json.RawMessage(`{"adminKey":"secret://admin"}`)); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestAnthropicHostileCosts(t *testing.T) {
+	row := func(amount, currency, desc string) string {
+		return `{"data":[{"starting_at":"2026-11-03T00:00:00Z","results":[{"amount":"` + amount + `","currency":"` + currency + `","description":"` + desc + `"}]}],"has_more":false}`
+	}
+	for _, body := range []string{row("0x10", "USD", "x"), row("1/3", "USD", "x"), row("1e999999", "USD", "x"), row("1", "US dollars", "x")} {
+		if res, err := invoke(hostile(t, body), "costs", `{}`); err == nil {
+			t.Errorf("%s accepted: %s", body, res.Output)
+		}
+	}
+	res, err := invoke(hostile(t, row("12.5", "usd", `Usage by jane@example.com via sk-ant-api03-abcdefghijklmnop\nnext line`)), "costs", `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(res.Output)
+	if strings.Contains(out, "jane@") || strings.Contains(out, "sk-ant") || strings.Contains(out, `\n`) || !strings.Contains(out, `"amount":"0.125"`) {
+		t.Fatal(out)
+	}
+	if h := hostile(t, "{}").Health(context.Background(), "a"); strings.Contains(h.Message, "jane@") || strings.Contains(h.Message, "‮") {
+		t.Fatalf("%+v", h)
 	}
 }

@@ -158,7 +158,7 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 		return sdk.Health{Status: "down", Message: friendly(err, true).Error()}
 	}
 	msg := "Admin API key accepted"
-	if n := strings.TrimSpace(org.Name); n != "" && len(n) <= 100 {
+	if n := aispend.Label(org.Name); n != "" && len(n) <= 100 {
 		msg += " for " + n
 	}
 	return sdk.Health{Status: "ok", Message: msg}
@@ -196,18 +196,25 @@ func pages[T any](ctx context.Context, c *rest.Client, path string, q url.Values
 	return all, true, nil
 }
 
+// date is the day of an RFC 3339 time Anthropic reports, or "".
 func date(s string) string {
 	if len(s) >= 10 {
-		return s[:10]
+		if _, err := time.Parse("2006-01-02", s[:10]); err == nil {
+			return s[:10]
+		}
 	}
-	return s
+	return ""
 }
 
+// str is a name Anthropic reports, made fit to show (aispend.Label), or def.
 func str(p *string, def string) string {
-	if p == nil || *p == "" {
+	if p == nil {
 		return def
 	}
-	return *p
+	if s := aispend.Label(*p); s != "" {
+		return s
+	}
+	return def
 }
 
 type usageResult struct {
@@ -389,9 +396,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 					return sdk.Result{}, fmt.Errorf("unexpected amount from Anthropic for %s", date(b.StartingAt))
 				}
 				usd := new(big.Rat).Quo(cents, hundred) // amounts are in cents
-				cur := strings.ToUpper(strings.TrimSpace(x.Currency))
-				if cur == "" {
-					cur = "USD"
+				cur, err := aispend.Currency(x.Currency)
+				if err != nil {
+					return sdk.Result{}, fmt.Errorf("unexpected currency from Anthropic for %s", date(b.StartingAt))
 				}
 				day.Add(cur, usd)
 				totals.Add(cur, usd)

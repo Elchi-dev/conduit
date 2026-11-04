@@ -20,6 +20,8 @@ Health lists the models and shows how many the key can use.
   report, but it's in beta, open to Enterprise plans only with a separate
   Admin key, and its usage lines have no documented fields, so the module
   doesn't read it. Usage is on the Mistral console's Usage page.
+- A fine-tuned model's owner that is an organization or user id shows as
+  `your organization`.
 
 **Security.** The key goes in the `Authorization` header to
 `api.mistral.ai` only; redirects are followed within the same host only.

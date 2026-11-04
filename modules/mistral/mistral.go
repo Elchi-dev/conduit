@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/modules/internal/aispend"
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -224,7 +225,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				}
 			}
 			sort.Strings(caps)
-			mo := model{ID: x.ID, Name: name, Type: typ, OwnedBy: x.OwnedBy, ContextLength: x.MaxContextLength, Capabilities: caps,
+			mo := model{ID: x.ID, Name: name, Type: typ, OwnedBy: aispend.Owner(x.OwnedBy), ContextLength: x.MaxContextLength, Capabilities: caps,
 				Aliases: x.Aliases, Deprecation: day(x.Deprecation), Archived: x.Archived}
 			if x.Replacement != nil {
 				mo.Replacement = *x.Replacement

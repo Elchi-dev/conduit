@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/modules/internal/aispend"
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -172,10 +173,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if p.Active != nil && active != *p.Active {
 				continue
 			}
-			if q != "" && !strings.Contains(strings.ToLower(x.ID), q) && !strings.Contains(strings.ToLower(x.OwnedBy), q) {
+			owner := aispend.Owner(x.OwnedBy)
+			if q != "" && !strings.Contains(strings.ToLower(x.ID), q) && !strings.Contains(strings.ToLower(owner), q) {
 				continue
 			}
-			r := row{ID: x.ID, OwnedBy: x.OwnedBy, Active: active, ContextWindow: x.ContextWindow, MaxCompletionTokens: x.MaxCompletionTokens}
+			r := row{ID: x.ID, OwnedBy: owner, Active: active, ContextWindow: x.ContextWindow, MaxCompletionTokens: x.MaxCompletionTokens}
 			if x.Created > 0 {
 				r.Created = time.Unix(x.Created, 0).UTC().Format("2006-01-02")
 			}

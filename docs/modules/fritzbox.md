@@ -30,9 +30,12 @@ answer is "nothing to change". The main wireless networks aren't switched
 by this module.
 
 **Keeping the connection.** `reconnect` is refused when Conduit reaches the
-FRITZ!Box over the internet (a MyFRITZ! address, or the box's own public
-address), since reconnecting would cut off this connection and usually
-change the address.
+FRITZ!Box over the internet, since reconnecting would cut off this
+connection and usually change the address: a MyFRITZ! address, the box's
+public address, any other public IPv4 or IPv6 address, or a name (such as a
+dynamic DNS name) that resolves to one where Conduit runs. A VPN into the
+box (WireGuard or IPsec to its local address) can't be told apart from the
+home network, and reconnecting cuts it off too.
 
 **Secrets stay on the box.** The module never calls the actions that
 return passwords: the wireless keys (`GetSecurityKeys`), the PPPoE login

@@ -229,3 +229,18 @@ func TestOmadaRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+// A controller set up by name is checked by what the name resolves to.
+func TestOmadaKeepsControllerByName(t *testing.T) {
+	f := &fakeOmada{blocked: map[string]bool{}, ctrlIP: "127.0.0.1"}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: strings.Replace(srv.URL, "127.0.0.1", "localhost", 1), ControllerID: ctrl, ClientID: "app1", ClientSecret: "secret://om"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://om": "s3cret"}), "o", raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "block_client", `{"mac":"11-22-33-44-55-77"}`, false); err == nil || !strings.Contains(err.Error(), "cut Conduit off") || f.blocked["11-22-33-44-55-77"] {
+		t.Fatal(err)
+	}
+}

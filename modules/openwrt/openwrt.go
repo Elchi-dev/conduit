@@ -83,8 +83,8 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "interfaces", Title: "Interfaces", Description: "Each network interface: up or down, protocol, device, uptime, addresses and DNS servers.", Risk: sdk.RiskRead},
 			{Name: "wireless", Title: "Wireless", Description: "Each radio (up, disabled, band, channel) and its networks: SSID, mode, encryption type and network. Never the key.", Risk: sdk.RiskRead},
 			{Name: "leases", Title: "DHCP leases", Description: "Address, MAC address, host name and expiry of each IPv4 and IPv6 lease. It lists the people's devices on the network, so this is sensitive.", Risk: sdk.RiskRead, Sensitive: true},
-			{Name: "wifi_up", Title: "Bring a radio up", Description: "Brings a radio and its networks up again (until the next restart; the configuration isn't changed). Undo brings it down.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(radio)},
-			{Name: "wifi_down", Title: "Bring a radio down", Description: "Disconnects every client on the radio's networks (until it's brought up or the router restarts). Refused when Conduit reaches the router through that radio. Undo brings it up.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(radio)},
+			{Name: "wifi_up", Title: "Bring a radio up", Description: "Brings a radio and its configured networks up again (until the next restart; the configuration isn't changed). The preview warns when one of them has no key. Undo brings it down.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(radio)},
+			{Name: "wifi_down", Title: "Bring a radio down", Description: "Disconnects every client on the radio's networks (until it's brought up or the router restarts). Refused when the router's address sits on a network carried only by that radio (a wireless uplink); it can't tell when Conduit is a wireless client of a bridged network such as the LAN. Undo brings it up.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(radio)},
 			{Name: "reboot", Title: "Restart the router", Description: "The network behind it is cut off for a minute or two.", Risk: sdk.RiskDestructive, DryRun: true},
 		},
 		Resources: []sdk.ResourceSpec{
@@ -442,16 +442,17 @@ func (r radio) ssids() []string {
 // throughRadio reports whether the address Conduit uses for the router sits
 // on an interface carried directly by one of the radio's wireless networks
 // (a router reached over its wireless uplink, or a wireless-only network).
-// Bridges with wired ports don't count: Conduit may be wired. It needs the
-// router's address as an IP address (a name isn't looked up).
-func (c *conn) throughRadio(ctx context.Context, r radio) (string, bool) {
-	ip := net.ParseIP(c.addr)
-	if ip == nil {
-		return "", false
+// Bridges with wired ports don't count: Conduit may be wired. A host name is
+// looked up; one that doesn't resolve here can't be checked. When the
+// interfaces can't be read, the check fails closed.
+func (c *conn) throughRadio(ctx context.Context, r radio) (string, bool, error) {
+	ips := c.addrIPs(ctx)
+	if len(ips) == 0 {
+		return "", false, nil
 	}
 	ifs, err := c.interfaces(ctx)
 	if err != nil {
-		return "", false
+		return "", false, fmt.Errorf("can't check whether Conduit reaches the router through this radio: %w", err)
 	}
 	wifi := map[string]bool{}
 	for _, i := range r.Interfaces {
@@ -460,13 +461,50 @@ func (c *conn) throughRadio(ctx context.Context, r radio) (string, bool) {
 		}
 	}
 	for _, i := range ifs {
+		if !wifi[i.L3Device] && !wifi[i.Device] {
+			continue
+		}
 		for _, a := range append(append([]address{}, i.IPv4...), i.IPv6...) {
-			if x := net.ParseIP(a.Address); x != nil && x.Equal(ip) && (wifi[i.L3Device] || wifi[i.Device]) {
-				return i.Interface, true
+			x := net.ParseIP(a.Address)
+			for _, ip := range ips {
+				if x != nil && x.Equal(ip) {
+					return i.Interface, true, nil
+				}
 			}
 		}
 	}
-	return "", false
+	return "", false, nil
+}
+
+// addrIPs is the router's address from the settings, or what its name
+// resolves to here.
+func (c *conn) addrIPs(ctx context.Context) []net.IP {
+	if ip := net.ParseIP(c.addr); ip != nil {
+		return []net.IP{ip}
+	}
+	lctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	as, err := net.DefaultResolver.LookupIPAddr(lctx, c.addr)
+	if err != nil {
+		return nil
+	}
+	out := make([]net.IP, 0, len(as))
+	for _, a := range as {
+		out = append(out, a.IP)
+	}
+	return out
+}
+
+// open lists the radio's access-point networks that need no key: bringing
+// the radio up lets anyone nearby join them.
+func (r radio) open() []string {
+	out := []string{}
+	for _, i := range r.Interfaces {
+		if e := strings.ToLower(strings.TrimSpace(i.Config.Encryption)); (e == "none" || e == "") && i.Config.Mode != "sta" && !i.Config.Disabled {
+			out = append(out, firstOf(i.Config.SSID, i.Section))
+		}
+	}
+	return out
 }
 
 type lease struct {
@@ -671,7 +709,11 @@ func (c *conn) setRadio(ctx context.Context, call sdk.Call, name string) (sdk.Re
 		return sdk.Result{}, fmt.Errorf("%s is disabled in the router's configuration; enable it there first", name)
 	}
 	if !up {
-		if via, yes := c.throughRadio(ctx, r); yes {
+		via, yes, err := c.throughRadio(ctx, r)
+		if err != nil {
+			return sdk.Result{}, err
+		}
+		if yes {
 			return sdk.Result{}, fmt.Errorf("refusing: Conduit reaches the router through %s (interface %s), so bringing it down would cut off this connection", name, via)
 		}
 	}
@@ -686,12 +728,20 @@ func (c *conn) setRadio(ctx context.Context, call sdk.Call, name string) (sdk.Re
 	if call.DryRun {
 		b, _ := json.Marshal(map[string]bool{"up": r.Up})
 		a, _ := json.Marshal(map[string]bool{"up": up})
-		return sdk.Result{Plan: &sdk.Plan{Summary: verb + " " + target, Changes: []sdk.Change{{Target: target, Op: op, Before: b, After: a}}}}, nil
+		sum := verb + " " + target
+		if open := r.open(); up && len(open) > 0 {
+			sum += "; " + strings.Join(open, ", ") + " has no key, anyone nearby can join it"
+		}
+		return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: target, Op: op, Before: b, After: a}}}}, nil
 	}
 	if err := c.call(ctx, "network.wireless", op, map[string]string{"device": name}, nil); err != nil {
 		return sdk.Result{}, err
 	}
-	res, err := sdk.JSON(map[string]any{"radio": name, "up": up, "ssids": r.ssids()})
+	out := map[string]any{"radio": name, "up": up, "ssids": r.ssids()}
+	if open := r.open(); up && len(open) > 0 {
+		out["openNetworks"] = open
+	}
+	res, err := sdk.JSON(out)
 	undo := "Bring " + name + " up again"
 	if up {
 		undo = "Bring " + name + " down again"

@@ -19,7 +19,7 @@ copy its SHA-256 fingerprint into **Fingerprint**.
 | `interfaces` | read | Up or down, protocol, device, uptime, IPv4 and IPv6 addresses, DNS servers |
 | `wireless` | read | Each radio (up, disabled, band, channel, width, country) and its networks: SSID, mode, encryption type, networks, hidden. Never the key |
 | `leases` | read, sensitive | IPv4 and IPv6 leases with address, MAC, host name and expiry. From `luci-rpc`, or dnsmasq's lease file when LuCI's RPC isn't installed |
-| `wifi_up` | write | Brings a radio and its networks up. Preview first. Undo brings it down |
+| `wifi_up` | write | Brings a radio and its networks up. Preview first; it warns when one of them has no key. Undo brings it down |
 | `wifi_down` | destructive | Disconnects every client on the radio. Preview names its SSIDs. Undo brings it up |
 | `reboot` | destructive | Preview names the router. The network behind it is cut off for a minute or two |
 
@@ -34,7 +34,10 @@ off, so it's destructive.
 **Keeping the connection.** `wifi_down` is refused when Conduit reaches the
 router through that radio: when the address in the settings sits on an
 interface carried directly by one of the radio's wireless networks (a
-router on a wireless uplink, or a wireless-only network).
+router on a wireless uplink, or a wireless-only network). A host name in
+the settings is looked up first. When the interfaces can't be read (the
+ACL doesn't allow `network.interface dump`), `wifi_down` is refused rather
+than let through unchecked.
 
 **Secrets stay on the router.** Wireless networks are decoded field by
 field, so keys are never read into Conduit. The rpcd session lives in
@@ -43,8 +46,12 @@ errors. The client won't follow a redirect to another host.
 
 ## Notes
 
-- The connection check needs the router's address as an IP address in the
-  settings; behind a bridge with wired ports (such as `br-lan`) it can't
-  tell whether Conduit is wired, so it lets the action through.
+- The connection check needs the router's address as an IP address, or a
+  name that resolves where Conduit runs; behind a bridge with wired ports
+  (such as `br-lan`) it can't tell whether Conduit is a wireless client of
+  that radio, so it lets the action through. Don't rely on it when Conduit
+  itself is on Wi-Fi.
+- An open network (no key) on a radio brought up is open to anyone nearby,
+  and to the network it's bridged into; the preview and the answer name it.
 - Leases need `luci-mod-rpc` (installed with LuCI), or read access to
   `/tmp/dhcp.leases` through the `file` object.

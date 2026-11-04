@@ -88,7 +88,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "clients", Title: "Clients", Description: "Who's connected to a site: name, host name, MAC, address, wired or wireless, SSID, access point or switch, traffic, and whether it's blocked. It lists people's devices, so this is sensitive.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{` + site + `,"limit":{"type":"integer","default":100,"maximum":1000}}}`)},
 			{Name: "reboot_device", Title: "Restart a device", Description: "Restarts a gateway, switch or access point; what's behind it loses the connection for a few minutes.", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(mac("device"))},
-			{Name: "block_client", Title: "Block a client", Description: "Cuts a client off the site's network until it's unblocked. Refused for the controller's own address. Undo unblocks it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(mac("client"))},
+			{Name: "block_client", Title: "Block a client", Description: "Cuts a client off the site's network until it's unblocked. Refused for the controller's own address (as set, or its name resolved here); not for the machine Conduit runs on. Undo unblocks it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(mac("client"))},
 			{Name: "unblock_client", Title: "Unblock a client", Description: "Lets a blocked client connect again. Undo blocks it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(mac("client"))},
 		},
 		Resources: []sdk.ResourceSpec{
@@ -519,6 +519,25 @@ func firstOf(s ...string) string {
 	return ""
 }
 
+// addrIPs is the controller's address from the settings, or what its name
+// resolves to here (nothing when it doesn't resolve).
+func (c *conn) addrIPs(ctx context.Context) []net.IP {
+	if ip := net.ParseIP(c.addr); ip != nil {
+		return []net.IP{ip}
+	}
+	lctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	as, err := net.DefaultResolver.LookupIPAddr(lctx, c.addr)
+	if err != nil {
+		return nil
+	}
+	out := make([]net.IP, 0, len(as))
+	for _, a := range as {
+		out = append(out, a.IP)
+	}
+	return out
+}
+
 func (c *conn) block(ctx context.Context, call sdk.Call, siteName, mac string) (sdk.Result, error) {
 	block := call.Action == "block_client"
 	s, err := c.site(ctx, siteName)
@@ -542,8 +561,12 @@ func (c *conn) block(ctx context.Context, call sdk.Call, siteName, mac string) (
 			return sdk.JSON(map[string]any{"client": mac, "name": label, "blocked": block, "note": "nothing to change"})
 		}
 		if block && found.IP != "" {
-			if ip := net.ParseIP(found.IP); ip != nil && ip.Equal(net.ParseIP(c.addr)) {
-				return sdk.Result{}, fmt.Errorf("refusing: %s is the controller's own address (%s), so blocking it would cut Conduit off", label, found.IP)
+			if ip := net.ParseIP(found.IP); ip != nil {
+				for _, own := range c.addrIPs(ctx) {
+					if ip.Equal(own) {
+						return sdk.Result{}, fmt.Errorf("refusing: %s is the controller's own address (%s), so blocking it would cut Conduit off", label, found.IP)
+					}
+				}
 			}
 		}
 	}

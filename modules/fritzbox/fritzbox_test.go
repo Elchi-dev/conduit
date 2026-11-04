@@ -330,3 +330,17 @@ func TestFritzBoxRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+// reconnect is refused for any address reached over the internet, not only
+// the box's own public IPv4 address.
+func TestFritzBoxRemote(t *testing.T) {
+	ctx := context.Background()
+	for addr, want := range map[string]bool{
+		"192.168.178.1": false, "127.0.0.1": false, "fd00::1": false, "fe80::1": false, "100.100.1.1": false, "localhost": false,
+		"203.0.113.50": true, "2001:db8::1": true, "box.myfritz.net": true, "abc.MyFritz.net.": true, "198.51.100.7": true,
+	} {
+		if got := (&conn{addr: addr}).remote(ctx, "198.51.100.7"); got != want {
+			t.Errorf("%s: remote %v", addr, got)
+		}
+	}
+}

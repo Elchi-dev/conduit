@@ -105,7 +105,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "wifi", Title: "Wireless networks", Description: "Each wireless network: SSID, on or off, status, channel, standard, security type and whether it's the guest network. Never the key.", Risk: sdk.RiskRead},
 			{Name: "guest_wifi_on", Title: "Turn the guest network on", Description: "Turns on the guest network as it's configured (isolated from the home network). The preview shows its SSID and security. Undo turns it off.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true},
 			{Name: "guest_wifi_off", Title: "Turn the guest network off", Description: "Disconnects everyone on the guest network. Undo turns it on.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true},
-			{Name: "reconnect", Title: "Reconnect to the internet", Description: "Drops the internet connection and dials again: everything online is cut off for a few seconds and the public address usually changes. Refused when Conduit reaches the FRITZ!Box over the internet.", Risk: sdk.RiskDestructive, DryRun: true},
+			{Name: "reconnect", Title: "Reconnect to the internet", Description: "Drops the internet connection and dials again: everything online is cut off for a few seconds and the public address usually changes. Refused when Conduit reaches the FRITZ!Box over the internet (a MyFRITZ! or dynamic DNS name, or a public address); a VPN into the box can't be told apart and is cut off too.", Risk: sdk.RiskDestructive, DryRun: true},
 		},
 	}
 }
@@ -738,14 +738,48 @@ func (c *conn) wlans(ctx context.Context) ([]wlan, error) {
 }
 
 // remote reports whether Conduit reaches the FRITZ!Box over the internet:
-// through a MyFRITZ! name or its public address.
-func (c *conn) remote(external string) bool {
+// through a MyFRITZ! name, the box's public address, any other public
+// address (a reconnect usually changes the IPv6 prefix too), or a name that
+// resolves to one (a dynamic DNS name). A name that doesn't resolve here
+// doesn't count; neither does a VPN into the box, which uses its local
+// address.
+func (c *conn) remote(ctx context.Context, external string) bool {
 	a := strings.ToLower(strings.TrimSuffix(c.addr, "."))
 	if strings.HasSuffix(a, ".myfritz.net") {
 		return true
 	}
-	x, y := net.ParseIP(a), net.ParseIP(external)
-	return x != nil && y != nil && x.Equal(y)
+	var ips []net.IP
+	if ip := net.ParseIP(a); ip != nil {
+		ips = append(ips, ip)
+	} else {
+		lctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if as, err := net.DefaultResolver.LookupIPAddr(lctx, a); err == nil {
+			for _, x := range as {
+				ips = append(ips, x.IP)
+			}
+		}
+	}
+	y := net.ParseIP(external)
+	for _, ip := range ips {
+		if (y != nil && ip.Equal(y)) || public(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// public reports whether an address is reached over the internet: not
+// loopback, private, link-local or shared (100.64.0.0/10, carrier-grade
+// NAT and overlay networks).
+func public(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+		return false
+	}
+	if v4 := ip.To4(); v4 != nil && v4[0] == 100 && v4[1]&0xc0 == 64 {
+		return false
+	}
+	return ip.IsGlobalUnicast()
 }
 
 // Health implements sdk.Module.
@@ -825,7 +859,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		ext, _ := w["externalIPv4"].(string)
-		if c.remote(ext) {
+		if c.remote(ctx, ext) {
 			return sdk.Result{}, errors.New("refusing: Conduit reaches the FRITZ!Box over the internet, so reconnecting would cut off this connection (and the address usually changes)")
 		}
 		target := fmt.Sprintf("internet connection (%v, %v, up %s)", w["connection"], w["status"], time.Duration(w["uptimeSeconds"].(int64))*time.Second)

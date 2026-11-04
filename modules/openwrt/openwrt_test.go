@@ -26,6 +26,8 @@ type fakeWrt struct {
 	expire   bool   // refuse the next call with the session, like an expired one
 	wwanIP   string // the address on the wireless uplink
 	noLuci   bool
+	noDump   bool // the ACL doesn't allow network.interface dump
+	open5    bool // radio1's network has no key
 }
 
 func (f *fakeWrt) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,15 +79,23 @@ func (f *fakeWrt) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "system info":
 		result(0, `{"localtime":1730700000,"uptime":3600,"load":[65536,32768,0],"memory":{"total":500000000,"free":200000000,"available":300000000,"buffered":1000}}`)
 	case "network.interface dump":
+		if f.noDump {
+			result(6, "")
+			return
+		}
 		wwan := ""
 		if f.wwanIP != "" {
 			wwan = `,{"interface":"wwan","up":true,"proto":"dhcp","device":"phy0-sta0","l3_device":"phy0-sta0","ipv4-address":[{"address":"` + f.wwanIP + `","mask":24}]}`
 		}
 		result(0, `{"interface":[{"interface":"lan","up":true,"pending":false,"available":true,"proto":"static","device":"br-lan","l3_device":"br-lan","uptime":3500,"ipv4-address":[{"address":"192.168.1.1","mask":24}],"ipv6-address":[],"dns-server":[]},{"interface":"wan","up":true,"proto":"pppoe","device":"wan","l3_device":"pppoe-wan","ipv4-address":[{"address":"203.0.113.9","mask":32}],"dns-server":["1.1.1.1"]}`+wwan+`]}`)
 	case "network.wireless status":
+		enc5 := "psk2"
+		if f.open5 {
+			enc5 = "none"
+		}
 		result(0, fmt.Sprintf(`{"radio0":{"up":%t,"pending":false,"autostart":true,"disabled":false,"config":{"band":"2g","channel":"6","htmode":"HE20","country":"DE"},"interfaces":[{"section":"default_radio0","ifname":"phy0-ap0","config":{"mode":"ap","ssid":"Home","encryption":"sae-mixed","key":"WIFI-LEAKME-KEY","network":["lan"]}},{"section":"wwan","ifname":"phy0-sta0","config":{"mode":"sta","ssid":"Upstream","encryption":"psk2","key":"STA-LEAKME","network":["wwan"]}}]},
-			"radio1":{"up":%t,"pending":false,"autostart":true,"disabled":false,"config":{"band":"5g","channel":36,"htmode":"HE80"},"interfaces":[{"section":"default_radio1","ifname":"phy1-ap0","config":{"mode":"ap","ssid":"Home-5G","encryption":"psk2","key":"WIFI-LEAKME-5","network":["lan"]}}]},
-			"radio2":{"up":false,"disabled":true,"config":{"band":"6g","disabled":true},"interfaces":[]}}`, f.up["radio0"], f.up["radio1"]))
+			"radio1":{"up":%t,"pending":false,"autostart":true,"disabled":false,"config":{"band":"5g","channel":36,"htmode":"HE80"},"interfaces":[{"section":"default_radio1","ifname":"phy1-ap0","config":{"mode":"ap","ssid":"Home-5G","encryption":"%s","key":"WIFI-LEAKME-5","network":["lan"]}}]},
+			"radio2":{"up":false,"disabled":true,"config":{"band":"6g","disabled":true},"interfaces":[]}}`, f.up["radio0"], f.up["radio1"], enc5))
 	case "network.wireless up", "network.wireless down":
 		var a map[string]string
 		json.Unmarshal(req.Params[3], &a)
@@ -263,5 +273,34 @@ func TestOpenWrtRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "w"); h.Status != "down" || leaked != "" || strings.Contains(h.Message, "hunter2") {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// The connection check fails closed when the interfaces can't be read.
+func TestOpenWrtGuardFailsClosed(t *testing.T) {
+	f := &fakeWrt{up: map[string]bool{"radio0": true, "radio1": true}, noDump: true}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: srv.URL, Username: "root", Password: "secret://wrt"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://wrt": "hunter2"}), "w", raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "wifi_down", `{"radio":"radio1"}`, false); err == nil || !strings.Contains(err.Error(), "can't check") || !f.up["radio1"] {
+		t.Fatal(err)
+	}
+}
+
+// Bringing up a radio with a network that has no key says so first.
+func TestOpenWrtWarnsOpenNetwork(t *testing.T) {
+	m, f, _ := setup(t, "secret://wrt")
+	f.open5 = true
+	r, err := invoke(m, "wifi_up", `{"radio":"radio1"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "Home-5G has no key, anyone nearby can join it") || f.up["radio1"] {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "wifi_up", `{"radio":"radio1"}`, false)
+	if err != nil || !strings.Contains(string(r.Output), `"openNetworks":["Home-5G"]`) || strings.Contains(string(r.Output), "LEAKME") {
+		t.Fatalf("%s %v", r.Output, err)
 	}
 }

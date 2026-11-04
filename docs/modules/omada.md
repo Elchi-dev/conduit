@@ -30,7 +30,11 @@ colons or dashes and sent the way Omada writes them (`AA-BB-CC-DD-EE-FF`).
 
 **Keeping the connection.** Blocking the client that has the controller's
 own address (a software controller running on a machine on this network)
-is refused, since it would cut Conduit off from the controller.
+is refused, since it would cut Conduit off from the controller. A
+controller set up by name is checked by what the name resolves to where
+Conduit runs. The check doesn't know the machine Conduit itself runs on, or
+a controller reached through a reverse proxy or Omada Cloud, so blocking
+those isn't refused.
 
 **Security.** The access token is fetched with the client credentials, kept
 in memory, renewed when it expires, and sent only to the controller; the

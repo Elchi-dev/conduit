@@ -105,6 +105,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/homeassistant"
 	"github.com/elchi-dev/conduit/modules/homebox"
 	"github.com/elchi-dev/conduit/modules/homebridge"
+	"github.com/elchi-dev/conduit/modules/homewizard"
 	"github.com/elchi-dev/conduit/modules/hubspot"
 	"github.com/elchi-dev/conduit/modules/hue"
 	"github.com/elchi-dev/conduit/modules/huggingface"
@@ -238,6 +239,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/signal"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/snyk"
+	"github.com/elchi-dev/conduit/modules/solaredge"
 	"github.com/elchi-dev/conduit/modules/sonarqube"
 	"github.com/elchi-dev/conduit/modules/sops"
 	"github.com/elchi-dev/conduit/modules/speedtest"
@@ -260,6 +262,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/technitium"
 	"github.com/elchi-dev/conduit/modules/telegram"
 	"github.com/elchi-dev/conduit/modules/terraformcloud"
+	"github.com/elchi-dev/conduit/modules/tibber"
 	"github.com/elchi-dev/conduit/modules/todoist"
 	"github.com/elchi-dev/conduit/modules/traefik"
 	"github.com/elchi-dev/conduit/modules/transmission"
@@ -280,6 +283,7 @@ import (
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
+	"github.com/elchi-dev/conduit/modules/victron"
 	"github.com/elchi-dev/conduit/modules/vikunja"
 	"github.com/elchi-dev/conduit/modules/vlc"
 	"github.com/elchi-dev/conduit/modules/vultr"
@@ -610,6 +614,10 @@ func builtins(app *App) []sdk.Module {
 		wazuh.New(),
 		defectdojo.New(),
 		dependencytrack.New(),
+		tibber.New(),
+		solaredge.New(),
+		victron.New(),
+		homewizard.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

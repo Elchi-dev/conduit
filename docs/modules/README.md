@@ -298,6 +298,10 @@ recommended policies.
 | Wazuh | [wazuh.md](wazuh.md) | homelab, team |
 | DefectDojo | [defectdojo.md](defectdojo.md) | developer, team |
 | Dependency-Track | [dependencytrack.md](dependencytrack.md) | developer, team |
+| Tibber | [tibber.md](tibber.md) | homelab |
+| SolarEdge | [solaredge.md](solaredge.md) | homelab |
+| Victron VRM | [victron.md](victron.md) | homelab |
+| HomeWizard Energy | [homewizard.md](homewizard.md) | homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

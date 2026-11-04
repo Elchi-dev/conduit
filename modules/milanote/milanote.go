@@ -59,6 +59,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	ids := `"ids":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":50,"description":"Card ids"}`
 	return sdk.Manifest{
 		ID: "milanote", Name: "Milanote", Version: moduleVersion, Category: "Productivity", Icon: "layout",
+		Presets:     []string{"team", "developer"},
 		Description: "Your Milanote boards: read them as data or Markdown, search, add notes, to-dos and links, move, archive and export. Uses Milanote's private web API.",
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{
 			"url":{"type":"string","default":"https://app.milanote.com","description":"Leave as is unless you know otherwise"},

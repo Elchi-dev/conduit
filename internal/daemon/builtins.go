@@ -8,6 +8,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/alertmanager"
 	"github.com/elchi-dev/conduit/modules/amp"
 	"github.com/elchi-dev/conduit/modules/anthropic"
+	"github.com/elchi-dev/conduit/modules/apprise"
 	"github.com/elchi-dev/conduit/modules/appwrite"
 	"github.com/elchi-dev/conduit/modules/argocd"
 	"github.com/elchi-dev/conduit/modules/argoworkflows"
@@ -75,6 +76,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/fastmail"
 	"github.com/elchi-dev/conduit/modules/fathom"
 	"github.com/elchi-dev/conduit/modules/filebrowser"
+	"github.com/elchi-dev/conduit/modules/fileflows"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/firefly"
 	"github.com/elchi-dev/conduit/modules/flagsmith"
@@ -231,6 +233,8 @@ import (
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/proxmoxbackup"
 	"github.com/elchi-dev/conduit/modules/pterodactyl"
+	"github.com/elchi-dev/conduit/modules/pushbullet"
+	"github.com/elchi-dev/conduit/modules/pushover"
 	"github.com/elchi-dev/conduit/modules/qbittorrent"
 	"github.com/elchi-dev/conduit/modules/railway"
 	"github.com/elchi-dev/conduit/modules/rclone"
@@ -279,6 +283,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/tailscale"
 	"github.com/elchi-dev/conduit/modules/tasmota"
 	"github.com/elchi-dev/conduit/modules/tautulli"
+	"github.com/elchi-dev/conduit/modules/tdarr"
 	"github.com/elchi-dev/conduit/modules/teamcity"
 	"github.com/elchi-dev/conduit/modules/technitium"
 	"github.com/elchi-dev/conduit/modules/telegram"
@@ -295,6 +300,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/umami"
 	"github.com/elchi-dev/conduit/modules/unifi"
 	"github.com/elchi-dev/conduit/modules/unleash"
+	"github.com/elchi-dev/conduit/modules/unmanic"
 	"github.com/elchi-dev/conduit/modules/unraid"
 	"github.com/elchi-dev/conduit/modules/upcloud"
 	"github.com/elchi-dev/conduit/modules/upstash"
@@ -612,6 +618,9 @@ func builtins(app *App) []sdk.Module {
 		dokploy.New(),
 		caprover.New(),
 		gotify.New(),
+		pushover.New(),
+		pushbullet.New(),
+		apprise.New(),
 		transmission.New(),
 		deluge.New(),
 		sabnzbd.New(),
@@ -637,6 +646,9 @@ func builtins(app *App) []sdk.Module {
 		romm.New(),
 		bazarr.New(),
 		nzbget.New(),
+		tdarr.New(),
+		unmanic.New(),
+		fileflows.New(),
 		microsoft365.New(),
 		googleworkspace.New(),
 		fastmail.New(),

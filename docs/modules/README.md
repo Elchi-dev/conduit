@@ -273,6 +273,9 @@ recommended policies.
 | Dokploy | [dokploy.md](dokploy.md) | developer, homelab |
 | CapRover | [caprover.md](caprover.md) | developer, homelab |
 | Gotify | [gotify.md](gotify.md) | homelab |
+| Pushover | [pushover.md](pushover.md) | homelab, developer |
+| Pushbullet | [pushbullet.md](pushbullet.md) | homelab, developer |
+| Apprise | [apprise.md](apprise.md) | homelab |
 | Transmission | [transmission.md](transmission.md) | homelab |
 | Deluge | [deluge.md](deluge.md) | homelab |
 | SABnzbd | [sabnzbd.md](sabnzbd.md) | homelab |
@@ -293,6 +296,9 @@ recommended policies.
 | RomM | [romm.md](romm.md) | gamer, homelab |
 | Bazarr | [bazarr.md](bazarr.md) | homelab |
 | NZBGet | [nzbget.md](nzbget.md) | homelab |
+| Tdarr | [tdarr.md](tdarr.md) | homelab |
+| Unmanic | [unmanic.md](unmanic.md) | homelab |
+| FileFlows | [fileflows.md](fileflows.md) | homelab |
 | OpenWrt | [openwrt.md](openwrt.md) | homelab |
 | TP-Link Omada | [omada.md](omada.md) | homelab |
 | FRITZ!Box | [fritzbox.md](fritzbox.md) | homelab |

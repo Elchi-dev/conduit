@@ -24,6 +24,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.64
 	github.com/wneessen/go-mail v0.8.1
 	github.com/zalando/go-keyring v0.2.8
+	go.mongodb.org/mongo-driver/v2 v2.5.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.37.0
@@ -34,7 +35,12 @@ require (
 
 require (
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/klauspost/compress v1.17.6 // indirect
 	github.com/rs/xid v1.4.0 // indirect
+	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
+	github.com/xdg-go/scram v1.2.0 // indirect
+	github.com/xdg-go/stringprep v1.0.4 // indirect
+	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 )
 
 require (

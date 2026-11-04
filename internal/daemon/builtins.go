@@ -23,6 +23,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/chatwoot"
 	"github.com/elchi-dev/conduit/modules/circleci"
+	"github.com/elchi-dev/conduit/modules/clickhouse"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/codecov"
 	"github.com/elchi-dev/conduit/modules/comfyui"
@@ -33,9 +34,11 @@ import (
 	"github.com/elchi-dev/conduit/modules/datadog"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
+	"github.com/elchi-dev/conduit/modules/discourse"
 	"github.com/elchi-dev/conduit/modules/docker"
 	"github.com/elchi-dev/conduit/modules/doppler"
 	"github.com/elchi-dev/conduit/modules/drone"
+	"github.com/elchi-dev/conduit/modules/elasticsearch"
 	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/firefly"
@@ -61,6 +64,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/huggingface"
 	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/infisical"
+	"github.com/elchi-dev/conduit/modules/influxdb"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
 	"github.com/elchi-dev/conduit/modules/jira"
@@ -69,6 +73,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/komga"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
+	"github.com/elchi-dev/conduit/modules/lemmy"
 	"github.com/elchi-dev/conduit/modules/lemonsqueezy"
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/linkding"
@@ -81,10 +86,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/matrix"
 	"github.com/elchi-dev/conduit/modules/mattermost"
 	"github.com/elchi-dev/conduit/modules/mealie"
+	"github.com/elchi-dev/conduit/modules/meilisearch"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/mikrotik"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/miniflux"
+	"github.com/elchi-dev/conduit/modules/mongodb"
 	"github.com/elchi-dev/conduit/modules/monica"
 	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
@@ -92,6 +99,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/netbox"
 	"github.com/elchi-dev/conduit/modules/netlify"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
+	"github.com/elchi-dev/conduit/modules/nextcloudtalk"
 	"github.com/elchi-dev/conduit/modules/nomad"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
@@ -124,6 +132,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/render"
 	"github.com/elchi-dev/conduit/modules/resend"
+	"github.com/elchi-dev/conduit/modules/rocketchat"
 	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/scaleway"
 	"github.com/elchi-dev/conduit/modules/scrutiny"
@@ -176,6 +185,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/zammad"
 	"github.com/elchi-dev/conduit/modules/zendesk"
 	"github.com/elchi-dev/conduit/modules/zigbee2mqtt"
+	"github.com/elchi-dev/conduit/modules/zulip"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -364,6 +374,16 @@ func builtins(app *App) []sdk.Module {
 		grocy.New(),
 		monica.New(),
 		linkding.New(),
+		rocketchat.New(),
+		zulip.New(),
+		discourse.New(),
+		lemmy.New(),
+		nextcloudtalk.New(),
+		elasticsearch.New(),
+		mongodb.New(),
+		clickhouse.New(),
+		influxdb.New(),
+		meilisearch.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

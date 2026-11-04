@@ -47,6 +47,11 @@ recommended policies.
 | Fly.io | [fly.md](fly.md) | developer |
 | Databases (PostgreSQL, MySQL) | [database.md](database.md) | developer, team |
 | Redis and Valkey | [redis.md](redis.md) | developer |
+| MongoDB | [mongodb.md](mongodb.md) | developer, homelab |
+| ClickHouse | [clickhouse.md](clickhouse.md) | developer, homelab |
+| InfluxDB | [influxdb.md](influxdb.md) | developer, homelab |
+| Elasticsearch and OpenSearch | [elasticsearch.md](elasticsearch.md) | developer, homelab |
+| Meilisearch | [meilisearch.md](meilisearch.md) | developer, homelab |
 | Uptime Kuma | [uptimekuma.md](uptimekuma.md) | homelab, developer |
 | UniFi Network | [unifi.md](unifi.md) | homelab |
 | Nextcloud | [nextcloud.md](nextcloud.md) | homelab, team |
@@ -142,6 +147,11 @@ recommended policies.
 | Tasmota | [tasmota.md](tasmota.md) | homelab |
 | Bluesky | [bluesky.md](bluesky.md) | team, gamer |
 | Matrix | [matrix.md](matrix.md) | homelab, team |
+| Rocket.Chat | [rocketchat.md](rocketchat.md) | team |
+| Zulip | [zulip.md](zulip.md) | team, developer |
+| Discourse | [discourse.md](discourse.md) | team |
+| Lemmy | [lemmy.md](lemmy.md) | homelab, gamer |
+| Nextcloud Talk | [nextcloudtalk.md](nextcloudtalk.md) | homelab, team |
 | Signal (signal-cli-rest-api) | [signal.md](signal.md) | homelab |
 | listmonk | [listmonk.md](listmonk.md) | team, homelab |
 | Resend | [resend.md](resend.md) | developer, team |

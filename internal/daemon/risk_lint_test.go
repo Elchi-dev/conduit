@@ -138,7 +138,10 @@ var sensitiveUndo = map[string]string{
 	"hashivault.write_secret":    "restore_version",    // restores the version that was current
 	"monica.add_note":            "delete_note",        // deletes the note it added, by number
 	"nextcloud.share":            "unshare",            // removes the link by its id
+	"nextcloudtalk.send_message": "delete_message",     // deletes the message it sent, by conversation and id
+	"rocketchat.send_message":    "delete_message",     // deletes the message it sent, by room and id
 	"zammad.add_note":            "delete_note",        // deletes the note it added, by number
+	"zulip.send_message":         "delete_message",     // deletes the message it sent, by id
 }
 
 // sensitiveUndoByID lists the entries of sensitiveUndo whose undo action is

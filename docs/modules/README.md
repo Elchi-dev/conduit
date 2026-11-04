@@ -207,6 +207,9 @@ recommended policies.
 | Moonraker (Klipper) | [moonraker.md](moonraker.md) | homelab |
 | Node-RED | [nodered.md](nodered.md) | homelab, developer |
 | Homebridge | [homebridge.md](homebridge.md) | homelab |
+| openHAB | [openhab.md](openhab.md) | homelab |
+| Domoticz | [domoticz.md](domoticz.md) | homelab |
+| ioBroker | [iobroker.md](iobroker.md) | homelab |
 | Bluesky | [bluesky.md](bluesky.md) | team, gamer |
 | Matrix | [matrix.md](matrix.md) | homelab, team |
 | Rocket.Chat | [rocketchat.md](rocketchat.md) | team |
@@ -295,6 +298,9 @@ recommended policies.
 | Microsoft 365 | [microsoft365.md](microsoft365.md) | team, developer |
 | Google Workspace | [googleworkspace.md](googleworkspace.md) | team, developer |
 | Fastmail | [fastmail.md](fastmail.md) | developer, team |
+| mailcow | [mailcow.md](mailcow.md) | homelab, team |
+| Stalwart | [stalwart.md](stalwart.md) | homelab, team |
+| Mailu | [mailu.md](mailu.md) | homelab, team |
 | Dropbox | [dropbox.md](dropbox.md) | team, developer |
 | PocketBase | [pocketbase.md](pocketbase.md) | developer, homelab |
 | Appwrite | [appwrite.md](appwrite.md) | developer |

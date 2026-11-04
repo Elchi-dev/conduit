@@ -64,6 +64,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/discourse"
 	"github.com/elchi-dev/conduit/modules/docker"
 	"github.com/elchi-dev/conduit/modules/dokploy"
+	"github.com/elchi-dev/conduit/modules/domoticz"
 	"github.com/elchi-dev/conduit/modules/doppler"
 	"github.com/elchi-dev/conduit/modules/drone"
 	"github.com/elchi-dev/conduit/modules/dropbox"
@@ -123,6 +124,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/instatus"
 	"github.com/elchi-dev/conduit/modules/intercom"
 	"github.com/elchi-dev/conduit/modules/invoiceninja"
+	"github.com/elchi-dev/conduit/modules/iobroker"
 	"github.com/elchi-dev/conduit/modules/ionos"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
@@ -152,7 +154,9 @@ import (
 	"github.com/elchi-dev/conduit/modules/loki"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/mailchimp"
+	"github.com/elchi-dev/conduit/modules/mailcow"
 	"github.com/elchi-dev/conduit/modules/mailgun"
+	"github.com/elchi-dev/conduit/modules/mailu"
 	"github.com/elchi-dev/conduit/modules/mastodon"
 	"github.com/elchi-dev/conduit/modules/matomo"
 	"github.com/elchi-dev/conduit/modules/matrix"
@@ -198,6 +202,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/onepassword"
 	"github.com/elchi-dev/conduit/modules/openai"
 	"github.com/elchi-dev/conduit/modules/openaicompat"
+	"github.com/elchi-dev/conduit/modules/openhab"
 	"github.com/elchi-dev/conduit/modules/openrouter"
 	"github.com/elchi-dev/conduit/modules/openwrt"
 	"github.com/elchi-dev/conduit/modules/openxbl"
@@ -257,6 +262,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/sourcegraph"
 	"github.com/elchi-dev/conduit/modules/speedtest"
 	"github.com/elchi-dev/conduit/modules/spotify"
+	"github.com/elchi-dev/conduit/modules/stalwart"
 	"github.com/elchi-dev/conduit/modules/standards"
 	"github.com/elchi-dev/conduit/modules/statuspage"
 	"github.com/elchi-dev/conduit/modules/steam"
@@ -491,6 +497,9 @@ func builtins(app *App) []sdk.Module {
 		moonraker.New(),
 		nodered.New(),
 		homebridge.New(),
+		openhab.New(),
+		domoticz.New(),
+		iobroker.New(),
 		bluesky.New(),
 		matrix.New(),
 		signal.New(),
@@ -646,6 +655,9 @@ func builtins(app *App) []sdk.Module {
 		solaredge.New(),
 		victron.New(),
 		homewizard.New(),
+		mailcow.New(),
+		stalwart.New(),
+		mailu.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

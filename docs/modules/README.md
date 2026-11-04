@@ -97,6 +97,11 @@ recommended policies.
 | Speedtest Tracker | [speedtest.md](speedtest.md) | homelab |
 | Tautulli | [tautulli.md](tautulli.md) | homelab |
 | Overseerr / Jellyseerr | [seerr.md](seerr.md) | homelab |
+| Plausible Analytics | [plausible.md](plausible.md) | developer, team, homelab |
+| Umami | [umami.md](umami.md) | developer, homelab, team |
+| UptimeRobot | [uptimerobot.md](uptimerobot.md) | developer, homelab, team |
+| Healthchecks.io | [healthchecks.md](healthchecks.md) | developer, homelab, team |
+| Better Stack Uptime | [betterstack.md](betterstack.md) | developer, team |
 | Frigate | [frigate.md](frigate.md) | homelab |
 | Mealie | [mealie.md](mealie.md) | homelab |
 | MQTT | [mqtt.md](mqtt.md) | homelab |
@@ -105,6 +110,11 @@ recommended policies.
 | Kodi | [kodi.md](kodi.md) | homelab |
 | Syncthing | [syncthing.md](syncthing.md) | homelab, developer |
 | wg-easy | [wgeasy.md](wgeasy.md) | homelab |
+| Philips Hue | [hue.md](hue.md) | homelab, gamer |
+| Shelly | [shelly.md](shelly.md) | homelab |
+| ESPHome | [esphome.md](esphome.md) | homelab |
+| Zigbee2MQTT | [zigbee2mqtt.md](zigbee2mqtt.md) | homelab |
+| Tasmota | [tasmota.md](tasmota.md) | homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

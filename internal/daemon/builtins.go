@@ -12,6 +12,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/azuredevops"
 	"github.com/elchi-dev/conduit/modules/backblaze"
+	"github.com/elchi-dev/conduit/modules/betterstack"
 	"github.com/elchi-dev/conduit/modules/bitbucket"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
@@ -22,6 +23,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/docker"
+	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/fly"
 	"github.com/elchi-dev/conduit/modules/frigate"
@@ -33,8 +35,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/grafana"
 	"github.com/elchi-dev/conduit/modules/harbor"
 	"github.com/elchi-dev/conduit/modules/hashivault"
+	"github.com/elchi-dev/conduit/modules/healthchecks"
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
+	"github.com/elchi-dev/conduit/modules/hue"
 	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
@@ -66,6 +70,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/paperless"
 	"github.com/elchi-dev/conduit/modules/pihole"
+	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
 	"github.com/elchi-dev/conduit/modules/portainer"
 	"github.com/elchi-dev/conduit/modules/proxmox"
@@ -78,6 +83,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/seerr"
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
+	"github.com/elchi-dev/conduit/modules/shelly"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/sonarqube"
 	"github.com/elchi-dev/conduit/modules/speedtest"
@@ -89,6 +95,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/synology"
 	"github.com/elchi-dev/conduit/modules/system"
 	"github.com/elchi-dev/conduit/modules/tailscale"
+	"github.com/elchi-dev/conduit/modules/tasmota"
 	"github.com/elchi-dev/conduit/modules/tautulli"
 	"github.com/elchi-dev/conduit/modules/telegram"
 	"github.com/elchi-dev/conduit/modules/terraformcloud"
@@ -97,15 +104,18 @@ import (
 	"github.com/elchi-dev/conduit/modules/trello"
 	"github.com/elchi-dev/conduit/modules/truenas"
 	"github.com/elchi-dev/conduit/modules/twitch"
+	"github.com/elchi-dev/conduit/modules/umami"
 	"github.com/elchi-dev/conduit/modules/unifi"
 	"github.com/elchi-dev/conduit/modules/unraid"
 	"github.com/elchi-dev/conduit/modules/uptimekuma"
+	"github.com/elchi-dev/conduit/modules/uptimerobot"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
+	"github.com/elchi-dev/conduit/modules/zigbee2mqtt"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -224,6 +234,16 @@ func builtins(app *App) []sdk.Module {
 		speedtest.New(),
 		tautulli.New(),
 		seerr.New(),
+		plausible.New(),
+		umami.New(),
+		uptimerobot.New(),
+		healthchecks.New(),
+		betterstack.New(),
+		hue.New(),
+		shelly.New(),
+		esphome.New(),
+		zigbee2mqtt.New(),
+		tasmota.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

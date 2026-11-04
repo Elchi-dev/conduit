@@ -8,29 +8,17 @@ package mqtt
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/tls"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
-	paho "github.com/eclipse/paho.mqtt.golang"
-	"github.com/eclipse/paho.mqtt.golang/packets"
-
 	"github.com/elchi-dev/conduit/modules/internal/inst"
-	"github.com/elchi-dev/conduit/modules/internal/tlspin"
+	"github.com/elchi-dev/conduit/modules/internal/mqttx"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -53,19 +41,9 @@ type Config struct {
 }
 
 type conn struct {
-	host    sdk.Host
-	addr    string      // host:port
-	tls     *tls.Config // nil for plain TCP
-	user    string
-	pass    string // secret:// reference
-	prefix  string
+	*mqttx.Broker
 	publish []string
 	retain  bool
-	dial    func(ctx context.Context, network, addr string) (net.Conn, error)
-	timeout time.Duration
-	// settle is how long to wait after the subscription is acknowledged
-	// for the broker's retained messages to stop arriving.
-	settle time.Duration
 }
 
 // Module implements sdk.Module.
@@ -77,15 +55,10 @@ type Module struct {
 func New() *Module { return &Module{} }
 
 const (
-	maxTopic      = 1024      // bytes in a topic or filter we accept
-	maxPublish    = 256 << 10 // bytes in a published payload
-	maxCollect    = 1 << 20   // bytes of payload one read collects
-	maxPacket     = maxCollect + 64<<10
-	maxUndoBytes  = 64 << 10 // a previous retained message larger than this gets no undo
-	defaultPrefix = "conduit"
+	maxPublish   = 256 << 10 // bytes in a published payload
+	maxCollect   = mqttx.MaxCollect
+	maxUndoBytes = 64 << 10 // a previous retained message larger than this gets no undo
 )
-
-var prefixRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,14}$`)
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
@@ -123,42 +96,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return fmt.Errorf("invalid settings: %w", err)
 	}
-	u, err := url.Parse(strings.TrimSpace(c.URL))
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || u.Opaque != "" {
-		return errors.New("the broker is like mqtt://broker.local:1883 or mqtts://broker.local:8883")
-	}
-	secure := false
-	port := "1883"
-	switch strings.ToLower(u.Scheme) {
-	case "mqtt", "tcp":
-	case "mqtts", "ssl", "tls":
-		secure, port = true, "8883"
-	default:
-		return errors.New("the broker is like mqtt://broker.local:1883 or mqtts://broker.local:8883 (WebSocket brokers aren't supported)")
-	}
-	if p := u.Port(); p != "" {
-		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
-			return errors.New("the broker's port is a number up to 65535")
-		}
-		port = p
-	}
-	hostname := u.Hostname()
-	user := c.Username
-	if strings.TrimSpace(user) != user || len(user) > 256 || hasControl(user) {
-		return errors.New("the username has spaces at the ends, control characters or is too long")
-	}
-	if c.Password != "" && !strings.HasPrefix(c.Password, "secret://") {
-		return errors.New("store the password in the vault and enter its secret:// reference")
-	}
-	if c.Password != "" && user == "" {
-		return errors.New("enter the username too (MQTT has no password without a username)")
-	}
-	prefix := c.ClientIDPrefix
-	if prefix == "" {
-		prefix = defaultPrefix
-	}
-	if !prefixRe.MatchString(prefix) {
-		return errors.New("the client id prefix is up to 14 letters, digits, - and _")
+	b, err := mqttx.New(h, mqttx.Options{URL: c.URL, Username: c.Username, Password: c.Password, ClientIDPrefix: c.ClientIDPrefix,
+		Fingerprint: c.Fingerprint, InsecureSkipVerify: c.InsecureSkipVerify})
+	if err != nil {
+		return err
 	}
 	if len(c.PublishTopics) > 100 {
 		return errors.New("list at most 100 publish topics")
@@ -170,19 +111,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		}
 		pub = append(pub, f)
 	}
-	if !secure && (c.Fingerprint != "" || c.InsecureSkipVerify) {
-		return errors.New("the certificate settings need a TLS broker address (mqtts://)")
-	}
-	cn := &conn{host: h, addr: net.JoinHostPort(hostname, port), user: user, pass: c.Password, prefix: prefix, publish: pub, retain: c.AllowRetain,
-		dial: sdk.DialContext(h), timeout: 10 * time.Second, settle: 400 * time.Millisecond}
-	if secure {
-		tc, err := tlspin.Config(c.Fingerprint, c.InsecureSkipVerify)
-		if err != nil {
-			return err
-		}
-		tc.ServerName = hostname
-		cn.tls = tc
-	}
+	cn := &conn{Broker: b, publish: pub, retain: c.AllowRetain}
 	m.set.Put(id, cn)
 	return nil
 }
@@ -190,95 +119,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 // Close implements sdk.Module.
 func (m *Module) Close(id string) error { m.set.Delete(id); return nil }
 
-func hasControl(s string) bool {
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return true
-		}
-	}
-	return false
-}
-
-// checkChars applies what MQTT asks of topics and filters: UTF-8, no NUL,
-// and (as the spec recommends) no other control characters.
-func checkChars(s string) error {
-	switch {
-	case s == "":
-		return errors.New("it's empty")
-	case len(s) > maxTopic:
-		return fmt.Errorf("it's longer than %d bytes", maxTopic)
-	case !utf8.ValidString(s):
-		return errors.New("it isn't valid UTF-8")
-	case hasControl(s):
-		return errors.New("it has control characters")
-	}
-	return nil
-}
-
-// validTopic checks a topic to publish to: no wildcards.
-func validTopic(t string) error {
-	if err := checkChars(t); err != nil {
-		return err
-	}
-	if strings.ContainsAny(t, "+#") {
-		return errors.New("a topic to publish to has no + or # wildcards")
-	}
-	return nil
-}
-
-// checkDollar keeps subscriptions out of the broker's special $ namespaces
-// except $SYS (its read-only statistics). $share/<group>/... and
-// $queue/... don't read a topic: they join a shared subscription, so the
-// broker diverts part of that group's messages away from its real consumers
-// to Conduit. Any other $ prefix is refused too, in any letter case.
-func checkDollar(f string) error {
-	if !strings.HasPrefix(f, "$") || f == "$SYS" || strings.HasPrefix(f, "$SYS/") {
-		return nil
-	}
-	return errors.New("filters starting with $ are only allowed under $SYS/ ($share/ and $queue/ would take messages away from a shared subscription's consumers)")
-}
-
-// validFilter checks a subscription filter: + only as a whole level, # only
-// as the whole last level, and $ only for $SYS.
-func validFilter(f string) error {
-	if err := checkChars(f); err != nil {
-		return err
-	}
-	if err := checkDollar(f); err != nil {
-		return err
-	}
-	levels := strings.Split(f, "/")
-	for i, l := range levels {
-		switch {
-		case strings.Contains(l, "#") && (l != "#" || i != len(levels)-1):
-			return errors.New("# is only allowed as the whole last level, like sensors/#")
-		case strings.Contains(l, "+") && l != "+":
-			return errors.New("+ is only allowed as a whole level, like sensors/+/temperature")
-		}
-	}
-	return nil
-}
-
-// matches reports whether a topic is matched by a filter, per MQTT 3.1.1
-// 4.7: wildcards at the start don't match topics beginning with $.
-func matches(filter, topic string) bool {
-	if strings.HasPrefix(topic, "$") && (strings.HasPrefix(filter, "+") || strings.HasPrefix(filter, "#")) {
-		return false
-	}
-	f, t := strings.Split(filter, "/"), strings.Split(topic, "/")
-	for i, l := range f {
-		if l == "#" {
-			return true // also matches the parent level: sport/# matches sport
-		}
-		if i >= len(t) {
-			return false
-		}
-		if l != "+" && l != t[i] {
-			return false
-		}
-	}
-	return len(f) == len(t)
-}
+func validTopic(t string) error  { return mqttx.ValidTopic(t) }
+func validFilter(f string) error { return mqttx.ValidFilter(f) }
+func checkDollar(f string) error { return mqttx.CheckDollar(f) }
+func matches(f, t string) bool   { return mqttx.Matches(f, t) }
 
 // allowed checks a topic against the publishTopics setting.
 func (c *conn) allowed(topic string) error {
@@ -299,233 +143,22 @@ func (c *conn) allowed(topic string) error {
 	return fmt.Errorf("%s isn't in the publishTopics setting (%s)", topic, strings.Join(c.publish, ", "))
 }
 
-// guard is the connection under the MQTT client. It follows the packet
-// framing and fails the connection before a packet larger than max is
-// read, since the client allocates a packet's whole length up front.
-type guard struct {
-	net.Conn
-	max  int
-	err  error
-	st   byte // 0: next is a fixed header; 1: in the length; 2: in the body
-	mul  int
-	n    int
-	left int
-}
+type message = mqttx.Message
 
-var errTooBig = errors.New("the broker sent a message larger than 1 MiB")
-
-func (g *guard) Read(p []byte) (int, error) {
-	if g.err != nil {
-		return 0, g.err
-	}
-	n, err := g.Conn.Read(p)
-	start := 0 // where the packet being read began in p (0 when before p)
-	for i := 0; i < n; i++ {
-		switch g.st {
-		case 0:
-			g.st, g.mul, g.n, start = 1, 1, 0, i
-		case 1:
-			b := int(p[i])
-			g.n += (b & 127) * g.mul
-			switch {
-			case g.n > g.max:
-				g.err = errTooBig
-			case b&128 != 0 && g.mul == 128*128*128:
-				g.err = errors.New("the broker sent a malformed packet")
-			case b&128 != 0:
-				g.mul *= 128
-			case g.n == 0:
-				g.st = 0
-			default:
-				g.st, g.left = 2, g.n
-			}
-			if g.err != nil {
-				if start == 0 {
-					return 0, g.err
-				}
-				return start, nil // deliver the packets before this one; fail on the next read
-			}
-		case 2:
-			k := min(g.left, n-i)
-			g.left -= k
-			i += k - 1
-			if g.left == 0 {
-				g.st = 0
-			}
-		}
-	}
-	return n, err
-}
-
-func (c *conn) open(ctx context.Context) (net.Conn, error) {
-	dctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-	raw, err := c.dial(dctx, "tcp", c.addr)
-	if err != nil {
-		return nil, fmt.Errorf("can't reach the broker at %s: %w", c.addr, err)
-	}
-	nc := raw
-	if c.tls != nil {
-		tc := tls.Client(raw, c.tls.Clone())
-		if err := tc.HandshakeContext(dctx); err != nil {
-			raw.Close()
-			return nil, fmt.Errorf("TLS with the broker failed: %w", err)
-		}
-		nc = tc
-	}
-	return &guard{Conn: nc, max: maxPacket}, nil
-}
-
-func randomID(prefix string) string {
-	b := make([]byte, 4)
-	_, _ = rand.Read(b)
-	return prefix + "-" + hex.EncodeToString(b)
-}
-
-// wait waits for a token, the context or the timeout.
-func (c *conn) wait(ctx context.Context, t paho.Token) error {
-	select {
-	case <-t.Done():
-		return t.Error()
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(c.timeout):
-		return errors.New("the broker didn't answer in time")
-	}
-}
-
-// session is one connection to the broker.
-type session struct {
-	cl   paho.Client
-	lost chan error
-}
-
-func (s *session) close() { s.cl.Disconnect(100) }
-
-func (c *conn) connect(ctx context.Context) (*session, error) {
-	pw := ""
-	if c.pass != "" {
-		var err error
-		if pw, err = c.host.Secret(ctx, c.pass); err != nil {
-			return nil, err
-		}
-	}
-	s := &session{lost: make(chan error, 1)}
-	o := paho.NewClientOptions()
-	o.AddBroker("tcp://" + c.addr) // the address the custom dialer below uses
-	o.SetClientID(randomID(c.prefix))
-	o.SetProtocolVersion(4)
-	o.SetCleanSession(true)
-	o.SetAutoReconnect(false)
-	o.SetConnectRetry(false)
-	o.SetResumeSubs(false)
-	o.SetConnectTimeout(c.timeout)
-	o.SetWriteTimeout(c.timeout)
-	o.SetKeepAlive(30 * time.Second)
-	o.SetPingTimeout(c.timeout)
-	o.SetOrderMatters(true)
-	if c.user != "" {
-		o.SetUsername(c.user)
-		o.SetPassword(pw)
-	}
-	o.SetCustomOpenConnectionFn(func(*url.URL, paho.ClientOptions) (net.Conn, error) { return c.open(ctx) })
-	o.SetConnectionLostHandler(func(_ paho.Client, err error) {
-		select {
-		case s.lost <- err:
-		default:
-		}
-	})
-	s.cl = paho.NewClient(o)
-	if err := c.wait(ctx, s.cl.Connect()); err != nil {
-		s.cl.Disconnect(0)
-		return nil, connectError(err)
-	}
-	return s, nil
-}
-
-func connectError(err error) error {
-	switch {
-	case errors.Is(err, packets.ErrorRefusedBadUsernameOrPassword):
-		return errors.New("the broker refused the username or password")
-	case errors.Is(err, packets.ErrorRefusedNotAuthorised):
-		return errors.New("the broker refused the connection: not authorised (check the username and password)")
-	case errors.Is(err, packets.ErrorRefusedIDRejected):
-		return errors.New("the broker rejected the client id (try a shorter clientIdPrefix)")
-	case errors.Is(err, packets.ErrorRefusedBadProtocolVersion):
-		return errors.New("the broker doesn't speak MQTT 3.1.1")
-	}
-	return err
-}
-
-type message struct {
-	topic    string
-	payload  []byte
-	retained bool
-	qos      byte
-}
-
-func (m message) out() map[string]any {
-	e := map[string]any{"topic": m.topic, "bytes": len(m.payload)}
-	if m.retained {
+func msgOut(m message) map[string]any {
+	e := map[string]any{"topic": m.Topic, "bytes": len(m.Payload)}
+	if m.Retained {
 		e["retained"] = true
 	}
-	if m.qos > 0 {
-		e["qos"] = m.qos
+	if m.QoS > 0 {
+		e["qos"] = m.QoS
 	}
-	if utf8.Valid(m.payload) {
-		e["payload"] = string(m.payload)
+	if utf8.Valid(m.Payload) {
+		e["payload"] = string(m.Payload)
 	} else {
-		e["payloadBase64"] = base64.StdEncoding.EncodeToString(m.payload)
+		e["payloadBase64"] = base64.StdEncoding.EncodeToString(m.Payload)
 	}
 	return e
-}
-
-// collector gathers messages up to the limits.
-type collector struct {
-	mu           sync.Mutex
-	retainedOnly bool
-	maxN, maxB   int
-	msgs         []message
-	seen         map[string]int // retainedOnly: topic → index in msgs
-	bytes        int
-	last         time.Time
-	stop         string
-	full         chan struct{}
-}
-
-func (k *collector) add(_ paho.Client, m paho.Message) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.stop != "" || (k.retainedOnly && !m.Retained()) {
-		return
-	}
-	p := m.Payload()
-	if k.bytes+len(p) > k.maxB {
-		k.stop = "maxBytes"
-		close(k.full)
-		return
-	}
-	msg := message{topic: m.Topic(), payload: append([]byte(nil), p...), retained: m.Retained(), qos: m.Qos()}
-	if k.retainedOnly {
-		// One per topic: overlapping filters can bring a topic twice.
-		if i, ok := k.seen[msg.topic]; ok {
-			k.bytes += len(p) - len(k.msgs[i].payload)
-			k.msgs[i] = msg
-			k.last = time.Now()
-			return
-		}
-		if k.seen == nil {
-			k.seen = map[string]int{}
-		}
-		k.seen[msg.topic] = len(k.msgs)
-	}
-	k.msgs = append(k.msgs, msg)
-	k.bytes += len(p)
-	k.last = time.Now()
-	if len(k.msgs) >= k.maxN {
-		k.stop = "maxMessages"
-		close(k.full)
-	}
 }
 
 type readInput struct {
@@ -565,82 +198,6 @@ func seconds(v *float64, def, lo, hi float64) (time.Duration, error) {
 	return time.Duration(s * float64(time.Second)), nil
 }
 
-// collect subscribes to filter and gathers messages until the limits, the
-// time or (when settle is set) a quiet gap after the last message.
-func (c *conn) collect(ctx context.Context, filters []string, qos byte, k *collector, d time.Duration, settle bool) (string, error) {
-	k.full = make(chan struct{})
-	s, err := c.connect(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer s.close()
-	deadline := time.Now().Add(d)
-	subs := map[string]byte{}
-	for _, f := range filters {
-		subs[f] = qos
-	}
-	t := s.cl.SubscribeMultiple(subs, k.add)
-	if err := c.wait(ctx, t); err != nil {
-		return "", err
-	}
-	if st, ok := t.(*paho.SubscribeToken); ok {
-		for _, f := range filters {
-			if code, ok := st.Result()[f]; ok && code == 0x80 {
-				return "", fmt.Errorf("the broker refused the subscription to %s (its access rules don't allow it)", f)
-			}
-		}
-	}
-	acked := time.Now()
-	tick := time.NewTicker(50 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case <-k.full:
-			k.mu.Lock()
-			defer k.mu.Unlock()
-			return k.stop, nil
-		case err := <-s.lost:
-			if errors.Is(err, errTooBig) {
-				return "a message over 1 MiB", nil
-			}
-			return "", fmt.Errorf("the broker closed the connection: %v", err)
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case now := <-tick.C:
-			if now.After(deadline) {
-				return "seconds", nil
-			}
-			if settle {
-				k.mu.Lock()
-				last := k.last
-				k.mu.Unlock()
-				if last.Before(acked) {
-					last = acked
-				}
-				if now.Sub(last) >= c.settle {
-					return "", nil // the retained messages are all in
-				}
-			}
-		}
-	}
-}
-
-// current reads the retained message on one topic (nil when there's none).
-func (c *conn) current(ctx context.Context, topic string) (*message, error) {
-	k := &collector{retainedOnly: true, maxN: 1, maxB: maxCollect}
-	if _, err := c.collect(ctx, []string{topic}, 0, k, c.timeout, true); err != nil {
-		return nil, err
-	}
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	for _, m := range k.msgs {
-		if m.topic == topic {
-			return &m, nil
-		}
-	}
-	return nil, nil
-}
-
 type pubInput struct {
 	Topic    string `json:"topic"`
 	Payload  string `json:"payload"`
@@ -658,7 +215,7 @@ func preview(m *message) json.RawMessage {
 	if m == nil {
 		return mustJSON(map[string]any{"retained": nil})
 	}
-	e := m.out()
+	e := msgOut(*m)
 	if s, ok := e["payload"].(string); ok && len(s) > 500 {
 		e["payload"] = s[:500] + "…"
 	}
@@ -673,20 +230,11 @@ func restore(topic string, old *message, qos byte) *sdk.Undo {
 	if old == nil {
 		return sdk.UndoWith("clear_retained", map[string]string{"topic": topic}, "Clear the retained message on "+topic)
 	}
-	if len(old.payload) > maxUndoBytes {
+	if len(old.Payload) > maxUndoBytes {
 		return nil
 	}
-	return sdk.UndoWith("publish", map[string]any{"topic": topic, "payload": base64.StdEncoding.EncodeToString(old.payload), "encoding": "base64", "retain": true, "qos": qos},
+	return sdk.UndoWith("publish", map[string]any{"topic": topic, "payload": base64.StdEncoding.EncodeToString(old.Payload), "encoding": "base64", "retain": true, "qos": qos},
 		"Put back the previous retained message on "+topic)
-}
-
-func (c *conn) send(ctx context.Context, topic string, qos byte, retain bool, payload []byte) error {
-	s, err := c.connect(ctx)
-	if err != nil {
-		return err
-	}
-	defer s.close()
-	return c.wait(ctx, s.cl.Publish(topic, qos, retain, payload))
 }
 
 // Invoke implements sdk.Module.
@@ -719,18 +267,16 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if qos != 0 && qos != 1 {
 			return sdk.Result{}, errors.New("qos is 0 or 1")
 		}
-		k := &collector{maxN: n, maxB: b}
-		stop, err := c.collect(ctx, []string{p.Filter}, byte(qos), k, d, false)
+		k := &mqttx.Collector{MaxN: n, MaxB: b}
+		stop, err := c.Collect(ctx, []string{p.Filter}, byte(qos), k, d, false)
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		k.mu.Lock()
-		defer k.mu.Unlock()
 		out := []map[string]any{}
-		for _, msg := range k.msgs {
-			out = append(out, msg.out())
+		for _, msg := range k.Messages() {
+			out = append(out, msgOut(msg))
 		}
-		return sdk.JSON(map[string]any{"filter": p.Filter, "count": len(out), "bytes": k.bytes, "stoppedBy": stop, "messages": out})
+		return sdk.JSON(map[string]any{"filter": p.Filter, "count": len(out), "bytes": k.Bytes(), "stoppedBy": stop, "messages": out})
 
 	case "retained":
 		var p readInput
@@ -761,16 +307,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		k := &collector{retainedOnly: true, maxN: n, maxB: b}
-		stop, err := c.collect(ctx, filters, 0, k, d, true)
+		k := &mqttx.Collector{RetainedOnly: true, MaxN: n, MaxB: b}
+		stop, err := c.Collect(ctx, filters, 0, k, d, true)
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		k.mu.Lock()
-		defer k.mu.Unlock()
 		latest := map[string]message{}
-		for _, msg := range k.msgs {
-			latest[msg.topic] = msg
+		for _, msg := range k.Messages() {
+			latest[msg.Topic] = msg
 		}
 		topics := make([]string, 0, len(latest))
 		for t := range latest {
@@ -779,11 +323,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		sort.Strings(topics)
 		out := []map[string]any{}
 		for _, t := range topics {
-			e := latest[t].out()
+			e := msgOut(latest[t])
 			delete(e, "retained")
 			out = append(out, e)
 		}
-		res := map[string]any{"prefix": prefix, "count": len(out), "bytes": k.bytes, "complete": stop == "", "messages": out}
+		res := map[string]any{"prefix": prefix, "count": len(out), "bytes": k.Bytes(), "complete": stop == "", "messages": out}
 		if stop != "" {
 			res["stoppedBy"] = stop
 		}
@@ -829,11 +373,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		var old *message
 		if p.Retain {
-			if old, err = c.current(ctx, p.Topic); err != nil {
+			if old, err = c.Current(ctx, p.Topic); err != nil {
 				return sdk.Result{}, err
 			}
 		}
-		next := &message{topic: p.Topic, payload: payload, retained: p.Retain, qos: byte(qos)}
+		next := &message{Topic: p.Topic, Payload: payload, Retained: p.Retain, QoS: byte(qos)}
 		if call.DryRun {
 			ch := sdk.Change{Target: "topic " + p.Topic, Op: "publish", After: preview(next)}
 			summary := fmt.Sprintf("Publish %d bytes to %s", len(payload), p.Topic)
@@ -843,7 +387,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{ch}}}, nil
 		}
-		if err := c.send(ctx, p.Topic, byte(qos), p.Retain, payload); err != nil {
+		if err := c.Send(ctx, p.Topic, byte(qos), p.Retain, payload); err != nil {
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"topic": p.Topic, "bytes": len(payload), "qos": qos, "retained": p.Retain})
@@ -863,7 +407,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if !c.retain {
 			return sdk.Result{}, errors.New("retained messages are off: turn on allowRetain in the settings to clear one")
 		}
-		old, err := c.current(ctx, p.Topic)
+		old, err := c.Current(ctx, p.Topic)
 		if err != nil {
 			return sdk.Result{}, err
 		}
@@ -877,14 +421,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if old == nil {
 			return sdk.JSON(map[string]any{"topic": p.Topic, "cleared": false, "note": "there was no retained message on this topic"})
 		}
-		if err := c.send(ctx, p.Topic, 1, true, nil); err != nil {
+		if err := c.Send(ctx, p.Topic, 1, true, nil); err != nil {
 			return sdk.Result{}, err
 		}
-		res, err := sdk.JSON(map[string]any{"topic": p.Topic, "cleared": true, "bytes": len(old.payload)})
-		if old.qos == 0 {
-			old.qos = 1
+		res, err := sdk.JSON(map[string]any{"topic": p.Topic, "cleared": true, "bytes": len(old.Payload)})
+		if old.QoS == 0 {
+			old.QoS = 1
 		}
-		res.Undo = restore(p.Topic, old, old.qos)
+		res.Undo = restore(p.Topic, old, old.QoS)
 		return res, err
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
@@ -896,14 +440,14 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 	if err != nil {
 		return sdk.Health{Status: "unconfigured", Message: err.Error()}
 	}
-	s, err := c.connect(ctx)
+	s, err := c.Connect(ctx)
 	if err != nil {
 		return sdk.Health{Status: "down", Message: err.Error()}
 	}
-	s.close()
-	msg := "connected to " + c.addr
-	if c.user != "" {
-		msg += " as " + c.user
+	s.Close()
+	msg := "connected to " + c.Addr
+	if c.User != "" {
+		msg += " as " + c.User
 	}
 	if len(c.publish) == 0 {
 		msg += " · read only"

@@ -92,6 +92,11 @@ recommended policies.
 | Keycloak | [keycloak.md](keycloak.md) | homelab, team |
 | Harbor | [harbor.md](harbor.md) | homelab, developer, team |
 | SonarQube (SonarCloud) | [sonarqube.md](sonarqube.md) | developer, team |
+| Network UPS Tools | [nut.md](nut.md) | homelab |
+| Scrutiny | [scrutiny.md](scrutiny.md) | homelab |
+| Speedtest Tracker | [speedtest.md](speedtest.md) | homelab |
+| Tautulli | [tautulli.md](tautulli.md) | homelab |
+| Overseerr / Jellyseerr | [seerr.md](seerr.md) | homelab |
 | Frigate | [frigate.md](frigate.md) | homelab |
 | Mealie | [mealie.md](mealie.md) | homelab |
 | MQTT | [mqtt.md](mqtt.md) | homelab |

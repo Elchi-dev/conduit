@@ -59,6 +59,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/notion"
 	"github.com/elchi-dev/conduit/modules/npm"
+	"github.com/elchi-dev/conduit/modules/nut"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/opnsense"
@@ -73,10 +74,13 @@ import (
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/render"
 	"github.com/elchi-dev/conduit/modules/s3"
+	"github.com/elchi-dev/conduit/modules/scrutiny"
+	"github.com/elchi-dev/conduit/modules/seerr"
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/sonarqube"
+	"github.com/elchi-dev/conduit/modules/speedtest"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
 	"github.com/elchi-dev/conduit/modules/stripe"
@@ -85,6 +89,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/synology"
 	"github.com/elchi-dev/conduit/modules/system"
 	"github.com/elchi-dev/conduit/modules/tailscale"
+	"github.com/elchi-dev/conduit/modules/tautulli"
 	"github.com/elchi-dev/conduit/modules/telegram"
 	"github.com/elchi-dev/conduit/modules/terraformcloud"
 	"github.com/elchi-dev/conduit/modules/todoist"
@@ -214,6 +219,11 @@ func builtins(app *App) []sdk.Module {
 		keycloak.New(),
 		harbor.New(),
 		sonarqube.New(),
+		nut.New(),
+		scrutiny.New(),
+		speedtest.New(),
+		tautulli.New(),
+		seerr.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

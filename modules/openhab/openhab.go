@@ -66,7 +66,13 @@ var (
 	// criticalWord matches types, tags, categories, names and labels of
 	// what opens, unlocks, sounds, watches or heats something: a false
 	// match only means the destructive action.
-	criticalWord = regexp.MustCompile(`(?i)lock|door|gate|window|alarm|siren|secur|camera|valve|heat|hvac|radiator|boiler|thermostat|garage|sprinkler|irrigation|smoke|water ?main`)
+	criticalWord = regexp.MustCompile(`(?i)lock|door|gate|window|alarm|siren|secur|camera|valve|heat|hvac|radiator|boiler|thermostat|setpoint|temperature|garage|sprinkler|irrigation|smoke|water ?main|` + germanWord)
+	// germanWord is the same in German, the app's other language (Tür,
+	// Haustuer, Hoftor, Schloss, Fenster, Heizung …).
+	germanWord = `tür|tuer|(^|[^a-zäöü])tor([^a-zäöü]|$|antrieb)|(garten|hof|einfahrt|einfahrts|zufahrt|zufahrts|haus|eingangs|garagen)tor|öffner|oeffner|schloss|riegel|fenster|heiz|sirene|ventil|kamera|rauchmelder|sicherheit|bewässerung|bewaesserung`
+	// metaNamespaces are the item metadata that say what a device is: the
+	// semantic class, and how HomeKit, Alexa and Google Assistant see it.
+	metaNamespaces = "semantics,homekit,alexa,ga"
 )
 
 // Manifest implements sdk.Module.
@@ -197,18 +203,23 @@ type option struct {
 }
 
 type item struct {
-	Name             string   `json:"name"`
-	Label            string   `json:"label"`
-	Type             string   `json:"type"`
-	GroupType        string   `json:"groupType"`
-	Category         string   `json:"category"`
-	State            string   `json:"state"`
-	Tags             []string `json:"tags"`
-	GroupNames       []string `json:"groupNames"`
+	Name       string   `json:"name"`
+	Label      string   `json:"label"`
+	Type       string   `json:"type"`
+	GroupType  string   `json:"groupType"`
+	Category   string   `json:"category"`
+	State      string   `json:"state"`
+	Tags       []string `json:"tags"`
+	GroupNames []string `json:"groupNames"`
+	UnitSymbol string   `json:"unitSymbol"`
+	Metadata   map[string]struct {
+		Value string `json:"value"`
+	} `json:"metadata"`
 	StateDescription *struct {
 		Minimum  *float64 `json:"minimum"`
 		Maximum  *float64 `json:"maximum"`
 		Step     *float64 `json:"step"`
+		Pattern  string   `json:"pattern"`
 		ReadOnly bool     `json:"readOnly"`
 		Options  []option `json:"options"`
 	} `json:"stateDescription"`
@@ -250,16 +261,27 @@ func (it item) options() []string {
 // ownWhy says why an item is critical by itself, or "".
 func (c *conn) ownWhy(it item) string {
 	switch {
-	case c.critical[it.Name] || c.critical[strings.ToLower(it.Name)] || (it.Label != "" && c.critical[strings.ToLower(it.Label)]):
+	case c.critical[it.Name] || c.critical[strings.ToLower(it.Name)] || (it.Label != "" && c.critical[strings.ToLower(strings.TrimSpace(it.Label))]):
 		return "listed in criticalItems"
 	case it.base() == "Group":
 		return "a group passes the command to every member"
-	case strings.EqualFold(it.Type, "Number:Temperature"):
+	case strings.EqualFold(it.Type, "Number:Temperature"), strings.Contains(it.UnitSymbol, "°"),
+		it.StateDescription != nil && strings.Contains(it.StateDescription.Pattern, "°"):
 		return "a temperature, such as a heating setpoint"
 	}
 	for _, t := range it.Tags {
 		if criticalWord.MatchString(t) {
 			return "tagged " + clip(t, 40)
+		}
+	}
+	ns := make([]string, 0, len(it.Metadata))
+	for k := range it.Metadata {
+		ns = append(ns, k)
+	}
+	sort.Strings(ns)
+	for _, k := range ns {
+		if v := it.Metadata[k].Value; criticalWord.MatchString(v) {
+			return "its " + clip(k, 20) + " metadata is " + clip(v, 40)
 		}
 	}
 	switch {
@@ -289,7 +311,8 @@ func (c *conn) why(it item, all map[string]item) string {
 		seen[g] = true
 		p, ok := all[g]
 		if !ok {
-			continue
+			// A group that isn't listed can't be judged.
+			return "in group " + clip(g, 100) + ", which openHAB doesn't list"
 		}
 		// The group's own "a group passes the command" doesn't count here.
 		gi := p
@@ -299,11 +322,38 @@ func (c *conn) why(it item, all map[string]item) string {
 		}
 		queue = append(queue, p.GroupNames...)
 	}
+	if len(queue) > 0 {
+		return "in more groups than can be checked"
+	}
 	return ""
 }
 
+// linkWhy says why the channels an item is linked to make it critical, or
+// "": an item called Switch_3 linked to a lock's channel opens the lock.
+// Listing links needs an admin's token; without one, only the item and
+// its groups decide.
+func (c *conn) linkWhy(ctx context.Context, name string) (string, error) {
+	var links []struct {
+		ItemName   string `json:"itemName"`
+		ChannelUID string `json:"channelUID"`
+	}
+	_, err := c.api.Do(ctx, http.MethodGet, "/links", url.Values{"itemName": {name}}, nil, &links)
+	switch {
+	case rest.IsStatus(err, http.StatusUnauthorized), rest.IsStatus(err, http.StatusForbidden), rest.IsStatus(err, http.StatusNotFound):
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("couldn't read the channels %s is linked to, to tell whether it's critical: %w", name, err)
+	}
+	for _, l := range links {
+		if l.ItemName == name && criticalWord.MatchString(l.ChannelUID) {
+			return "linked to channel " + clip(l.ChannelUID, 120), nil
+		}
+	}
+	return "", nil
+}
+
 func (c *conn) all(ctx context.Context) (map[string]item, []item, error) {
-	q := url.Values{"recursive": {"false"}, "fields": {"name,label,type,groupType,category,state,tags,groupNames"}}
+	q := url.Values{"recursive": {"false"}, "metadata": {metaNamespaces}, "fields": {"name,label,type,groupType,category,state,tags,groupNames,unitSymbol,metadata"}}
 	var list []item
 	if err := c.get(ctx, "/items", q, &list); err != nil {
 		return nil, nil, err
@@ -321,7 +371,7 @@ func (c *conn) item(ctx context.Context, name string) (item, error) {
 		return item{}, errors.New("an item is its name, letters, digits and _ (from items)")
 	}
 	var it item
-	if err := c.get(ctx, "/items/"+url.PathEscape(name), url.Values{"metadata": {"none"}}, &it); err != nil {
+	if err := c.get(ctx, "/items/"+url.PathEscape(name), url.Values{"metadata": {metaNamespaces}}, &it); err != nil {
 		if rest.IsStatus(err, http.StatusNotFound) {
 			return it, fmt.Errorf("there's no item %s", name)
 		}
@@ -440,7 +490,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		row := c.row(it, all)
-		if why := c.why(it, all); why != "" {
+		why := c.why(it, all)
+		if why == "" {
+			if why, err = c.linkWhy(ctx, it.Name); err != nil {
+				return sdk.Result{}, err
+			}
+		}
+		if why != "" {
+			row["critical"] = true
 			row["criticalBecause"] = why
 		}
 		row["commandable"] = commandable(it) == nil
@@ -818,6 +875,11 @@ func (c *conn) send(ctx context.Context, call sdk.Call, name, cmd string) (sdk.R
 		return sdk.Result{}, err
 	}
 	why := c.why(it, all)
+	if why == "" {
+		if why, err = c.linkWhy(ctx, name); err != nil {
+			return sdk.Result{}, err
+		}
+	}
 	critical := call.Action == "send_critical_command"
 	if why != "" && !critical {
 		return sdk.Result{}, fmt.Errorf("%s is critical (%s): use send_critical_command", it.title(), why)

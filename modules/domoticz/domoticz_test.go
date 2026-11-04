@@ -34,6 +34,10 @@ func (f *fakeDomo) devices() []map[string]any {
 		{"idx": "8", "Name": "Pump", "Type": "Light/Switch", "SubType": "Switch", "SwitchType": "On/Off", "Status": "Off"},
 		{"idx": "10", "Name": "Fan", "Type": "Light/Switch", "SubType": "Switch", "SwitchType": "On/Off", "Status": "Off", "Protected": true},
 		{"idx": "9", "Name": "Mystery", "Type": "General", "SubType": "Custom", "Status": "On"},
+		{"idx": "11", "Name": "Hoftor", "Type": "Light/Switch", "SubType": "Switch", "SwitchType": "On/Off", "Status": "Off"},
+		{"idx": "12", "Name": "Haustür Riegel", "Type": "Light/Switch", "SubType": "Switch", "SwitchType": "On/Off", "Status": "Off"},
+		{"idx": "13", "Name": "Tor 2", "Type": "Light/Switch", "SubType": "Switch", "SwitchType": "On/Off", "Status": "Off"},
+		{"idx": "14", "Name": "Motor", "Type": "Light/Switch", "SubType": "Switch", "SwitchType": "On/Off", "Status": "Off"},
 	}
 }
 
@@ -148,6 +152,16 @@ func TestDomoticz(t *testing.T) {
 	}
 	if r, err := invoke(m, "switch_device", sw("2", "On"), false); err != nil || r.Undo != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatalf("no-op: %+v %v", r, err)
+	}
+
+	// German names count, without catching words that only end in "tor".
+	for _, idx := range []string{"11", "12", "13"} {
+		if _, err := invoke(m, "switch_device", sw(idx, "On"), false); err == nil || !strings.Contains(err.Error(), "switch_critical_device") {
+			t.Fatalf("%s: %v", idx, err)
+		}
+	}
+	if _, err := invoke(m, "switch_device", sw("14", "On"), true); err != nil {
+		t.Fatal(err)
 	}
 
 	// Critical devices need the destructive action, with a clear preview.

@@ -60,7 +60,10 @@ var (
 	// criticalWord matches types, switch types and names of what opens,
 	// unlocks, sounds, watches or heats something: a false match only
 	// means the destructive action.
-	criticalWord = regexp.MustCompile(`(?i)lock|door|gate|window|alarm|siren|secur|camera|valve|heat|hvac|radiator|boiler|thermostat|setpoint|garage|sprinkler|irrigation|smoke|water ?main`)
+	criticalWord = regexp.MustCompile(`(?i)lock|door|gate|window|alarm|siren|secur|camera|valve|heat|hvac|radiator|boiler|thermostat|setpoint|garage|sprinkler|irrigation|smoke|water ?main|` + germanWord)
+	// germanWord is the same in German, the app's other language (Tür,
+	// Haustuer, Hoftor, Schloss, Fenster, Heizung …).
+	germanWord = `tür|tuer|(^|[^a-zäöü])tor([^a-zäöü]|$|antrieb)|(garten|hof|einfahrt|einfahrts|zufahrt|zufahrts|haus|eingangs|garagen)tor|öffner|oeffner|schloss|riegel|fenster|heiz|sirene|ventil|kamera|rauchmelder|sicherheit|bewässerung|bewaesserung`
 	// plainSwitch are the switch types a write may turn on or off.
 	plainSwitch = map[string]bool{"On/Off": true, "Dimmer": true}
 	// criticalSwitch are the further switch types the destructive action

@@ -21,8 +21,9 @@ name). For a self-signed certificate, set `fingerprint`.
 **Critical devices** are door locks, sirens, security panels, thermostats,
 setpoints and heating; devices whose type, switch type or name contains
 lock, door, gate, window, alarm, siren, security, camera, valve, heat,
-HVAC, radiator, boiler, thermostat, garage, sprinkler, irrigation or smoke;
-and what's listed in `criticalDevices`. A false match only means the
+HVAC, radiator, boiler, thermostat, garage, sprinkler, irrigation or smoke
+(or the same in German: Tür, Tor, Schloss, Riegel, Fenster, Heizung, Ventil
+…); and what's listed in `criticalDevices`. A false match only means the
 destructive action. A device without a switch type, sensors (contacts,
 motion, smoke), selectors and media players aren't switched. Switching a
 device to the status it has reports "nothing to change".

@@ -22,13 +22,20 @@ channel (everything below it counts). For a self-signed certificate, set
 **Critical states** are those whose role, name or id, or the name or role of
 a device or channel above them, contains lock, door, gate, window, alarm,
 siren, security, camera, valve, heat, HVAC, radiator, boiler, thermostat,
-temperature, boost, garage, sprinkler, irrigation or smoke, and what's listed
-in `criticalStates`. A false match only means the destructive action. When a
-device or channel above a state can't be read, the state isn't set. Only
+temperature, boost, garage, sprinkler, irrigation or smoke (or the same in
+German: Tür, Tor, Schloss, Fenster, Heizung, Ventil …), whose role opens
+something (`button.open`), whose allowed values name such a thing
+(`unlatch`), whose unit is °C or °F, that turn a script on or off
+(`javascript.N.scriptEnabled.*`), and what's listed in `criticalStates`. An
+alias (`alias.N.*`) is judged by the state it points at too, and one that
+points at a `system.*` or `admin.*` state, or at nothing, is never set. A
+false match only means the destructive action. When a device or channel
+above a state, or an alias's target, can't be read, the state isn't set. Only
 states with `common.write` set are written; `system.*` and `admin.*` states
 never are, nor states without a type or of type `json`, `array`, `object`,
 `file` or `mixed`. Setting a value a state already has reports "nothing to
-change".
+change", except for a button (role `button*`), which is pressed again and
+has no undo.
 
 **Security.** The password goes only to ioBroker, in the `Authorization`
 header (never as `user` and `pass` in the address, which servers log), and

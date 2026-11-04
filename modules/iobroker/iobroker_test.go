@@ -39,6 +39,17 @@ var objects = map[string]string{
 	"misc.0.mode":                  `{"type":"state","common":{"name":"Mode","type":"number","role":"value","states":"0:off;1:eco;2:full","read":true,"write":true}}`,
 	"misc.0.odd":                   `{"type":"state","common":{"name":"Odd","type":"boolean","role":"switch","read":true,"write":true}}`,
 	"system.adapter.admin.0.alive": `{"type":"state","common":{"name":"alive","type":"boolean","role":"indicator","read":true,"write":true}}`,
+	// Aliases, and states that are critical without an English word.
+	"alias.0.Entry.switch":             `{"type":"state","common":{"name":"Entry","type":"number","role":"value","alias":{"id":"nuki.0.front.action"},"read":true,"write":true}}`,
+	"alias.0.Plug.on":                  `{"type":"state","common":{"name":"Plug","type":"boolean","role":"switch","alias":{"id":{"read":"hue.0.Desk_lamp.on","write":"system.adapter.admin.0.alive"}},"read":true,"write":true}}`,
+	"alias.0.Lamp.on":                  `{"type":"state","common":{"name":"Lamp","type":"boolean","role":"switch","alias":{"id":"hue.0.Desk_lamp.on"},"read":true,"write":true}}`,
+	"alias.0.Broken.on":                `{"type":"state","common":{"name":"Broken","type":"boolean","role":"switch","alias":{},"read":true,"write":true}}`,
+	"misc.0.press":                     `{"type":"state","common":{"name":"Scene A","type":"boolean","role":"button","read":true,"write":true}}`,
+	"misc.0.Hoftor":                    `{"type":"state","common":{"name":"Relais","type":"boolean","role":"switch","read":true,"write":true}}`,
+	"misc.0.target":                    `{"type":"state","common":{"name":"Target","type":"number","role":"level","unit":"°C","read":true,"write":true}}`,
+	"misc.0.latch":                     `{"type":"state","common":{"name":"Action","type":"number","role":"value","states":{"0":"none","3":"unlatch"},"read":true,"write":true}}`,
+	"misc.0.open":                      `{"type":"state","common":{"name":"Action","type":"boolean","role":"button.open","read":true,"write":true}}`,
+	"javascript.0.scriptEnabled.night": `{"type":"state","common":{"name":"night","type":"boolean","role":"switch.active","read":true,"write":true}}`,
 }
 
 func (f *fakeBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -208,6 +219,45 @@ func TestIOBroker(t *testing.T) {
 		if a.Name == "set_critical_state" && a.Risk != sdk.RiskDestructive {
 			t.Fatal(a.Name)
 		}
+	}
+}
+
+func TestIOBrokerAliasesAndRoles(t *testing.T) {
+	m, f := setup(t, "secret://io")
+	f.vals["alias.0.Entry.switch"], f.vals["alias.0.Plug.on"], f.vals["alias.0.Lamp.on"], f.vals["alias.0.Broken.on"] = 2.0, false, false, false
+	f.vals["misc.0.press"], f.vals["misc.0.Hoftor"], f.vals["misc.0.target"], f.vals["misc.0.latch"], f.vals["misc.0.open"], f.vals["javascript.0.scriptEnabled.night"] = true, false, 20.0, 0.0, false, false
+	// An alias is as critical as what it points at, and one pointing at a
+	// system state, or at nothing, is never set.
+	for _, c := range []struct{ action, id, v, want string }{
+		{"set_state", "alias.0.Entry.switch", "1", "an alias of nuki.0.front.action, its role is switch.lock"},
+		{"set_critical_state", "alias.0.Plug.on", "true", "system and admin states aren't set"},
+		{"set_state", "alias.0.Plug.on", "true", "system and admin states aren't set"},
+		{"set_state", "alias.0.Broken.on", "true", "target isn't given"},
+		{"set_state", "misc.0.Hoftor", "true", "set_critical_state"},
+		{"set_state", "misc.0.target", "25", "a temperature"},
+		{"set_state", "misc.0.latch", "3", "its values include unlatch"},
+		{"set_state", "misc.0.open", "true", "its role is button.open"},
+		{"set_state", "javascript.0.scriptEnabled.night", "true", "script"},
+	} {
+		if _, err := invoke(m, c.action, set(c.id, c.v), false); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s %s: %v", c.action, c.id, err)
+		}
+	}
+	for _, s := range f.seen {
+		if strings.Contains(s, "/set/") {
+			t.Fatalf("set: %s", s)
+		}
+	}
+	if r, err := invoke(m, "set_critical_state", set("alias.0.Entry.switch", "1"), true); err != nil || r.Plan == nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "set_state", set("alias.0.Lamp.on", "true"), false); err != nil || f.vals["alias.0.Lamp.on"] != true {
+		t.Fatal(err)
+	}
+	// A button is pressed again whatever its value, with nothing to undo.
+	r, err := invoke(m, "set_state", set("misc.0.press", "true"), false)
+	if err != nil || strings.Contains(string(r.Output), "nothing to change") || r.Undo != nil {
+		t.Fatalf("%s %+v %v", r.Output, r.Undo, err)
 	}
 }
 

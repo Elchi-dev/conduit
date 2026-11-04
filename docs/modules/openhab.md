@@ -22,13 +22,19 @@ certificate, set `fingerprint`.
 | `run_rule` | destructive | Runs a rule's actions now, whatever its triggers and conditions. The preview names the rule; the answer reads its status back. |
 
 **Critical items** are groups (a command reaches every member);
-temperatures (`Number:Temperature`, such as a heating setpoint); items
-whose tag, category, name or label contains lock, door, gate, window, alarm,
-siren, security, camera, valve, heat, HVAC, radiator, boiler, thermostat,
-garage, sprinkler, irrigation or smoke; every item inside a group like that
-(the equipment of openHAB's semantic model, such as a switch in a
-`GarageDoor` group); and what's listed in `criticalItems`. A false match
-only means the destructive action. An item whose type openHAB doesn't give,
+temperatures (`Number:Temperature`, or a unit or display pattern in °C or
+°F, such as a heating setpoint or a radiator valve shown as a dimmer);
+items whose tag, category, name, label, or `semantics`, `homekit`, `alexa`
+or `ga` metadata contains lock, door, gate, window, alarm, siren, security,
+camera, valve, heat, HVAC, radiator, boiler, thermostat, setpoint,
+temperature, garage, sprinkler, irrigation or smoke (or the same in German:
+Tür, Tor, Schloss, Fenster, Heizung, Ventil …); items linked to a channel
+whose id says so (such as `nuki:smartlock:…:lock`; listing links needs an
+admin's token, without one only the item and its groups decide); every item
+inside a group like that (the equipment of openHAB's semantic model, such
+as a switch in a `GarageDoor` group); items in a group openHAB doesn't
+list; and what's listed in `criticalItems`. A false match only means the
+destructive action. An item whose type openHAB doesn't give,
 a read-only item, and contacts, dates, locations, images and calls aren't
 commanded. A command that matches the current state reports "nothing to
 change".

@@ -40,6 +40,12 @@ func (f *fakeHAB) items() []map[string]any {
 		{"name": "Mode", "label": "Mode", "type": "String", "state": f.states["Mode"],
 			"commandDescription": map[string]any{"commandOptions": []map[string]any{{"command": "home"}, {"command": "away"}}}},
 		{"name": "Odd_Item", "label": "x", "type": "Switch", "state": "OFF"},
+		// Critical without an English word in the item, its tags or groups.
+		{"name": "Switch_3", "label": "Entrance", "type": "Switch", "state": f.states["Switch_3"]},
+		{"name": "Plug_7", "label": "Plug", "type": "Switch", "state": "OFF", "metadata": map[string]any{"homekit": map[string]any{"value": "LockMechanism"}}},
+		{"name": "Orphan", "label": "Orphan", "type": "Switch", "state": "OFF", "groupNames": []string{"gHidden"}},
+		{"name": "Relais_Hoftor", "label": "Relais", "type": "Switch", "state": "OFF"},
+		{"name": "Living_Level", "label": "Living", "type": "Dimmer", "state": "40", "stateDescription": map[string]any{"pattern": "%.1f °C"}},
 	}
 }
 
@@ -75,6 +81,12 @@ func (f *fakeHAB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.states[strings.TrimPrefix(r.URL.Path, "/rest/items/")] = string(body)
+	case r.Method == "GET" && r.URL.Path == "/rest/links":
+		if r.URL.Query().Get("itemName") == "Switch_3" {
+			io.WriteString(w, `[{"itemName":"Switch_3","channelUID":"nuki:smartlock:bridge1:front:lock"}]`)
+			return
+		}
+		io.WriteString(w, `[{"itemName":"Other","channelUID":"zwave:device:ctrl:node5:lock_door"}]`)
 	case r.Method == "GET" && r.URL.Path == "/rest/things":
 		if r.URL.Query().Get("summary") != "true" {
 			w.WriteHeader(400)
@@ -95,7 +107,7 @@ func (f *fakeHAB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func setup(t *testing.T, ref string, critical ...string) (*Module, *fakeHAB) {
-	f := &fakeHAB{states: map[string]string{"Desk_Lamp": "OFF", "Hall_Dimmer": "40", "Rack_Plug": "ON", "Front_Lock": "ON", "Driveway_Relay": "OFF", "Living_Setpoint": "20 °C", "Mode": "home"}}
+	f := &fakeHAB{states: map[string]string{"Desk_Lamp": "OFF", "Hall_Dimmer": "40", "Rack_Plug": "ON", "Front_Lock": "ON", "Driveway_Relay": "OFF", "Living_Setpoint": "20 °C", "Mode": "home", "Switch_3": "OFF"}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	m := New()
@@ -114,7 +126,7 @@ func cmd(item, c string) string { return fmt.Sprintf(`{"item":%q,"command":%q}`,
 
 func TestOpenHAB(t *testing.T) {
 	m, f := setup(t, "secret://oh", "rack")
-	if h := m.Health(context.Background(), "o"); h.Status != "ok" || h.Message != "openHAB is up with 11 items" {
+	if h := m.Health(context.Background(), "o"); h.Status != "ok" || h.Message != "openHAB is up with 16 items" {
 		t.Fatalf("%+v", h)
 	}
 	for _, c := range []struct{ action, in, want string }{
@@ -159,13 +171,20 @@ func TestOpenHAB(t *testing.T) {
 	}
 
 	// Critical items need the destructive action, with a clear preview.
-	for _, c := range [][2]string{{"Front_Lock", "OFF"}, {"Driveway_Relay", "ON"}, {"Rack_Plug", "OFF"}, {"Living_Setpoint", "25 °C"}, {"gOpener", "ON"}} {
+	for _, c := range [][2]string{{"Front_Lock", "OFF"}, {"Driveway_Relay", "ON"}, {"Rack_Plug", "OFF"}, {"Living_Setpoint", "25 °C"}, {"gOpener", "ON"},
+		{"Switch_3", "ON"}, {"Plug_7", "ON"}, {"Orphan", "ON"}, {"Relais_Hoftor", "ON"}, {"Living_Level", "80"}} {
 		if _, err := invoke(m, "send_command", cmd(c[0], c[1]), false); err == nil || !strings.Contains(err.Error(), "send_critical_command") {
 			t.Fatalf("%s: %v", c[0], err)
 		}
 	}
-	if f.states["Front_Lock"] != "ON" || f.states["Driveway_Relay"] != "OFF" || f.states["Rack_Plug"] != "ON" {
+	if f.states["Front_Lock"] != "ON" || f.states["Driveway_Relay"] != "OFF" || f.states["Rack_Plug"] != "ON" || f.states["Switch_3"] != "OFF" {
 		t.Fatal("a critical item changed")
+	}
+	for _, c := range [][2]string{{"Switch_3", "linked to channel nuki:smartlock:bridge1:front:lock"}, {"Plug_7", "its homekit metadata is LockMechanism"},
+		{"Orphan", "in group gHidden, which openHAB doesn't list"}, {"Living_Level", "a temperature"}} {
+		if r, err := invoke(m, "item", fmt.Sprintf(`{"item":%q}`, c[0]), false); err != nil || !strings.Contains(string(r.Output), c[1]) {
+			t.Fatalf("%s: %s %v", c[0], r.Output, err)
+		}
 	}
 	r, err = invoke(m, "send_critical_command", cmd("Driveway_Relay", "ON"), true)
 	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "this turns it on (a gate or door opener fires") || !strings.Contains(r.Plan.Summary, "tagged GarageDoor") || f.states["Driveway_Relay"] != "OFF" {

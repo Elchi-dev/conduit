@@ -71,7 +71,14 @@ var (
 	// criticalWord matches roles, names and ids of what opens, unlocks,
 	// sounds, watches or heats something: a false match only means the
 	// destructive action.
-	criticalWord = regexp.MustCompile(`(?i)lock|door|gate|window|alarm|siren|secur|camera|valve|heat|hvac|radiator|boiler|thermostat|temperature|boost|garage|sprinkler|irrigation|smoke|water ?main`)
+	criticalWord = regexp.MustCompile(`(?i)lock|door|gate|window|alarm|siren|secur|camera|valve|heat|hvac|radiator|boiler|thermostat|temperature|boost|garage|sprinkler|irrigation|smoke|water ?main|` + germanWord)
+	// germanWord is the same in German, the app's other language (Tür,
+	// Haustuer, Hoftor, Schloss, Fenster, Heizung …).
+	germanWord = `tür|tuer|(^|[^a-zäöü])tor([^a-zäöü]|$|antrieb)|(garten|hof|einfahrt|einfahrts|zufahrt|zufahrts|haus|eingangs|garagen)tor|öffner|oeffner|schloss|riegel|fenster|heiz|sirene|ventil|kamera|rauchmelder|sicherheit|bewässerung|bewaesserung`
+	// openRole is a role that opens something (button.open, switch.open).
+	openRole = regexp.MustCompile(`(?i)(^|\.)(open|unlatch)`)
+	// scriptEnabled turns a script of the javascript adapter on or off.
+	scriptEnabled = regexp.MustCompile(`(?i)^javascript\.[0-9]+\.scriptEnabled\.`)
 )
 
 // Manifest implements sdk.Module.
@@ -203,6 +210,71 @@ type common struct {
 	Max    *float64 `json:"max"`
 	Step   *float64 `json:"step"`
 	States any      `json:"states"`
+	// Alias is set on a state under alias.N: setting it sets its target.
+	Alias *struct {
+		ID any `json:"id"` // an id, or {"read":id,"write":id}
+	} `json:"alias"`
+}
+
+// targets are the ids an alias reads and writes, or nil for a state that
+// isn't one.
+func (cm common) targets() ([]string, error) {
+	if cm.Alias == nil {
+		return nil, nil
+	}
+	var out []string
+	switch v := cm.Alias.ID.(type) {
+	case string:
+		out = append(out, v)
+	case map[string]any:
+		for _, k := range []string{"write", "read"} {
+			if s, ok := v[k].(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("it's an alias whose target isn't given, so it isn't set")
+	}
+	for _, t := range out {
+		if !idRe.MatchString(t) || len(t) > 240 {
+			return nil, fmt.Errorf("it's an alias of %s, which isn't a plain state id, so it isn't set", clip(t, 100))
+		}
+	}
+	return out, nil
+}
+
+// labels are the names a state's states field gives its values.
+func (cm common) labels() []string {
+	var out []string
+	switch s := cm.States.(type) {
+	case map[string]any:
+		for _, v := range s {
+			if t, ok := v.(string); ok {
+				out = append(out, t)
+			}
+		}
+	case string:
+		for _, kv := range strings.Split(s, ";") {
+			if _, v, ok := strings.Cut(kv, ":"); ok {
+				out = append(out, v)
+			}
+		}
+	case []any:
+		for _, v := range s {
+			if t, ok := v.(string); ok {
+				out = append(out, t)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// button says whether a state is a button: writing true presses it,
+// whatever its value, and there's nothing to set back.
+func (cm common) button() bool {
+	return strings.HasPrefix(strings.ToLower(cm.Role), "button")
 }
 
 func (cm common) name() string {
@@ -305,7 +377,7 @@ func protected(id string) string {
 func ancestors(id string) []string {
 	parts := strings.Split(id, ".")
 	var out []string
-	for n := len(parts) - 1; n > 2 && len(out) < 6; n-- {
+	for n := len(parts) - 1; n > 2; n-- {
 		out = append(out, strings.Join(parts[:n], "."))
 	}
 	return out
@@ -325,12 +397,21 @@ func (c *conn) listed(id string) bool {
 // critical by itself, or "".
 func ownWhy(o object, id string) string {
 	switch {
-	case criticalWord.MatchString(o.Common.Role):
+	case criticalWord.MatchString(o.Common.Role) || openRole.MatchString(o.Common.Role):
 		return "its role is " + clip(o.Common.Role, 60)
 	case criticalWord.MatchString(o.Common.name()):
 		return "its name says it opens, unlocks, sounds, watches or heats something"
 	case criticalWord.MatchString(id):
 		return "its id says it opens, unlocks, sounds, watches or heats something"
+	case scriptEnabled.MatchString(id):
+		return "it turns a script on or off, and a script can do anything ioBroker can"
+	case strings.Contains(o.Common.Unit, "°"):
+		return "it's a temperature, such as a heating setpoint"
+	}
+	for _, l := range o.Common.labels() {
+		if criticalWord.MatchString(l) || openRole.MatchString(l) {
+			return "its values include " + clip(l, 40)
+		}
 	}
 	return ""
 }
@@ -340,13 +421,55 @@ func ownWhy(o object, id string) string {
 // critical as the device. A device or channel that can't be read makes
 // the state's safety unknown, which is an error.
 func (c *conn) why(ctx context.Context, o object) (string, error) {
+	return c.whyDepth(ctx, o, 0)
+}
+
+// maxAncestors is the deepest a state is judged at; deeper ones aren't set.
+const maxAncestors = 16
+
+func (c *conn) whyDepth(ctx context.Context, o object, depth int) (string, error) {
+	// An alias sets the state it points at, so that state (and the
+	// devices and channels above it) decides too; one pointing at a
+	// system or admin state is never set, critical or not.
+	targets, err := o.Common.targets()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", o.ID, err)
+	}
+	for _, t := range targets {
+		if why := protected(t); why != "" {
+			return "", fmt.Errorf("%s is an alias of %s: %s", o.ID, t, why)
+		}
+		if len(targets) > 0 && depth > 2 {
+			return "", fmt.Errorf("%s is an alias of an alias, so it isn't set", o.ID)
+		}
+	}
 	if c.listed(o.ID) {
 		return "listed in criticalStates", nil
 	}
 	if w := ownWhy(o, o.ID); w != "" {
 		return w, nil
 	}
-	for _, a := range ancestors(o.ID) {
+	for _, t := range targets {
+		var to object
+		if err := c.get(ctx, "/get/"+url.PathEscape(t), nil, &to); err != nil {
+			return "", fmt.Errorf("couldn't read %s, which alias %s points at, to tell whether it's critical: %w", t, o.ID, err)
+		}
+		if to.ID != t {
+			return "", fmt.Errorf("ioBroker answered with another object for %s", t)
+		}
+		w, err := c.whyDepth(ctx, to, depth+1)
+		if err != nil {
+			return "", err
+		}
+		if w != "" {
+			return "an alias of " + t + ", " + w, nil
+		}
+	}
+	anc := ancestors(o.ID)
+	if len(anc) > maxAncestors {
+		return "", fmt.Errorf("%s is nested too deeply to tell whether it's critical, so it isn't set", o.ID)
+	}
+	for _, a := range anc {
 		var p object
 		err := c.get(ctx, "/get/"+url.PathEscape(a), nil, &p)
 		if rest.IsStatus(err, http.StatusNotFound) {
@@ -407,6 +530,10 @@ func (c *conn) row(o object) map[string]any {
 	row["writable"] = o.Common.writable() && protected(o.ID) == ""
 	if c.listed(o.ID) || ownWhy(o, o.ID) != "" {
 		row["critical"] = true
+	}
+	if t, err := o.Common.targets(); len(t) > 0 || err != nil {
+		// What the alias points at decides; state says.
+		row["alias"] = true
 	}
 	return row
 }
@@ -672,7 +799,7 @@ func (c *conn) setState(ctx context.Context, call sdk.Call, id string, raw json.
 	if name != "" {
 		label = name + " (" + id + ")"
 	}
-	if same(o.Val, v) {
+	if same(o.Val, v) && !o.Common.button() {
 		return sdk.JSON(map[string]any{"id": id, "name": name, "value": v, "note": "nothing to change"})
 	}
 	prev := o.Val
@@ -703,8 +830,8 @@ func (c *conn) setState(ctx context.Context, call sdk.Call, id string, raw json.
 	}
 	r, err := sdk.JSON(out)
 	// The previous value goes back through the same action when it fits
-	// the state's definition.
-	if pr, err := json.Marshal(prev); err == nil {
+	// the state's definition; a button's value isn't something to set back.
+	if pr, err := json.Marshal(prev); err == nil && !o.Common.button() {
 		if back, _, cerr := coerce(o.Common, pr); cerr == nil {
 			r.Undo = sdk.UndoWith(call.Action, map[string]any{"id": id, "value": back}, fmt.Sprintf("Set %s back to %v", label, value(prev)))
 		}

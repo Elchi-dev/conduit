@@ -163,7 +163,29 @@ func TestKit(t *testing.T) {
 	if err != nil || p.Plan == nil || !strings.Contains(p.Plan.Summary, `"November" from news@acme.test to 50 subscribers tagged Beta (40), VIP (10) at 2026-11-10T09:00:00Z`) || f.lastPut != nil {
 		t.Fatal(p.Plan, err)
 	}
-	r, err = invoke(m, "schedule_broadcast", `{"broadcast":2,"at":"2026-11-10T09:00:00Z"}`, false)
+	var shown struct {
+		Content string `json:"content"`
+		SHA     string `json:"sha256"`
+	}
+	_ = json.Unmarshal(p.Plan.Changes[0].After, &shown)
+	sum := shown.SHA
+	if shown.Content != "<p>Nov</p>" || len(sum) != 64 || !strings.Contains(p.Plan.Summary, sum) {
+		t.Fatal(p.Plan)
+	}
+	// The run must give the preview's sha256, and an edit since is refused.
+	if _, err := invoke(m, "schedule_broadcast", `{"broadcast":2,"at":"2026-11-10T09:00:00Z"}`, false); err == nil || f.lastPut != nil {
+		t.Fatal("scheduled without the sha256")
+	}
+	f.mu.Lock()
+	f.broadcasts[2]["content"] = "<p>Edited</p>"
+	f.mu.Unlock()
+	if _, err := invoke(m, "schedule_broadcast", `{"broadcast":2,"at":"2026-11-10T09:00:00Z","sha256":"`+sum+`"}`, false); err == nil || !strings.Contains(err.Error(), "changed since") || f.lastPut != nil {
+		t.Fatal("scheduled content that changed after the preview", err)
+	}
+	f.mu.Lock()
+	f.broadcasts[2]["content"] = "<p>Nov</p>"
+	f.mu.Unlock()
+	r, err = invoke(m, "schedule_broadcast", `{"broadcast":2,"at":"2026-11-10T09:00:00Z","sha256":"`+sum+`"}`, false)
 	if err != nil || r.Undo == nil || r.Undo.Action != "unschedule_broadcast" || f.lastPut["send_at"] != "2026-11-10T09:00:00Z" || f.lastPut["content"] != "<p>Nov</p>" || f.lastPut["email_address"] != "news@acme.test" {
 		t.Fatal(r, err, f.lastPut)
 	}
@@ -174,8 +196,14 @@ func TestKit(t *testing.T) {
 		t.Fatal("moved a scheduled broadcast")
 	}
 	r, err = invoke(m, "unschedule_broadcast", `{"broadcast":2}`, false)
-	if err != nil || f.broadcasts[2]["send_at"] != nil || r.Undo == nil || string(r.Undo.Input) != `{"at":"2026-11-10T09:00:00Z","broadcast":2}` {
+	if err != nil || f.broadcasts[2]["send_at"] != nil || r.Undo == nil || string(r.Undo.Input) != `{"at":"2026-11-10T09:00:00Z","broadcast":2,"sha256":"`+sum+`"}` {
 		t.Fatal(r.Undo, err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.broadcasts[2]["send_at"] != "2026-11-10T09:00:00Z" {
+		t.Fatal("undo didn't schedule it again", err)
+	}
+	if _, err := invoke(m, "unschedule_broadcast", `{"broadcast":2}`, false); err != nil {
+		t.Fatal(err)
 	}
 	if r, err := invoke(m, "unschedule_broadcast", `{"broadcast":2}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatal(err)
@@ -204,6 +232,7 @@ func TestKitValidation(t *testing.T) {
 		{"schedule_broadcast", `{"broadcast":2,"at":"soon"}`},
 		{"schedule_broadcast", `{"broadcast":2,"at":"2026-01-01T09:00:00Z"}`},
 		{"schedule_broadcast", `{"broadcast":0,"at":"2026-11-10T09:00:00Z"}`},
+		{"schedule_broadcast", `{"broadcast":2,"at":"2026-11-10T09:00:00Z","sha256":"x"}`},
 		{"broadcast_stats", `{"broadcast":"1/../../account"}`},
 		{"subscribers_count", `{"status":"everyone"}`},
 	} {

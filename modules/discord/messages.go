@@ -145,6 +145,9 @@ func (m *Module) channelAction(ctx context.Context, c *conn, call sdk.Call, p pa
 			}
 			q.Set("before", p.Before)
 		}
+		if _, err := m.inServer(ctx, c, p.Channel); err != nil {
+			return sdk.Result{}, err
+		}
 		var ms []message
 		if err := m.do(ctx, c.bot, http.MethodGet, seg("channels", p.Channel, "messages"), q, nil, &ms); err != nil {
 			return sdk.Result{}, err
@@ -196,8 +199,12 @@ func (m *Module) channelAction(ctx context.Context, c *conn, call sdk.Call, p pa
 		if err != nil {
 			return sdk.Result{}, err
 		}
+		ch, err := m.inServer(ctx, c, p.Channel)
+		if err != nil {
+			return sdk.Result{}, err
+		}
 		if call.DryRun {
-			where := m.channelName(ctx, c, p.Channel)
+			where := ch.label()
 			after, _ := json.Marshal(map[string]string{"message": msg, "replyTo": p.ID})
 			return sdk.Result{Plan: &sdk.Plan{Summary: "Reply in " + where + " (mentions notify no one)",
 				Changes: []sdk.Change{{Target: where, Op: "create", After: after}}}}, nil
@@ -220,6 +227,9 @@ func (m *Module) channelAction(ctx context.Context, c *conn, call sdk.Call, p pa
 		}
 		e, err := parseEmoji(p.Emoji)
 		if err != nil {
+			return sdk.Result{}, err
+		}
+		if _, err := m.inServer(ctx, c, p.Channel); err != nil {
 			return sdk.Result{}, err
 		}
 		ms, err := m.getMessage(ctx, c, p.Channel, p.ID)
@@ -251,6 +261,9 @@ func (m *Module) channelAction(ctx context.Context, c *conn, call sdk.Call, p pa
 
 	case "pin_message", "unpin_message":
 		if err := checkID("message", p.ID); err != nil {
+			return sdk.Result{}, err
+		}
+		if _, err := m.inServer(ctx, c, p.Channel); err != nil {
 			return sdk.Result{}, err
 		}
 		ms, err := m.getMessage(ctx, c, p.Channel, p.ID)
@@ -304,8 +317,12 @@ func (m *Module) channelAction(ctx context.Context, c *conn, call sdk.Call, p pa
 				body["type"] = 12
 			}
 		}
+		ch, err := m.inServer(ctx, c, p.Channel)
+		if err != nil {
+			return sdk.Result{}, err
+		}
 		if call.DryRun {
-			where := m.channelName(ctx, c, p.Channel)
+			where := ch.label()
 			sum := fmt.Sprintf("Start the thread %q in %s", name, where)
 			if p.ID != "" {
 				sum += " from message " + p.ID
@@ -334,8 +351,8 @@ func (m *Module) archiveThread(ctx context.Context, c *conn, p params) (sdk.Resu
 	if err := checkID("thread", p.Thread); err != nil {
 		return sdk.Result{}, err
 	}
-	var th channel
-	if err := m.do(ctx, c.bot, http.MethodGet, seg("channels", p.Thread), nil, nil, &th); err != nil {
+	th, err := m.inServer(ctx, c, p.Thread)
+	if err != nil {
 		return sdk.Result{}, err
 	}
 	if !isThread(th.Type) {

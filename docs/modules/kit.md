@@ -15,16 +15,27 @@ and store it in the vault.
 | `broadcast_stats` | read | One broadcast's recipients, opens and open rate, clicks and click rate, unsubscribes and sending status. |
 | `create_draft` | write | Creates a draft with `subject`, optional `previewText`, `description` and `emailAddress`, for all subscribers or the subscribers with any of `tags`, from `text` or `html`. Drafts are never public. The preview shows the content in full. Undo deletes the draft. |
 | `delete_draft` | destructive | Deletes a draft broadcast; anything else is refused. The preview names it. |
-| `schedule_broadcast` | destructive | Schedules a draft for `at` (RFC 3339). The preview names the recipients (all subscribers, or each tag with its count), the subject, the sender and whether it's also posted publicly. Undo unschedules it. |
-| `unschedule_broadcast` | write | Turns a scheduled broadcast back into a draft. Undo schedules it again for the same time (and asks again). |
+| `schedule_broadcast` | destructive | Schedules a draft for `at` (RFC 3339), given its `sha256` from the preview. The preview shows the content and names the recipients (all subscribers, or each tag with its count), the subject, the sender and whether it's also posted publicly. Undo unschedules it. |
+| `unschedule_broadcast` | write | Turns a scheduled broadcast back into a draft. Undo schedules it again for the same time (and asks again), only if the broadcast hasn't changed. |
 
 Scheduling for the time a broadcast already has, unscheduling a draft and
 scheduling one that has gone out each answer "nothing to change".
 
 **Content.** `html` is sent as written; `text` becomes simple HTML (escaped,
 a paragraph per block, line breaks kept). The preview shows it in full.
-Script tags (remote or inline) are refused, since email clients don't run
-them.
+HTML is checked for anything that would run code in the broadcast's web
+version (its public post or "view in browser", which open in a browser
+even though mail clients don't run scripts): script, iframe, object, embed and
+applet elements, `on…` event handler attributes, and `javascript:`,
+`vbscript:` and `data:` URLs (other than `data:image/…`) in link and source
+attributes, with entities and the spaces browsers skip taken into account.
+Such content is refused; styles, tables, images, forms and ordinary links
+are kept.
+
+**What's approved is what's sent.** The preview of `schedule_broadcast` shows the
+broadcast's content in full with a `sha256` over the recipients, subject, preview text, sender, template, content and whether it's public. The run must
+give that `sha256` and is refused if the broadcast changed since, so an edit made
+between the preview (or the approval) and the run can't go out unseen.
 
 **Security.** The key goes in the `X-Kit-Api-Key` header and the client
 won't follow a redirect to another host or from https to http. Ids, times,

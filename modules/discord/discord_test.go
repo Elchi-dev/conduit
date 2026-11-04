@@ -31,8 +31,12 @@ const (
 	partyID  = "110000000000000011"
 	leakChan = "120000000000000012"
 	hookMsg  = "130000000000000013"
-	token    = "MTEx.Gq-bot-token-secret-value-0123456789abcdef"
-	api      = "/api/v10"
+	// otherChan is in another server the bot is in; dmChan a direct message.
+	otherChan  = "140000000000000014"
+	otherGuild = "150000000000000015"
+	dmChan     = "160000000000000016"
+	token      = "MTEx.Gq-bot-token-secret-value-0123456789abcdef"
+	api        = "/api/v10"
 )
 
 type fake struct {
@@ -138,7 +142,13 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /guilds/" + guild + "/channels":
 		io.WriteString(w, `[{"id":"`+chanID+`","name":"general","type":0},{"id":"9","name":"Voice","type":2}]`)
 	case "GET /channels/" + chanID:
-		io.WriteString(w, `{"id":"`+chanID+`","name":"general","type":0}`)
+		io.WriteString(w, `{"id":"`+chanID+`","guild_id":"`+guild+`","name":"general","type":0}`)
+	case "GET /channels/" + leakChan:
+		io.WriteString(w, `{"id":"`+leakChan+`","guild_id":"`+guild+`","name":"staff","type":0}`)
+	case "GET /channels/" + otherChan:
+		io.WriteString(w, `{"id":"`+otherChan+`","guild_id":"`+otherGuild+`","name":"elsewhere","type":0}`)
+	case "GET /channels/" + dmChan:
+		io.WriteString(w, `{"id":"`+dmChan+`","type":1}`)
 	case "GET /channels/" + chanID + "/messages":
 		if r.URL.Query().Get("limit") != "2" || r.URL.Query().Get("before") != msgID {
 			w.WriteHeader(400)
@@ -192,7 +202,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(w, `{"id":%q,"name":%q,"type":%d,"parent_id":%q}`, threadID, body["name"], typ, chanID)
 	case "GET /channels/" + threadID:
-		fmt.Fprintf(w, `{"id":%q,"name":"plans","type":11,"parent_id":%q,"thread_metadata":{"archived":%v}}`, threadID, chanID, f.archived)
+		fmt.Fprintf(w, `{"id":%q,"guild_id":%q,"name":"plans","type":11,"parent_id":%q,"thread_metadata":{"archived":%v}}`, threadID, guild, chanID, f.archived)
 	case "PATCH /channels/" + threadID:
 		f.archived = body["archived"] == true
 		io.WriteString(w, `{}`)
@@ -707,6 +717,56 @@ func TestParseEmoji(t *testing.T) {
 	for _, in := range []string{"", "a", "12", "é", "👍 x", "👍?", "%F0", "../👍", ":party:", "party:" + partyID + "/x", strings.Repeat("👍", 17)} {
 		if _, err := parseEmoji(in); err == nil {
 			t.Errorf("accepted %q", in)
+		}
+	}
+}
+
+// Channel actions reach only channels in the configured server: not another
+// server the bot is in, nor its direct messages.
+func TestDiscordStaysInItsServer(t *testing.T) {
+	g := setup(t)
+	for _, ch := range []string{otherChan, dmChan} {
+		c, ms := `"channel":"`+ch+`"`, `"id":"`+msgID+`"`
+		for _, x := range []struct{ action, in string }{
+			{"messages", `{` + c + `}`},
+			{"send", `{` + c + `,"message":"hi"}`},
+			{"reply", `{` + c + `,` + ms + `,"message":"hi"}`},
+			{"react", `{` + c + `,` + ms + `,"emoji":"👍"}`},
+			{"pin_message", `{` + c + `,` + ms + `}`},
+			{"create_thread", `{` + c + `,"name":"x"}`},
+			{"delete_message", `{` + c + `,` + ms + `}`},
+			{"archive_thread", `{"thread":"` + ch + `"}`},
+		} {
+			g.f.reset()
+			for _, dry := range []bool{true, false} {
+				if _, err := g.try(x.action, x.in, dry); err == nil || !strings.Contains(err.Error(), "isn't in this instance's server") {
+					t.Errorf("%s in %s: %v", x.action, ch, err)
+				}
+			}
+			if seen := g.f.calls(); len(seen) != 2 || seen[0] != "GET "+api+"/channels/"+ch {
+				t.Errorf("%s in %s went further: %v", x.action, ch, seen)
+			}
+		}
+	}
+}
+
+// The webhook URL is its secret: an answer Discord's client can't read
+// doesn't put it in the error.
+func TestDiscordWebhookURLNotInErrors(t *testing.T) {
+	const hook = "/api/webhooks/1/Sup3rS3cretWebhookToken"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "<html>oops</html>") }))
+	defer srv.Close()
+	m := New()
+	m.HTTP = srv.Client()
+	raw, _ := json.Marshal(Config{Webhook: "secret://hook"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://hook": srv.URL + hook}), "d", raw); err != nil {
+		t.Fatal(err)
+	}
+	_, err := m.Invoke(context.Background(), sdk.Call{Instance: "d", Action: "send", Input: json.RawMessage(`{"message":"x"}`)})
+	h := m.Health(context.Background(), "d")
+	for _, s := range []string{fmt.Sprint(err), h.Message} {
+		if err == nil || strings.Contains(s, "Sup3rS3cret") || strings.Contains(s, "webhooks") || !strings.Contains(s, "unexpected answer") {
+			t.Fatalf("%q", s)
 		}
 	}
 }

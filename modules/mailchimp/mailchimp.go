@@ -67,8 +67,6 @@ var (
 	dcRe    = regexp.MustCompile(`^[a-z]{1,8}[0-9]{1,4}$`)
 	idRe    = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
 	emailRe = regexp.MustCompile(`^[A-Za-z0-9.!#$%&'*+=?^_{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+$`)
-	// scriptRe finds script elements, remote or inline, in authored HTML.
-	scriptRe = regexp.MustCompile(`(?i)<\s*/?\s*script\b`)
 )
 
 var statuses = map[string]bool{"save": true, "paused": true, "schedule": true, "sending": true, "sent": true}
@@ -76,6 +74,7 @@ var statuses = map[string]bool{"save": true, "paused": true, "schedule": true, "
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	campaign := `"campaign":{"type":"string","description":"Campaign id (see campaigns)"}`
+	sha := `"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The campaign's sha256 from the preview; needed to run, refused if the campaign changed since"}`
 	return sdk.Manifest{
 		ID: "mailchimp", Name: "Mailchimp", Version: "0.1.0", Category: "Communication", Icon: "mail",
 		Description: "Mailchimp: audiences with member counts, campaigns and reports, create draft campaigns, send tests, schedule, unschedule and send campaigns.",
@@ -90,17 +89,17 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "campaign_report", Title: "Campaign report", Description: "A sent campaign's report: emails sent, opens, clicks, bounces, unsubscribes and abuse reports.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
 			{Name: "create_draft", Title: "Create a draft campaign", Description: "Creates a draft campaign for one audience from plain text or HTML; nothing is sent. The preview shows the content in full. Undo deletes the draft.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["audience","subject"],"properties":{"audience":{"type":"string","description":"Audience id (see audiences)"},"subject":{"type":"string","maxLength":150},"title":{"type":"string","maxLength":100,"description":"Internal name (default: the subject)"},"previewText":{"type":"string","maxLength":150},"fromName":{"type":"string","maxLength":100,"description":"Default: the audience's sender name"},"replyTo":{"type":"string","description":"Default: the audience's sender address"},"text":{"type":"string","maxLength":200000,"description":"Plain-text content (a plain-text campaign); give text or html"},"html":{"type":"string","maxLength":500000,"description":"HTML content; script tags are refused"}}}`)},
+				Input: sdk.Schema(`{"type":"object","required":["audience","subject"],"properties":{"audience":{"type":"string","description":"Audience id (see audiences)"},"subject":{"type":"string","maxLength":150},"title":{"type":"string","maxLength":100,"description":"Internal name (default: the subject)"},"previewText":{"type":"string","maxLength":150},"fromName":{"type":"string","maxLength":100,"description":"Default: the audience's sender name"},"replyTo":{"type":"string","description":"Default: the audience's sender address"},"text":{"type":"string","maxLength":200000,"description":"Plain-text content (a plain-text campaign); give text or html"},"html":{"type":"string","maxLength":500000,"description":"HTML content; scripts, event handlers and javascript: links are refused"}}}`)},
 			{Name: "delete_draft", Title: "Delete a draft", Description: "Deletes a draft campaign for good. Only drafts; the preview names it.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
 			{Name: "send_test", Title: "Send a test email", Description: "Sends a test of a campaign to one address: the account owner's, or one of the test recipients in this instance's settings. Any other address is refused.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `,"to":{"type":"string","description":"The address (default: the only test recipient, or the account owner)"}}}`)},
-			{Name: "schedule_campaign", Title: "Schedule a campaign", Description: "Schedules a draft campaign to email its audience at a time (on a quarter hour). The preview names the audience, its recipient count, the subject and the sender. Undo unschedules it while it hasn't gone out.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["campaign","at"],"properties":{` + campaign + `,"at":{"type":"string","description":"When, like 2026-11-10T09:15:00Z (minutes 00, 15, 30 or 45)"}}}`)},
+			{Name: "schedule_campaign", Title: "Schedule a campaign", Description: "Schedules a draft campaign to email its audience at a time (on a quarter hour). The preview names the audience, its recipient count, the subject and the sender, shows the content and its sha256, which the run must give: it's refused if the campaign changed since. Undo unschedules it while it hasn't gone out.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["campaign","at"],"properties":{` + campaign + `,"at":{"type":"string","description":"When, like 2026-11-10T09:15:00Z (minutes 00, 15, 30 or 45)"},` + sha + `}}`)},
 			{Name: "unschedule_campaign", Title: "Unschedule a campaign", Description: "Turns a scheduled campaign back into a draft; nothing is sent. Undo schedules it again for the same time.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
-			{Name: "send_campaign", Title: "Send a campaign", Description: "Sends a draft campaign to its audience now. Can't be taken back. The preview names the audience, its recipient count, the subject and the sender.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
+			{Name: "send_campaign", Title: "Send a campaign", Description: "Sends a draft campaign to its audience now. Can't be taken back. The preview names the audience, its recipient count, the subject and the sender, shows the content and its sha256, which the run must give: it's refused if the campaign changed since.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `,` + sha + `}}`)},
 		},
 	}
 }
@@ -237,10 +236,11 @@ type campaign struct {
 	SendTime   string `json:"send_time"`
 	EmailsSent int    `json:"emails_sent"`
 	Recipients struct {
-		ListID      string `json:"list_id"`
-		ListName    string `json:"list_name"`
-		SegmentText string `json:"segment_text"`
-		Count       int    `json:"recipient_count"`
+		ListID      string          `json:"list_id"`
+		ListName    string          `json:"list_name"`
+		SegmentText string          `json:"segment_text"`
+		SegmentOpts json.RawMessage `json:"segment_opts"`
+		Count       int             `json:"recipient_count"`
 	} `json:"recipients"`
 	Settings struct {
 		Subject string `json:"subject_line"`
@@ -315,8 +315,35 @@ func (c *conn) reach(ctx context.Context, cp campaign) (int, error) {
 	return a.Stats.Members, err
 }
 
-// mailPlan is the preview of emailing a campaign's audience.
-func (c *conn) mailPlan(ctx context.Context, cp campaign, verb, when string) (sdk.Result, error) {
+// content is a campaign's content as Mailchimp sends it.
+type content struct {
+	HTML  string `json:"html"`
+	Plain string `json:"plain_text"`
+}
+
+// mailable reads what a send or schedule would deliver and its
+// fingerprint: the audience and segment, the subject, preview text and
+// sender, and the content. Only regular and plain-text campaigns are sent
+// here; RSS and A/B campaigns have more than one content or subject.
+func (c *conn) mailable(ctx context.Context, cp campaign) (content, string, error) {
+	if cp.Type != "regular" && cp.Type != "plaintext" {
+		return content{}, "", fmt.Errorf("the campaign is a %s campaign; Conduit sends regular and plain-text campaigns, so send this one from Mailchimp", clip(cp.Type, 20))
+	}
+	var ct content
+	if err := c.do(ctx, http.MethodGet, "/campaigns/"+url.PathEscape(cp.ID)+"/content", url.Values{"fields": {"html,plain_text"}}, nil, &ct); err != nil {
+		return content{}, "", err
+	}
+	if strings.TrimSpace(ct.HTML) == "" && strings.TrimSpace(ct.Plain) == "" {
+		return content{}, "", errors.New("the campaign has no content yet")
+	}
+	sum := fingerprint(cp.ID, cp.Type, cp.Recipients.ListID, cp.Recipients.SegmentText, cp.Recipients.SegmentOpts,
+		cp.Settings.Subject, cp.Settings.Preview, cp.Settings.From, cp.Settings.ReplyTo, ct.HTML, ct.Plain)
+	return ct, sum, nil
+}
+
+// mailPlan is the preview of emailing a campaign's audience: who, how many,
+// the subject, the sender and the content in full, with its fingerprint.
+func (c *conn) mailPlan(ctx context.Context, cp campaign, ct content, sum, given, verb, when string) (sdk.Result, error) {
 	n, err := c.reach(ctx, cp)
 	if err != nil {
 		return sdk.Result{}, err
@@ -325,9 +352,15 @@ func (c *conn) mailPlan(ctx context.Context, cp campaign, verb, when string) (sd
 	if cp.Recipients.SegmentText != "" {
 		aud += " (a segment)"
 	}
-	after := plain(map[string]any{"audience": clip(cp.Recipients.ListName, 100), "recipients": n, "subject": clip(cp.Settings.Subject, 150), "from": cp.from(), "when": when})
+	format, body := "html", ct.HTML
+	if cp.Type == "plaintext" {
+		format, body = "text", ct.Plain
+	}
+	// The content is authored, not personal data: shown in full, as sent.
+	after := plain(map[string]any{"audience": clip(cp.Recipients.ListName, 100), "recipients": n, "subject": cp.Settings.Subject, "previewText": cp.Settings.Preview,
+		"from": cp.from(), "when": when, "format": format, "content": body, "sha256": sum})
 	return sdk.Result{Plan: &sdk.Plan{
-		Summary: fmt.Sprintf("%s %q from %s to %d subscribers of %s %s. Sent emails can't be recalled.", verb, clip(cp.Settings.Subject, 100), cp.from(), n, aud, when),
+		Summary: fmt.Sprintf("%s %q from %s to %d subscribers of %s %s (content sha256 %s). Sent emails can't be recalled.%s", verb, clip(cp.Settings.Subject, 100), cp.from(), n, aud, when, sum, changedNote("campaign", given, sum)),
 		Changes: []sdk.Change{{Target: aud, Op: "email", After: after}}}}, nil
 }
 
@@ -367,8 +400,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		HTML        string `json:"html"`
 		To          string `json:"to"`
 		At          string `json:"at"`
+		SHA256      string `json:"sha256"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
+		return sdk.Result{}, err
+	}
+	if err := checkSHA(p.SHA256); err != nil {
 		return sdk.Result{}, err
 	}
 	switch call.Action {
@@ -527,8 +564,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, fmt.Errorf("the campaign is %s; only drafts can be scheduled", cp.Status)
 		}
 		when := at.Format(time.RFC3339)
+		ct, sum, err := c.mailable(ctx, cp)
+		if err != nil {
+			return sdk.Result{}, err
+		}
 		if call.DryRun {
-			return c.mailPlan(ctx, cp, "Schedule emailing", "at "+when)
+			return c.mailPlan(ctx, cp, ct, sum, p.SHA256, "Schedule emailing", "at "+when)
+		}
+		if err := sameContent("campaign", p.SHA256, sum); err != nil {
+			return sdk.Result{}, err
 		}
 		if err := c.do(ctx, http.MethodPost, "/campaigns/"+url.PathEscape(cp.ID)+"/actions/schedule", nil, map[string]string{"schedule_time": when}, nil); err != nil {
 			return sdk.Result{}, err
@@ -549,6 +593,8 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		default:
 			return sdk.Result{}, fmt.Errorf("the campaign is %s; only scheduled campaigns can be unscheduled", cp.Status)
 		}
+		// Undo schedules it again only if it's still the same campaign.
+		_, sum, sumErr := c.mailable(ctx, cp)
 		if call.DryRun {
 			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Unschedule %q (was due %s); it becomes a draft and nothing is sent", clip(cp.Settings.Subject, 80), cp.SendTime),
 				Changes: []sdk.Change{{Target: "campaign " + cp.ID, Op: "update", Before: json.RawMessage(strconv.Quote(cp.SendTime)), After: json.RawMessage(`"draft"`)}}}}, nil
@@ -557,9 +603,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"campaign": cp.ID, "status": "save"})
-		if t, perr := time.Parse(time.RFC3339, cp.SendTime); perr == nil {
+		if t, perr := time.Parse(time.RFC3339, cp.SendTime); perr == nil && sumErr == nil {
 			at := t.UTC().Format(time.RFC3339)
-			res.Undo = sdk.UndoWith("schedule_campaign", map[string]string{"campaign": cp.ID, "at": at}, "Schedule the campaign again for "+at)
+			res.Undo = sdk.UndoWith("schedule_campaign", map[string]string{"campaign": cp.ID, "at": at, "sha256": sum}, "Schedule the campaign again for "+at)
 		}
 		return res, err
 
@@ -577,8 +623,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		default:
 			return sdk.Result{}, fmt.Errorf("the campaign is %s; only drafts can be sent", cp.Status)
 		}
+		ct, sum, err := c.mailable(ctx, cp)
+		if err != nil {
+			return sdk.Result{}, err
+		}
 		if call.DryRun {
-			return c.mailPlan(ctx, cp, "Email", "now")
+			return c.mailPlan(ctx, cp, ct, sum, p.SHA256, "Email", "now")
+		}
+		if err := sameContent("campaign", p.SHA256, sum); err != nil {
+			return sdk.Result{}, err
 		}
 		if err := c.do(ctx, http.MethodPost, "/campaigns/"+url.PathEscape(cp.ID)+"/actions/send", nil, nil, nil); err != nil {
 			return sdk.Result{}, err
@@ -660,8 +713,9 @@ func (c *conn) createDraft(ctx context.Context, call sdk.Call, aud, subject, tit
 		return sdk.Result{}, errors.New("give the content as text (plain text) or as html, one of them")
 	case len(text) > 200000 || len(html) > 500000:
 		return sdk.Result{}, errors.New("the content is too long")
-	case scriptRe.MatchString(html):
-		return sdk.Result{}, errors.New("the html has a script tag; email clients don't run scripts, so remove it")
+	}
+	if bad := unsafeHTML(html); bad != "" {
+		return sdk.Result{}, fmt.Errorf("the html has %s, which would run code in the web version of the email; remove it", bad)
 	}
 	a, err := c.audience(ctx, aud)
 	if err != nil {

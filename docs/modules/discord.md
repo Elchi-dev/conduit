@@ -39,6 +39,13 @@ asked (a message already pinned, a member not timed out), the action says
 "nothing to change" and leaves it be. Lifting a timeout and unbanning are
 destructive too, since they give someone back access.
 
+When the settings name a server, channel actions (`send` and
+`delete_message` with a `channel`, `messages`, `reply`, `react`, pins and
+threads) only reach channels and threads in that server: another server
+the bot is in, or the bot's direct messages, are refused, so an instance's
+rules cover one server. Without a server id they reach any channel the bot
+can see.
+
 Ids are checked before anything is sent, the token is used only with
 Discord's own address (redirects elsewhere are refused), and error text is
 redacted. When Discord asks the bot to slow down, a request is retried
@@ -76,4 +83,4 @@ Privileged Gateway Intents):
 - **Server Members** for `members`.
 
 The webhook URL contains its own secret, so it lives in the vault like the
-bot token.
+bot token, and it's kept out of error text.

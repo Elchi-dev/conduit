@@ -208,7 +208,7 @@ func (m *Module) do(ctx context.Context, cl *rest.Client, method, path string, q
 			return nil
 		}
 		if !rest.IsStatus(err, http.StatusTooManyRequests) {
-			return discordErr(err)
+			return discordErr(scrub(err, cl.Base))
 		}
 		wait := retryAfter(h)
 		if attempt > 0 || wait > maxRetryWait {
@@ -243,6 +243,17 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	case <-t.C:
 		return nil
 	}
+}
+
+// scrub keeps the client's base URL out of an error that isn't an API
+// error: rest.Do names it in "unexpected answer from <base>", and the
+// webhook's base is its secret URL.
+func scrub(err error, base string) error {
+	var e *rest.Error
+	if err == nil || errors.As(err, &e) || base == "" || !strings.Contains(err.Error(), base) {
+		return err
+	}
+	return errors.New(rest.Redact(strings.ReplaceAll(err.Error(), base, "Discord")))
 }
 
 // discordErr explains an API error, redacting before it shortens.
@@ -390,6 +401,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if err := checkID("channel", p.Channel); err != nil {
 				return sdk.Result{}, err
 			}
+			if _, err := m.inServer(ctx, c, p.Channel); err != nil {
+				return sdk.Result{}, err
+			}
 			if err := m.do(ctx, c.bot, http.MethodPost, seg("channels", p.Channel, "messages"), nil, body, &out); err != nil {
 				return sdk.Result{}, err
 			}
@@ -410,7 +424,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err := checkID("message", p.ID); err != nil {
 			return sdk.Result{}, err
 		}
-		cl, path := (*rest.Client)(nil), ""
+		cl, path, where := (*rest.Client)(nil), "", "the webhook's channel"
 		if p.Channel != "" {
 			if err := needBot(); err != nil {
 				return sdk.Result{}, err
@@ -418,7 +432,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if err := checkID("channel", p.Channel); err != nil {
 				return sdk.Result{}, err
 			}
-			cl, path = c.bot, seg("channels", p.Channel, "messages", p.ID)
+			ch, err := m.inServer(ctx, c, p.Channel)
+			if err != nil {
+				return sdk.Result{}, err
+			}
+			cl, path, where = c.bot, seg("channels", p.Channel, "messages", p.ID), ch.label()
 		} else {
 			w, err := c.webhook(ctx)
 			if err != nil {
@@ -430,10 +448,6 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			var ms message
 			if err := m.do(ctx, cl, http.MethodGet, path, nil, nil, &ms); err != nil {
 				return sdk.Result{}, err
-			}
-			where := "the webhook's channel"
-			if p.Channel != "" {
-				where = m.channelName(ctx, c, p.Channel)
 			}
 			before, _ := json.Marshal(map[string]string{"author": ms.Author.display(), "message": clip(ms.Content, 200), "sent": stamp(ms.Timestamp)})
 			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Delete %s's message from %s in %s", ms.Author.display(), stamp(ms.Timestamp), where),
@@ -496,6 +510,7 @@ var kinds = map[int]string{0: "text", 2: "voice", 4: "category", 5: "announcemen
 
 type channel struct {
 	ID       string `json:"id"`
+	GuildID  string `json:"guild_id"`
 	Name     string `json:"name"`
 	Type     int    `json:"type"`
 	ParentID string `json:"parent_id"`
@@ -516,15 +531,29 @@ func (m *Module) guildChannels(ctx context.Context, c *conn) ([]channel, error) 
 	return chs, err
 }
 
-// channelName is "#name" for a preview, or the id when it can't be read.
-func (m *Module) channelName(ctx context.Context, c *conn, id string) string {
-	if c.bot != nil {
-		var ch channel
-		if err := m.do(ctx, c.bot, http.MethodGet, seg("channels", id), nil, nil, &ch); err == nil && ch.Name != "" {
-			return "#" + ch.Name
-		}
+// label is "#name" for a preview, or the id when it has no name.
+func (ch channel) label() string {
+	if ch.Name != "" {
+		return "#" + ch.Name
 	}
-	return "channel " + id
+	return "channel " + ch.ID
+}
+
+// inServer reads a channel or thread and, when the settings name a server,
+// checks that it's in that server: an instance set up for one server can't
+// reach another server the bot is in, or the bot's direct messages.
+func (m *Module) inServer(ctx context.Context, c *conn, id string) (channel, error) {
+	var ch channel
+	if err := m.do(ctx, c.bot, http.MethodGet, seg("channels", id), nil, nil, &ch); err != nil {
+		return channel{}, err
+	}
+	if ch.ID == "" {
+		ch.ID = id
+	}
+	if c.cfg.Guild != "" && ch.GuildID != c.cfg.Guild {
+		return channel{}, fmt.Errorf("channel %s isn't in this instance's server", id)
+	}
+	return ch, nil
 }
 
 type user struct {

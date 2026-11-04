@@ -49,10 +49,30 @@ func New() *Module { return &Module{} }
 const defaultBase = "https://api.buttondown.com/v1"
 
 var (
-	keyRe    = regexp.MustCompile(`^[A-Za-z0-9_-]{16,100}$`)
-	uuidRe   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	scriptRe = regexp.MustCompile(`(?i)<\s*/?\s*script\b`)
+	keyRe  = regexp.MustCompile(`^[A-Za-z0-9_-]{16,100}$`)
+	uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	// Markdown link targets: inline [t](url), reference [t]: url, and
+	// autolinks <scheme:…>.
+	mdInlineRe = regexp.MustCompile(`\]\(\s*<?\s*([^\s)>]+)`)
+	mdRefRe    = regexp.MustCompile(`(?m)^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?([^\s>]+)`)
+	mdAutoRe   = regexp.MustCompile(`<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*)>`)
 )
+
+// unsafeMarkdown is unsafeHTML for Markdown with HTML in it: its links are
+// checked too.
+func unsafeMarkdown(s string) string {
+	if bad := unsafeHTML(s); bad != "" {
+		return bad
+	}
+	for _, re := range []*regexp.Regexp{mdInlineRe, mdRefRe, mdAutoRe} {
+		for _, m := range re.FindAllStringSubmatch(s, -1) {
+			if scriptURL(m[1]) {
+				return "a script link"
+			}
+		}
+	}
+	return ""
+}
 
 var subTypes = map[string]bool{"regular": true, "premium": true, "gifted": true, "trialed": true, "unactivated": true, "unsubscribed": true, "churning": true, "past_due": true}
 
@@ -79,11 +99,11 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "emails", Title: "Emails", Description: "Emails, newest first: subject, status, type (public or premium), publish date, and recipients, opens and clicks once sent.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"status":{"type":"string","enum":["draft","scheduled","about_to_send","in_flight","sent","imported","errored"]},"limit":{"type":"integer","default":20,"minimum":1,"maximum":100}}}`)},
 			{Name: "create_draft", Title: "Create a draft", Description: "Creates a draft email from Markdown (HTML inside it is kept); nothing is sent. The preview shows the body in full. Undo deletes the draft.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["subject","body"],"properties":{"subject":{"type":"string","maxLength":200},"body":{"type":"string","maxLength":200000,"description":"Markdown, as Buttondown renders it; script tags are refused"},"description":{"type":"string","maxLength":300,"description":"Short summary for the archive and previews"}}}`)},
+				Input: sdk.Schema(`{"type":"object","required":["subject","body"],"properties":{"subject":{"type":"string","maxLength":200},"body":{"type":"string","maxLength":200000,"description":"Markdown, as Buttondown renders it; scripts, event handlers and javascript: links are refused"},"description":{"type":"string","maxLength":300,"description":"Short summary for the archive and previews"}}}`)},
 			{Name: "delete_draft", Title: "Delete a draft", Description: "Deletes a draft email for good. Only drafts; the preview names it.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["email"],"properties":{` + email + `}}`)},
-			{Name: "send_email", Title: "Send an email", Description: "Sends a draft email to its subscribers now (public emails to every paying and free subscriber, premium ones to paying subscribers). Can't be taken back. The preview names the newsletter, the recipients and their count, and the subject.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["email"],"properties":{` + email + `}}`)},
+			{Name: "send_email", Title: "Send an email", Description: "Sends a draft email to its subscribers now (public emails to every paying and free subscriber, premium ones to paying subscribers). Can't be taken back. The preview names the newsletter, the recipients and their count, and the subject, and shows the body and its sha256, which the run must give: it's refused if the email changed since.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["email"],"properties":{` + email + `,"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The email's sha256 from the preview; needed to send, refused if the email changed since"}}}`)},
 		},
 	}
 }
@@ -166,6 +186,8 @@ func plain(v any) json.RawMessage {
 type email struct {
 	ID          string `json:"id"`
 	Subject     string `json:"subject"`
+	Body        string `json:"body"`
+	Description string `json:"description"`
 	Status      string `json:"status"`
 	Type        string `json:"email_type"`
 	Created     string `json:"creation_date"`
@@ -273,8 +295,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		Subject     string `json:"subject"`
 		Body        string `json:"body"`
 		Description string `json:"description"`
+		SHA256      string `json:"sha256"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
+		return sdk.Result{}, err
+	}
+	if err := checkSHA(p.SHA256); err != nil {
 		return sdk.Result{}, err
 	}
 	switch call.Action {
@@ -332,8 +358,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, errors.New("the body is the email's Markdown, up to 200000 characters")
 		case len([]rune(desc)) > 300 || strings.ContainsAny(desc, "\x00"):
 			return sdk.Result{}, errors.New("the description is up to 300 characters")
-		case scriptRe.MatchString(p.Body):
-			return sdk.Result{}, errors.New("the body has a script tag; email clients don't run scripts, so remove it")
+		}
+		if bad := unsafeMarkdown(p.Body); bad != "" {
+			return sdk.Result{}, fmt.Errorf("the body has %s, which would run code in the web version of the email; remove it", bad)
 		}
 		if call.DryRun {
 			// The body is authored, not personal data: shown in full.
@@ -392,6 +419,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if !ok || (e.Filters != nil && (len(e.Filters.Filters) > 0 || len(e.Filters.Groups) > 0)) {
 			return sdk.Result{}, errors.New("this email goes to a filtered or special set of subscribers that Conduit can't count; send it from Buttondown")
 		}
+		if strings.TrimSpace(e.Body) == "" {
+			return sdk.Result{}, errors.New("the email has no body yet")
+		}
+		// What's sent: the audience, subject, description and body.
+		sum := fingerprint(e.ID, e.Type, e.Filters, e.Subject, e.Description, e.Body)
 		if call.DryRun {
 			total := 0
 			parts := []string{}
@@ -407,9 +439,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if nl == "" {
 				nl = "your newsletter"
 			}
-			after := plain(map[string]any{"newsletter": nl, "type": e.Type, "subscribers": total, "subject": clip(e.Subject, 200)})
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Email %q from %s to %d subscribers now (%s email: %s). Sent emails can't be recalled.", clip(e.Subject, 100), nl, total, e.Type, strings.Join(parts, ", ")),
+			// The body is authored, not personal data: shown in full, as sent.
+			after := plain(map[string]any{"newsletter": nl, "type": e.Type, "subscribers": total, "subject": e.Subject, "description": e.Description, "format": "markdown", "body": e.Body, "sha256": sum})
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Email %q from %s to %d subscribers now (%s email: %s; content sha256 %s). Sent emails can't be recalled.%s", clip(e.Subject, 100), nl, total, e.Type, strings.Join(parts, ", "), sum, changedNote("email", p.SHA256, sum)),
 				Changes: []sdk.Change{{Target: "newsletter " + nl, Op: "email", After: after}}}}, nil
+		}
+		if err := sameContent("email", p.SHA256, sum); err != nil {
+			return sdk.Result{}, err
 		}
 		var after email
 		if err := c.do(ctx, http.MethodPatch, "/emails/"+url.PathEscape(e.ID), nil, map[string]string{"status": "about_to_send"}, &after); err != nil {

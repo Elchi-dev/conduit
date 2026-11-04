@@ -61,9 +61,8 @@ const defaultBase = "https://api.kit.com/v4"
 const maxTags = 10
 
 var (
-	keyRe    = regexp.MustCompile(`^[A-Za-z0-9_-]{16,200}$`)
-	emailRe  = regexp.MustCompile(`^[A-Za-z0-9.!#$%&'*+=?^_{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+$`)
-	scriptRe = regexp.MustCompile(`(?i)<\s*/?\s*script\b`)
+	keyRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{16,200}$`)
+	emailRe = regexp.MustCompile(`^[A-Za-z0-9.!#$%&'*+=?^_{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+$`)
 )
 
 var subStatuses = map[string]bool{"active": true, "inactive": true, "bounced": true, "complained": true, "cancelled": true, "all": true}
@@ -86,11 +85,11 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "broadcast_stats", Title: "Broadcast stats", Description: "One broadcast's stats: recipients, open and click rates, clicks, unsubscribes and sending status.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["broadcast"],"properties":{` + broadcast + `}}`)},
 			{Name: "create_draft", Title: "Create a draft broadcast", Description: "Creates a draft broadcast (never public) for all subscribers or some tags, from plain text or HTML; nothing is sent. The preview shows the content in full. Undo deletes the draft.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["subject"],"properties":{"subject":{"type":"string","maxLength":200},"previewText":{"type":"string","maxLength":200},"description":{"type":"string","maxLength":200,"description":"Internal note"},"tags":{"type":"array","items":{"type":"integer","minimum":1},"maxItems":10,"description":"Send to subscribers with any of these tags (default: all subscribers)"},"emailAddress":{"type":"string","description":"A confirmed sending address (default: the account's)"},"text":{"type":"string","maxLength":200000,"description":"Plain-text content, sent as simple HTML; give text or html"},"html":{"type":"string","maxLength":500000,"description":"HTML content; script tags are refused"}}}`)},
+				Input: sdk.Schema(`{"type":"object","required":["subject"],"properties":{"subject":{"type":"string","maxLength":200},"previewText":{"type":"string","maxLength":200},"description":{"type":"string","maxLength":200,"description":"Internal note"},"tags":{"type":"array","items":{"type":"integer","minimum":1},"maxItems":10,"description":"Send to subscribers with any of these tags (default: all subscribers)"},"emailAddress":{"type":"string","description":"A confirmed sending address (default: the account's)"},"text":{"type":"string","maxLength":200000,"description":"Plain-text content, sent as simple HTML; give text or html"},"html":{"type":"string","maxLength":500000,"description":"HTML content; scripts, event handlers and javascript: links are refused"}}}`)},
 			{Name: "delete_draft", Title: "Delete a draft", Description: "Deletes a draft broadcast for good. Only drafts; the preview names it.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["broadcast"],"properties":{` + broadcast + `}}`)},
-			{Name: "schedule_broadcast", Title: "Schedule a broadcast", Description: "Schedules a draft broadcast to email its recipients at a time. The preview names the recipients, their count, the subject and the sender. Undo unschedules it while it hasn't gone out.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["broadcast","at"],"properties":{` + broadcast + `,"at":{"type":"string","description":"When, like 2026-11-10T09:00:00Z"}}}`)},
+			{Name: "schedule_broadcast", Title: "Schedule a broadcast", Description: "Schedules a draft broadcast to email its recipients at a time. The preview names the recipients, their count, the subject and the sender, and shows the content and its sha256, which the run must give: it's refused if the broadcast changed since. Undo unschedules it while it hasn't gone out.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["broadcast","at"],"properties":{` + broadcast + `,"at":{"type":"string","description":"When, like 2026-11-10T09:00:00Z"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The broadcast's sha256 from the preview; needed to run, refused if the broadcast changed since"}}}`)},
 			{Name: "unschedule_broadcast", Title: "Unschedule a broadcast", Description: "Turns a scheduled broadcast back into a draft; nothing is sent. Undo schedules it again for the same time.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["broadcast"],"properties":{` + broadcast + `}}`)},
 		},
@@ -379,6 +378,17 @@ func (c *conn) sender(ctx context.Context, b broadcast) string {
 	return "the account's sending address"
 }
 
+// sum is the fingerprint of what scheduling the broadcast would send and
+// post: recipients, subject, preview text, sender, template, content and
+// whether (and how) it's public.
+func (b broadcast) sum() string {
+	tmpl := 0
+	if b.Template != nil {
+		tmpl = b.Template.ID
+	}
+	return fingerprint(b.ID, b.Filter, b.Subject, b.PreviewText, b.Email, tmpl, b.Content, b.Public, b.ThumbURL, b.ThumbAlt)
+}
+
 // update sends the broadcast back with a new send time, keeping its other
 // fields as they are.
 func (c *conn) update(ctx context.Context, b broadcast, sendAt *string) (broadcast, error) {
@@ -444,8 +454,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		Text         string `json:"text"`
 		HTML         string `json:"html"`
 		At           string `json:"at"`
+		SHA256       string `json:"sha256"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
+		return sdk.Result{}, err
+	}
+	if err := checkSHA(p.SHA256); err != nil {
 		return sdk.Result{}, err
 	}
 	now := c.now()
@@ -587,6 +601,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, errors.New("the broadcast needs a subject and content before it's scheduled")
 		}
 		when := at.Format(time.RFC3339)
+		sum := b.sum()
 		if call.DryRun {
 			who, n, err := c.reach(ctx, b)
 			if err != nil {
@@ -597,12 +612,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if b.Public {
 				pub = " It is public, so it's also posted on the creator profile."
 			}
-			after := plain(map[string]any{"recipients": who, "count": n, "subject": clip(b.Subject, 200), "from": from, "sendAt": when, "public": b.Public})
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Schedule emailing %q from %s to %d %s at %s. Sent emails can't be recalled.%s", clip(b.Subject, 100), from, n, who, when, pub),
+			// The content is authored, not personal data: shown in full, as sent.
+			after := plain(map[string]any{"recipients": who, "count": n, "subject": b.Subject, "previewText": b.PreviewText, "from": from, "sendAt": when, "public": b.Public,
+				"content": b.Content, "sha256": sum})
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Schedule emailing %q from %s to %d %s at %s (content sha256 %s). Sent emails can't be recalled.%s%s", clip(b.Subject, 100), from, n, who, when, sum, pub, changedNote("broadcast", p.SHA256, sum)),
 				Changes: []sdk.Change{{Target: "broadcast " + strconv.Itoa(b.ID), Op: "email", After: after}}}}, nil
 		}
 		if _, _, ok := b.audience(); !ok {
 			return sdk.Result{}, errors.New("this broadcast's recipients use a filter Conduit can't count (segments or exclusions); schedule it in Kit")
+		}
+		if err := sameContent("broadcast", p.SHA256, sum); err != nil {
+			return sdk.Result{}, err
 		}
 		after, err := c.update(ctx, b, &when)
 		if err != nil {
@@ -637,7 +657,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		res, err := sdk.JSON(map[string]any{"broadcast": b.ID, "status": "draft"})
 		if t, perr := time.Parse(time.RFC3339, was); perr == nil {
 			at := t.UTC().Format(time.RFC3339)
-			res.Undo = sdk.UndoWith("schedule_broadcast", map[string]any{"broadcast": b.ID, "at": at}, "Schedule the broadcast again for "+at)
+			res.Undo = sdk.UndoWith("schedule_broadcast", map[string]any{"broadcast": b.ID, "at": at, "sha256": b.sum()}, "Schedule the broadcast again for "+at)
 		}
 		return res, err
 	}
@@ -661,8 +681,9 @@ func (c *conn) createDraft(ctx context.Context, call sdk.Call, subject, preview,
 		return sdk.Result{}, errors.New("give the content as text (plain text) or as html, one of them")
 	case len(text) > 200000 || len(htm) > 500000:
 		return sdk.Result{}, errors.New("the content is too long")
-	case scriptRe.MatchString(htm):
-		return sdk.Result{}, errors.New("the html has a script tag; email clients don't run scripts, so remove it")
+	}
+	if bad := unsafeHTML(htm); bad != "" {
+		return sdk.Result{}, fmt.Errorf("the html has %s, which would run code in the web version of the email; remove it", bad)
 	}
 	for _, t := range tags {
 		if t <= 0 {

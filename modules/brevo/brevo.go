@@ -60,9 +60,8 @@ const defaultBase = "https://api.brevo.com/v3"
 const maxListPages = 20
 
 var (
-	keyRe    = regexp.MustCompile(`^xkeysib-[A-Za-z0-9-]{20,200}$`)
-	emailRe  = regexp.MustCompile(`^[A-Za-z0-9.!#$%&'*+=?^_{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+$`)
-	scriptRe = regexp.MustCompile(`(?i)<\s*/?\s*script\b`)
+	keyRe   = regexp.MustCompile(`^xkeysib-[A-Za-z0-9-]{20,200}$`)
+	emailRe = regexp.MustCompile(`^[A-Za-z0-9.!#$%&'*+=?^_{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+$`)
 )
 
 var statuses = map[string]bool{"draft": true, "sent": true, "queued": true, "suspended": true, "archive": true, "inProcess": true}
@@ -86,13 +85,13 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "transactional_stats", Title: "Transactional stats", Description: "Transactional email totals over the last days: requests, delivered, opens, clicks, bounces, blocked, spam reports and unsubscribes.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"days":{"type":"integer","default":7,"minimum":1,"maximum":90}}}`)},
 			{Name: "create_draft", Title: "Create a draft campaign", Description: "Creates a draft email campaign for some lists from plain text or HTML; nothing is sent. The preview shows the content in full. Undo deletes the draft.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["name","subject","lists"],"properties":{"name":{"type":"string","maxLength":200},"subject":{"type":"string","maxLength":200},"lists":{"type":"array","items":{"type":"integer","minimum":1},"minItems":1,"maxItems":20},"previewText":{"type":"string","maxLength":200},"senderEmail":{"type":"string","description":"One of the account's active senders (default: the only one)"},"text":{"type":"string","maxLength":200000,"description":"Plain-text content, sent as simple HTML; give text or html"},"html":{"type":"string","maxLength":500000,"description":"HTML content; script tags are refused"}}}`)},
+				Input: sdk.Schema(`{"type":"object","required":["name","subject","lists"],"properties":{"name":{"type":"string","maxLength":200},"subject":{"type":"string","maxLength":200},"lists":{"type":"array","items":{"type":"integer","minimum":1},"minItems":1,"maxItems":20},"previewText":{"type":"string","maxLength":200},"senderEmail":{"type":"string","description":"One of the account's active senders (default: the only one)"},"text":{"type":"string","maxLength":200000,"description":"Plain-text content, sent as simple HTML; give text or html"},"html":{"type":"string","maxLength":500000,"description":"HTML content; scripts, event handlers and javascript: links are refused"}}}`)},
 			{Name: "delete_draft", Title: "Delete a draft", Description: "Deletes a draft campaign for good. Only drafts; the preview names it.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
 			{Name: "send_test", Title: "Send a test email", Description: "Sends a test of a campaign to one address: the account's own, or one of the test recipients in this instance's settings. Any other address is refused.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `,"to":{"type":"string","description":"The address (default: the only test recipient, or the account's address)"}}}`)},
-			{Name: "send_campaign", Title: "Send a campaign", Description: "Sends a draft campaign to its lists now. Can't be taken back. The preview names each list with its subscriber count, the subject and the sender.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
+			{Name: "send_campaign", Title: "Send a campaign", Description: "Sends a draft campaign to its lists now. Can't be taken back. The preview names each list with its subscriber count, the subject and the sender, and shows the content and its sha256, which the run must give: it's refused if the campaign changed since.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `,"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The campaign's sha256 from the preview; needed to send, refused if the campaign changed since"}}}`)},
 		},
 	}
 }
@@ -233,6 +232,9 @@ type campaign struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	Subject     string `json:"subject"`
+	PreviewText string `json:"previewText"`
+	ReplyTo     string `json:"replyTo"`
+	HTML        string `json:"htmlContent"`
 	Type        string `json:"type"`
 	Status      string `json:"status"`
 	ScheduledAt string `json:"scheduledAt"`
@@ -245,6 +247,9 @@ type campaign struct {
 	Recipients struct {
 		Lists     []int `json:"lists"`
 		Exclusion []int `json:"exclusionLists"`
+		// Segments, in either name Brevo uses; only checked for being set.
+		Segments   json.RawMessage `json:"segments"`
+		SegmentIDs json.RawMessage `json:"segmentIds"`
 	} `json:"recipients"`
 	Statistics struct {
 		Global *struct {
@@ -283,12 +288,32 @@ func (cp campaign) brief() map[string]any {
 	return out
 }
 
+// segmented reports whether the campaign also goes to segments, whose size
+// Conduit can't show.
+func (cp campaign) segmented() bool {
+	for _, raw := range []json.RawMessage{cp.Recipients.Segments, cp.Recipients.SegmentIDs} {
+		if s := strings.TrimSpace(string(raw)); s != "" && s != "null" && s != "[]" {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *conn) campaign(ctx context.Context, id int) (campaign, error) {
+	return c.readCampaign(ctx, id, false)
+}
+
+// readCampaign reads a campaign, with its HTML when withHTML is set.
+func (c *conn) readCampaign(ctx context.Context, id int, withHTML bool) (campaign, error) {
 	if id <= 0 {
 		return campaign{}, errors.New("the campaign is its numeric id (see campaigns)")
 	}
+	q := url.Values{"statistics": {"globalStats"}, "excludeHtmlContent": {"true"}}
+	if withHTML {
+		q.Set("excludeHtmlContent", "false")
+	}
 	var cp campaign
-	if err := c.do(ctx, http.MethodGet, "/emailCampaigns/"+strconv.Itoa(id), url.Values{"statistics": {"globalStats"}, "excludeHtmlContent": {"true"}}, nil, &cp); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/emailCampaigns/"+strconv.Itoa(id), q, nil, &cp); err != nil {
 		return campaign{}, err
 	}
 	if cp.ID != id {
@@ -343,8 +368,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		Text        string `json:"text"`
 		HTML        string `json:"html"`
 		To          string `json:"to"`
+		SHA256      string `json:"sha256"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
+		return sdk.Result{}, err
+	}
+	if err := checkSHA(p.SHA256); err != nil {
 		return sdk.Result{}, err
 	}
 	switch call.Action {
@@ -472,7 +501,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(map[string]any{"campaign": cp.ID, "sentTo": to})
 
 	case "send_campaign":
-		cp, err := c.campaign(ctx, p.Campaign)
+		cp, err := c.readCampaign(ctx, p.Campaign, true)
 		if err != nil {
 			return sdk.Result{}, err
 		}
@@ -485,9 +514,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		default:
 			return sdk.Result{}, fmt.Errorf("the campaign is %s; only drafts can be sent", cp.Status)
 		}
+		if cp.segmented() {
+			return sdk.Result{}, errors.New("the campaign also goes to segments, whose size Conduit can't show; send it from Brevo")
+		}
 		if len(cp.Recipients.Lists) == 0 {
 			return sdk.Result{}, errors.New("the campaign has no lists to send to")
 		}
+		if strings.TrimSpace(cp.HTML) == "" {
+			return sdk.Result{}, errors.New("the campaign has no content yet")
+		}
+		// What's sent: recipients, subject, preview text, sender and HTML.
+		sum := fingerprint(cp.ID, cp.Recipients.Lists, cp.Recipients.Exclusion, cp.Subject, cp.PreviewText, cp.Sender.Name, cp.Sender.Email, cp.ReplyTo, cp.HTML)
 		if call.DryRun {
 			by, _, err := c.lists(ctx)
 			if err != nil {
@@ -498,20 +535,26 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			changes := []sdk.Change{}
 			for _, id := range cp.Recipients.Lists {
 				l, ok := by[id]
-				name := clip(l.Name, 100)
 				if !ok {
-					name = "#" + strconv.Itoa(id)
+					return sdk.Result{}, fmt.Errorf("the campaign's list %d can't be read, so its size can't be shown; check it in Brevo", id)
 				}
+				name := clip(l.Name, 100)
 				total += l.Subscribers
 				parts = append(parts, fmt.Sprintf("%s (%d)", name, l.Subscribers))
-				changes = append(changes, sdk.Change{Target: "list " + name, Op: "email", After: plain(map[string]any{"subscribers": l.Subscribers, "subject": clip(cp.Subject, 200), "from": cp.from()})})
+				changes = append(changes, sdk.Change{Target: "list " + name, Op: "email", After: plain(map[string]any{"subscribers": l.Subscribers})})
 			}
 			excl := ""
 			if len(cp.Recipients.Exclusion) > 0 {
 				excl = fmt.Sprintf(", minus %d exclusion lists", len(cp.Recipients.Exclusion))
 			}
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Email %q from %s to up to %d contacts now: %s%s. Sent emails can't be recalled.", clip(cp.Subject, 100), cp.from(), total, strings.Join(parts, ", "), excl),
+			// The content is authored, not personal data: shown in full, as sent.
+			changes = append(changes, sdk.Change{Target: "campaign " + strconv.Itoa(cp.ID), Op: "email", After: plain(map[string]any{"subject": cp.Subject, "previewText": cp.PreviewText,
+				"from": cp.from(), "replyTo": clip(cp.ReplyTo, 254), "html": cp.HTML, "sha256": sum})})
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Email %q from %s to up to %d contacts now: %s%s (content sha256 %s). Sent emails can't be recalled.%s", clip(cp.Subject, 100), cp.from(), total, strings.Join(parts, ", "), excl, sum, changedNote("campaign", p.SHA256, sum)),
 				Changes: changes}}, nil
+		}
+		if err := sameContent("campaign", p.SHA256, sum); err != nil {
+			return sdk.Result{}, err
 		}
 		if err := c.do(ctx, http.MethodPost, "/emailCampaigns/"+strconv.Itoa(cp.ID)+"/sendNow", nil, nil, nil); err != nil {
 			return sdk.Result{}, err
@@ -567,8 +610,9 @@ func (c *conn) createDraft(ctx context.Context, call sdk.Call, name, subject, pr
 		return sdk.Result{}, errors.New("give the content as text (plain text) or as html, one of them")
 	case len(text) > 200000 || len(htm) > 500000:
 		return sdk.Result{}, errors.New("the content is too long")
-	case scriptRe.MatchString(htm):
-		return sdk.Result{}, errors.New("the html has a script tag; email clients don't run scripts, so remove it")
+	}
+	if bad := unsafeHTML(htm); bad != "" {
+		return sdk.Result{}, fmt.Errorf("the html has %s, which would run code in the web version of the email; remove it", bad)
 	}
 	for _, l := range lists {
 		if l <= 0 {

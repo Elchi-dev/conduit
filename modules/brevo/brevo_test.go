@@ -31,7 +31,7 @@ func newFake() *fake {
 		1: {"id": 1, "name": "October", "subject": "News for October", "type": "classic", "status": "sent", "sentDate": "2026-10-01T09:00:00Z",
 			"sender": map[string]any{"name": "Acme", "email": "news@acme.test"}, "recipients": map[string]any{"lists": []int{2}},
 			"statistics": map[string]any{"globalStats": map[string]any{"sent": 120, "delivered": 118, "uniqueViews": 80, "uniqueClicks": 12}}},
-		2: {"id": 2, "name": "November", "subject": "News for November", "type": "classic", "status": "draft",
+		2: {"id": 2, "name": "November", "subject": "News for November", "type": "classic", "status": "draft", "htmlContent": "<p>November news</p>",
 			"sender": map[string]any{"name": "Acme", "email": "news@acme.test"}, "recipients": map[string]any{"lists": []int{2, 3}, "exclusionLists": []int{4}}},
 	}}
 }
@@ -84,7 +84,13 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case r.Method == "GET" && len(parts) == 1:
-			out(c)
+			cp := map[string]any{}
+			for k, v := range c {
+				if k != "htmlContent" || r.URL.Query().Get("excludeHtmlContent") == "false" {
+					cp[k] = v
+				}
+			}
+			out(cp)
 		case r.Method == "DELETE" && len(parts) == 1:
 			delete(f.campaigns, id)
 			w.WriteHeader(204)
@@ -164,12 +170,35 @@ func TestBrevo(t *testing.T) {
 		t.Fatal(err, f.tests)
 	}
 
-	// Sending: the preview names lists, counts, subject and sender.
+	// Sending: the preview names lists, counts, subject and sender, and
+	// shows the HTML with its sha256, which the send must give.
 	p, err = invoke(m, "send_campaign", `{"campaign":2}`, true)
-	if err != nil || p.Plan == nil || p.Plan.Summary != `Email "News for November" from Acme <news@acme.test> to up to 150 contacts now: Newsletter (120), Beta (30), minus 1 exclusion lists. Sent emails can't be recalled.` || len(f.sent) != 0 {
+	if err != nil || p.Plan == nil || len(f.sent) != 0 || len(p.Plan.Changes) != 3 {
 		t.Fatal(p.Plan, err)
 	}
-	if _, err := invoke(m, "send_campaign", `{"campaign":2}`, false); err != nil || len(f.sent) != 1 {
+	var shown struct {
+		HTML string `json:"html"`
+		SHA  string `json:"sha256"`
+	}
+	_ = json.Unmarshal(p.Plan.Changes[2].After, &shown)
+	sum := shown.SHA
+	if p.Plan.Summary != `Email "News for November" from Acme <news@acme.test> to up to 150 contacts now: Newsletter (120), Beta (30), minus 1 exclusion lists (content sha256 `+sum+`). Sent emails can't be recalled.` ||
+		shown.HTML != "<p>November news</p>" || len(sum) != 64 {
+		t.Fatal(p.Plan.Summary, shown)
+	}
+	if _, err := invoke(m, "send_campaign", `{"campaign":2}`, false); err == nil || len(f.sent) != 0 {
+		t.Fatal("sent without the preview's sha256")
+	}
+	f.mu.Lock()
+	f.campaigns[2]["htmlContent"] = "<p>Edited after the preview</p>"
+	f.mu.Unlock()
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sha256":"`+sum+`"}`, false); err == nil || !strings.Contains(err.Error(), "changed since") || len(f.sent) != 0 {
+		t.Fatal("sent content that changed after the preview", err)
+	}
+	f.mu.Lock()
+	f.campaigns[2]["htmlContent"] = "<p>November news</p>"
+	f.mu.Unlock()
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sha256":"`+sum+`"}`, false); err != nil || len(f.sent) != 1 {
 		t.Fatal(err)
 	}
 	if r, err := invoke(m, "send_campaign", `{"campaign":2}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") || len(f.sent) != 1 {
@@ -190,6 +219,8 @@ func TestBrevoValidation(t *testing.T) {
 		{"create_draft", `{"name":"x","subject":"y","lists":[2],"html":"<script src=\"//evil.test/x.js\"></script>"}`},
 		{"create_draft", `{"name":"x","subject":"y","lists":[2],"text":"t","senderEmail":"nope"}`},
 		{"send_campaign", `{"campaign":0}`},
+		{"send_campaign", `{"campaign":2,"sha256":"ABC"}`},
+		{"create_draft", `{"name":"x","subject":"y","lists":[2],"html":"<a href=\"jav&#x61;script:x()\">x</a>"}`},
 		{"campaign", `{"campaign":"1/../../account"}`},
 		{"send_test", `{"campaign":2,"to":"a@b"}`},
 		{"transactional_stats", `{"days":400}`},
@@ -234,5 +265,21 @@ func TestBrevoRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "b"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// A campaign that also goes to segments, or to a list that can't be read,
+// isn't sent: the preview couldn't show how many it reaches.
+func TestBrevoUncountableRecipients(t *testing.T) {
+	m, f := setup(t, goodKey, nil)
+	f.mu.Lock()
+	f.campaigns[2]["recipients"] = map[string]any{"lists": []int{2}, "segmentIds": []int{9}}
+	f.campaigns[4] = map[string]any{"id": 4, "subject": "S", "status": "draft", "htmlContent": "<p>x</p>", "recipients": map[string]any{"lists": []int{99}}}
+	f.mu.Unlock()
+	if _, err := invoke(m, "send_campaign", `{"campaign":2}`, true); err == nil || !strings.Contains(err.Error(), "segments") {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "send_campaign", `{"campaign":4}`, true); err == nil || !strings.Contains(err.Error(), "list 99") {
+		t.Fatal(err)
 	}
 }

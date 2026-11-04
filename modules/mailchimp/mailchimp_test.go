@@ -91,6 +91,12 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case r.Method == "PUT" && len(parts) == 2 && parts[1] == "content":
 			c["content"] = body
 			out(body)
+		case r.Method == "GET" && len(parts) == 2 && parts[1] == "content":
+			if ct, ok := c["content"]; ok {
+				out(ct)
+				return
+			}
+			out(map[string]any{"html": "<p>November news</p>", "plain_text": "November news"})
 		case r.Method == "POST" && len(parts) == 3 && parts[2] == "test":
 			for _, e := range body["test_emails"].([]any) {
 				f.tests = append(f.tests, e.(string))
@@ -178,12 +184,18 @@ func TestMailchimp(t *testing.T) {
 		t.Fatal(f.tests)
 	}
 
-	// Scheduling: preview names the audience, count, subject and sender.
+	// Scheduling: preview names the audience, count, subject and sender,
+	// and shows the content with its sha256, which the run must give.
 	p, err = invoke(m, "schedule_campaign", `{"campaign":"c2","at":"2026-11-10T09:15:00Z"}`, true)
-	if err != nil || p.Plan == nil || !strings.Contains(p.Plan.Summary, `"November" from Acme <news@acme.test> to 125 subscribers of audience "Newsletter" at 2026-11-10T09:15:00Z`) {
+	if err != nil || p.Plan == nil || !strings.Contains(p.Plan.Summary, `"November" from Acme <news@acme.test> to 125 subscribers of audience "Newsletter" at 2026-11-10T09:15:00Z`) ||
+		!strings.Contains(string(p.Plan.Changes[0].After), `"content":"<p>November news</p>"`) {
 		t.Fatal(p.Plan, err)
 	}
-	r, err = invoke(m, "schedule_campaign", `{"campaign":"c2","at":"2026-11-10T09:15:00Z"}`, false)
+	sum := planSHA(t, p)
+	if _, err := invoke(m, "schedule_campaign", `{"campaign":"c2","at":"2026-11-10T09:15:00Z"}`, false); err == nil || !strings.Contains(err.Error(), sum) || f.campaigns["c2"]["status"] != "save" {
+		t.Fatal("scheduled without the preview's sha256", err)
+	}
+	r, err = invoke(m, "schedule_campaign", `{"campaign":"c2","at":"2026-11-10T09:15:00Z","sha256":"`+sum+`"}`, false)
 	if err != nil || f.campaigns["c2"]["status"] != "schedule" || r.Undo == nil || r.Undo.Action != "unschedule_campaign" {
 		t.Fatal(r, err)
 	}
@@ -194,20 +206,42 @@ func TestMailchimp(t *testing.T) {
 		t.Fatal("sent a scheduled campaign")
 	}
 	r, err = invoke(m, "unschedule_campaign", `{"campaign":"c2"}`, false)
-	if err != nil || f.campaigns["c2"]["status"] != "save" || r.Undo == nil || string(r.Undo.Input) != `{"at":"2026-11-10T09:15:00Z","campaign":"c2"}` {
+	if err != nil || f.campaigns["c2"]["status"] != "save" || r.Undo == nil || string(r.Undo.Input) != `{"at":"2026-11-10T09:15:00Z","campaign":"c2","sha256":"`+sum+`"}` {
 		t.Fatal(r.Undo, err)
 	}
 	if r, err := invoke(m, "unschedule_campaign", `{"campaign":"c2"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatal(err)
 	}
 
-	// Sending.
+	// Sending: the content approved is the content sent. An edit after the
+	// preview (in Mailchimp, or by another call) makes the send refused.
 	p, err = invoke(m, "send_campaign", `{"campaign":"c2"}`, true)
-	if err != nil || p.Plan == nil || !strings.HasPrefix(p.Plan.Summary, `Email "November" from Acme <news@acme.test> to 125 subscribers`) || f.campaigns["c2"]["status"] != "save" {
+	if err != nil || p.Plan == nil || !strings.HasPrefix(p.Plan.Summary, `Email "November" from Acme <news@acme.test> to 125 subscribers`) || f.campaigns["c2"]["status"] != "save" || planSHA(t, p) != sum {
 		t.Fatal(p.Plan, err)
 	}
-	if _, err := invoke(m, "send_campaign", `{"campaign":"c2"}`, false); err != nil || f.campaigns["c2"]["status"] != "sending" {
+	f.mu.Lock()
+	f.campaigns["c2"]["content"] = map[string]any{"html": "<p>Something else</p>", "plain_text": "Something else"}
+	f.mu.Unlock()
+	if _, err := invoke(m, "send_campaign", `{"campaign":"c2","sha256":"`+sum+`"}`, false); err == nil || !strings.Contains(err.Error(), "changed since it was previewed") || f.campaigns["c2"]["status"] != "save" {
+		t.Fatal("sent content that changed after the preview", err)
+	}
+	if p, _ := invoke(m, "send_campaign", `{"campaign":"c2","sha256":"`+sum+`"}`, true); p.Plan == nil || !strings.Contains(p.Plan.Summary, "will be refused") {
+		t.Fatal(p.Plan)
+	}
+	f.mu.Lock()
+	f.campaigns["c2"]["settings"].(map[string]any)["subject_line"] = "Changed"
+	f.mu.Unlock()
+	p, _ = invoke(m, "send_campaign", `{"campaign":"c2"}`, true)
+	if sum2 := planSHA(t, p); sum2 == sum {
+		t.Fatal("a new subject kept the sha256")
+	} else if _, err := invoke(m, "send_campaign", `{"campaign":"c2","sha256":"`+sum2+`"}`, false); err != nil || f.campaigns["c2"]["status"] != "sending" {
 		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.campaigns["c4"] = map[string]any{"id": "c4", "type": "variate", "status": "save", "recipients": map[string]any{"list_id": "l1", "list_name": "Newsletter"}, "settings": map[string]any{}}
+	f.mu.Unlock()
+	if _, err := invoke(m, "send_campaign", `{"campaign":"c4"}`, true); err == nil || !strings.Contains(err.Error(), "variate") {
+		t.Fatal("previewed sending an A/B campaign", err)
 	}
 	if r, err := invoke(m, "send_campaign", `{"campaign":"c1"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatal(err)
@@ -231,6 +265,9 @@ func TestMailchimpValidation(t *testing.T) {
 		{"create_draft", `{"audience":"../lists","subject":"x","text":"a"}`},
 		{"create_draft", `{"audience":"l1","subject":"x","html":"<p>hi</p><script src=\"https://evil.test/x.js\"></script>"}`},
 		{"create_draft", `{"audience":"l1","subject":"x","html":"<SCRIPT>alert(1)</SCRIPT>"}`},
+		{"create_draft", `{"audience":"l1","subject":"x","html":"<a href=\"javascript:alert(1)\">x</a>"}`},
+		{"create_draft", `{"audience":"l1","subject":"x","html":"<img src=x onerror=alert(1)>"}`},
+		{"send_campaign", `{"campaign":"c2","sha256":"nothex"}`},
 		{"create_draft", `{"audience":"l1","subject":"x","text":"a","replyTo":"nope"}`},
 		{"send_campaign", `{"campaign":"c1/../../lists"}`},
 		{"campaign_report", `{"campaign":"a b"}`},
@@ -320,4 +357,15 @@ func TestMailchimpRefusesCrossHostRedirect(t *testing.T) {
 	if h := m.Health(context.Background(), "m"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
 	}
+}
+
+func planSHA(t *testing.T, p sdk.Result) string {
+	t.Helper()
+	var v struct {
+		SHA string `json:"sha256"`
+	}
+	if p.Plan == nil || json.Unmarshal(p.Plan.Changes[0].After, &v) != nil || len(v.SHA) != 64 || !strings.Contains(p.Plan.Summary, v.SHA) {
+		t.Fatalf("no sha256 in %+v", p.Plan)
+	}
+	return v.SHA
 }

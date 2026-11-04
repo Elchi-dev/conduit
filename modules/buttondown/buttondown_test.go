@@ -34,7 +34,7 @@ func newFake() *fake {
 	return &fake{emails: map[string]map[string]any{
 		sentID: {"id": sentID, "subject": "October", "status": "sent", "email_type": "public", "creation_date": "2026-10-01T08:00:00Z", "publish_date": "2026-10-01T09:00:00Z",
 			"absolute_url": "https://buttondown.com/acme/archive/october", "analytics": map[string]any{"recipients": 120, "opens": 80, "clicks": 12}},
-		draftID: {"id": draftID, "subject": "November", "status": "draft", "email_type": "public", "creation_date": "2026-11-01T08:00:00Z", "filters": map[string]any{"filters": []any{}, "groups": []any{}, "predicate": "and"}},
+		draftID: {"id": draftID, "subject": "November", "body": "# November\n\nAll the news.", "status": "draft", "email_type": "public", "creation_date": "2026-11-01T08:00:00Z", "filters": map[string]any{"filters": []any{}, "groups": []any{}, "predicate": "and"}},
 		privID:  {"id": privID, "subject": "Segment", "status": "draft", "email_type": "public", "filters": map[string]any{"filters": []any{map[string]any{"field": "tag", "value": "x"}}}},
 	}}
 }
@@ -152,10 +152,32 @@ func TestButtondown(t *testing.T) {
 
 	// Sending: the preview names the newsletter, count and subject.
 	p, err = invoke(m, "send_email", `{"email":"`+draftID+`"}`, true)
-	if err != nil || p.Plan == nil || !strings.HasPrefix(p.Plan.Summary, `Email "November" from Acme Weekly to 125 subscribers now (public email: regular 100, premium 20, gifted 2, trialed 3)`) || f.emails[draftID]["status"] != "draft" {
+	if err != nil || p.Plan == nil || !strings.HasPrefix(p.Plan.Summary, `Email "November" from Acme Weekly to 125 subscribers now (public email: regular 100, premium 20, gifted 2, trialed 3; content sha256 `) || f.emails[draftID]["status"] != "draft" {
 		t.Fatal(p.Plan, err)
 	}
-	if _, err := invoke(m, "send_email", `{"email":"`+draftID+`"}`, false); err != nil || f.emails[draftID]["status"] != "about_to_send" {
+	var shown struct {
+		Body string `json:"body"`
+		SHA  string `json:"sha256"`
+	}
+	_ = json.Unmarshal(p.Plan.Changes[0].After, &shown)
+	sum := shown.SHA
+	if shown.Body != "# November\n\nAll the news." || len(sum) != 64 || !strings.Contains(p.Plan.Summary, sum) {
+		t.Fatal(p.Plan)
+	}
+	// The send must give the preview's sha256; an edit since is refused.
+	if _, err := invoke(m, "send_email", `{"email":"`+draftID+`"}`, false); err == nil || f.emails[draftID]["status"] != "draft" {
+		t.Fatal("sent without the sha256")
+	}
+	f.mu.Lock()
+	f.emails[draftID]["body"] = "Edited after the preview"
+	f.mu.Unlock()
+	if _, err := invoke(m, "send_email", `{"email":"`+draftID+`","sha256":"`+sum+`"}`, false); err == nil || !strings.Contains(err.Error(), "changed since") || f.emails[draftID]["status"] != "draft" {
+		t.Fatal("sent a body that changed after the preview", err)
+	}
+	f.mu.Lock()
+	f.emails[draftID]["body"] = "# November\n\nAll the news."
+	f.mu.Unlock()
+	if _, err := invoke(m, "send_email", `{"email":"`+draftID+`","sha256":"`+sum+`"}`, false); err != nil || f.emails[draftID]["status"] != "about_to_send" {
 		t.Fatal(err)
 	}
 	if r, err := invoke(m, "send_email", `{"email":"`+sentID+`"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
@@ -176,6 +198,11 @@ func TestButtondownValidation(t *testing.T) {
 		{"create_draft", `{"subject":"x\nBcc: a@b.c","body":"b"}`},
 		{"create_draft", `{"subject":"x","body":"hi <script src=\"https://evil.test/x.js\"></script>"}`},
 		{"send_email", `{"email":"../subscribers"}`},
+		{"send_email", `{"email":"` + draftID + `","sha256":"zz"}`},
+		{"create_draft", `{"subject":"x","body":"[click](javascript:alert(1))"}`},
+		{"create_draft", `{"subject":"x","body":"[click][1]\n\n[1]: JavaScript:alert(1)"}`},
+		{"create_draft", `{"subject":"x","body":"<javascript:alert(1)>"}`},
+		{"create_draft", `{"subject":"x","body":"<img src=x onerror=alert(1)>"}`},
 		{"delete_draft", `{"email":"x"}`},
 		{"subscribers_count", `{"type":"everyone"}`},
 		{"emails", `{"status":"all"}`},
@@ -186,6 +213,11 @@ func TestButtondownValidation(t *testing.T) {
 	}
 	if len(f.seen) != 0 {
 		t.Fatal("bad input reached the server:", f.seen)
+	}
+	for _, ok := range []string{"[docs](https://example.test/js)", "JavaScript: tips and tricks", "<https://example.test>", "[a]: https://example.test"} {
+		if bad := unsafeMarkdown(ok); bad != "" {
+			t.Errorf("refused %q: %s", ok, bad)
+		}
 	}
 	raw, _ := json.Marshal(Config{Key: goodKey})
 	if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err == nil {

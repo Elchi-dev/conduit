@@ -120,6 +120,10 @@ recommended policies.
 | Lemon Squeezy | [lemonsqueezy.md](lemonsqueezy.md) | developer, team |
 | Paddle | [paddle.md](paddle.md) | developer, team |
 | Shopify | [shopify.md](shopify.md) | team, developer |
+| WooCommerce | [woocommerce.md](woocommerce.md) | team, developer |
+| BigCommerce | [bigcommerce.md](bigcommerce.md) | team, developer |
+| Gumroad | [gumroad.md](gumroad.md) | developer, team |
+| Printful | [printful.md](printful.md) | developer, team |
 | HubSpot | [hubspot.md](hubspot.md) | team |
 | Twilio | [twilio.md](twilio.md) | developer, team |
 | Cal.com | [calcom.md](calcom.md) | team, developer |

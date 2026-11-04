@@ -22,6 +22,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/bazarr"
 	"github.com/elchi-dev/conduit/modules/beszel"
 	"github.com/elchi-dev/conduit/modules/betterstack"
+	"github.com/elchi-dev/conduit/modules/bigcommerce"
 	"github.com/elchi-dev/conduit/modules/bitbucket"
 	"github.com/elchi-dev/conduit/modules/bitwardensm"
 	"github.com/elchi-dev/conduit/modules/bluesky"
@@ -91,6 +92,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/grafana"
 	"github.com/elchi-dev/conduit/modules/grocy"
 	"github.com/elchi-dev/conduit/modules/growthbook"
+	"github.com/elchi-dev/conduit/modules/gumroad"
 	"github.com/elchi-dev/conduit/modules/harbor"
 	"github.com/elchi-dev/conduit/modules/hashivault"
 	"github.com/elchi-dev/conduit/modules/headscale"
@@ -204,6 +206,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/posthog"
 	"github.com/elchi-dev/conduit/modules/postmark"
 	"github.com/elchi-dev/conduit/modules/powerdns"
+	"github.com/elchi-dev/conduit/modules/printful"
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/pterodactyl"
 	"github.com/elchi-dev/conduit/modules/qbittorrent"
@@ -282,6 +285,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/weather"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
+	"github.com/elchi-dev/conduit/modules/woocommerce"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
 	"github.com/elchi-dev/conduit/modules/youtrack"
 	"github.com/elchi-dev/conduit/modules/youtube"
@@ -477,6 +481,10 @@ func builtins(app *App) []sdk.Module {
 		lemonsqueezy.New(),
 		paddle.New(),
 		shopify.New(),
+		woocommerce.New(),
+		bigcommerce.New(),
+		gumroad.New(),
+		printful.New(),
 		hubspot.New(),
 		twilio.New(),
 		calcom.New(),

@@ -39,6 +39,10 @@ recommended policies.
 | TrueNAS | [truenas.md](truenas.md) | homelab |
 | Linear | [linear.md](linear.md) | developer, team |
 | PagerDuty | [pagerduty.md](pagerduty.md) | team, developer |
+| Opsgenie | [opsgenie.md](opsgenie.md) | team, developer |
+| incident.io | [incidentio.md](incidentio.md) | team, developer |
+| Statuspage | [statuspage.md](statuspage.md) | team, developer |
+| Instatus | [instatus.md](instatus.md) | team, developer |
 | Sentry | [sentry.md](sentry.md) | developer, team |
 | Tailscale | [tailscale.md](tailscale.md) | homelab, developer, team |
 | Headscale | [headscale.md](headscale.md) | homelab, developer |
@@ -172,6 +176,10 @@ recommended policies.
 | ESPHome | [esphome.md](esphome.md) | homelab |
 | Zigbee2MQTT | [zigbee2mqtt.md](zigbee2mqtt.md) | homelab |
 | Tasmota | [tasmota.md](tasmota.md) | homelab |
+| OctoPrint | [octoprint.md](octoprint.md) | homelab |
+| Moonraker (Klipper) | [moonraker.md](moonraker.md) | homelab |
+| Node-RED | [nodered.md](nodered.md) | homelab, developer |
+| Homebridge | [homebridge.md](homebridge.md) | homelab |
 | Bluesky | [bluesky.md](bluesky.md) | team, gamer |
 | Matrix | [matrix.md](matrix.md) | homelab, team |
 | Rocket.Chat | [rocketchat.md](rocketchat.md) | team |

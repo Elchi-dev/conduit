@@ -91,12 +91,15 @@ import (
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
 	"github.com/elchi-dev/conduit/modules/homebox"
+	"github.com/elchi-dev/conduit/modules/homebridge"
 	"github.com/elchi-dev/conduit/modules/hubspot"
 	"github.com/elchi-dev/conduit/modules/hue"
 	"github.com/elchi-dev/conduit/modules/huggingface"
 	"github.com/elchi-dev/conduit/modules/immich"
+	"github.com/elchi-dev/conduit/modules/incidentio"
 	"github.com/elchi-dev/conduit/modules/infisical"
 	"github.com/elchi-dev/conduit/modules/influxdb"
+	"github.com/elchi-dev/conduit/modules/instatus"
 	"github.com/elchi-dev/conduit/modules/intercom"
 	"github.com/elchi-dev/conduit/modules/invoiceninja"
 	"github.com/elchi-dev/conduit/modules/ionos"
@@ -137,6 +140,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/monday"
 	"github.com/elchi-dev/conduit/modules/mongodb"
 	"github.com/elchi-dev/conduit/modules/monica"
+	"github.com/elchi-dev/conduit/modules/moonraker"
 	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
 	"github.com/elchi-dev/conduit/modules/navidrome"
@@ -147,6 +151,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/nextcloudtalk"
 	"github.com/elchi-dev/conduit/modules/nocodb"
+	"github.com/elchi-dev/conduit/modules/nodered"
 	"github.com/elchi-dev/conduit/modules/nomad"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
@@ -157,6 +162,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/nzbget"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ocis"
+	"github.com/elchi-dev/conduit/modules/octoprint"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/omada"
 	"github.com/elchi-dev/conduit/modules/onepassword"
@@ -165,6 +171,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/openwrt"
 	"github.com/elchi-dev/conduit/modules/openxbl"
 	"github.com/elchi-dev/conduit/modules/opnsense"
+	"github.com/elchi-dev/conduit/modules/opsgenie"
 	"github.com/elchi-dev/conduit/modules/outline"
 	"github.com/elchi-dev/conduit/modules/ovhcloud"
 	"github.com/elchi-dev/conduit/modules/paddle"
@@ -213,6 +220,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/speedtest"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
+	"github.com/elchi-dev/conduit/modules/statuspage"
 	"github.com/elchi-dev/conduit/modules/steam"
 	"github.com/elchi-dev/conduit/modules/strapi"
 	"github.com/elchi-dev/conduit/modules/streamelements"
@@ -311,6 +319,10 @@ func builtins(app *App) []sdk.Module {
 		truenas.New(),
 		linear.New(),
 		pagerduty.New(),
+		opsgenie.New(),
+		incidentio.New(),
+		statuspage.New(),
+		instatus.New(),
 		sentry.New(),
 		tailscale.New(),
 		hetzner.New(),
@@ -414,6 +426,10 @@ func builtins(app *App) []sdk.Module {
 		esphome.New(),
 		zigbee2mqtt.New(),
 		tasmota.New(),
+		octoprint.New(),
+		moonraker.New(),
+		nodered.New(),
+		homebridge.New(),
 		bluesky.New(),
 		matrix.New(),
 		signal.New(),

@@ -15,6 +15,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/betterstack"
 	"github.com/elchi-dev/conduit/modules/bitbucket"
 	"github.com/elchi-dev/conduit/modules/bluesky"
+	"github.com/elchi-dev/conduit/modules/bookstack"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/consul"
@@ -26,6 +27,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/docker"
 	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/files"
+	"github.com/elchi-dev/conduit/modules/firefly"
 	"github.com/elchi-dev/conduit/modules/fly"
 	"github.com/elchi-dev/conduit/modules/frigate"
 	"github.com/elchi-dev/conduit/modules/games"
@@ -45,6 +47,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
 	"github.com/elchi-dev/conduit/modules/jira"
+	"github.com/elchi-dev/conduit/modules/karakeep"
 	"github.com/elchi-dev/conduit/modules/keycloak"
 	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
@@ -71,6 +74,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/opnsense"
+	"github.com/elchi-dev/conduit/modules/outline"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/paperless"
 	"github.com/elchi-dev/conduit/modules/pihole"
@@ -117,6 +121,7 @@ import (
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
+	"github.com/elchi-dev/conduit/modules/vikunja"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
@@ -254,6 +259,11 @@ func builtins(app *App) []sdk.Module {
 		signal.New(),
 		listmonk.New(),
 		ghost.New(),
+		bookstack.New(),
+		outline.New(),
+		vikunja.New(),
+		firefly.New(),
+		karakeep.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

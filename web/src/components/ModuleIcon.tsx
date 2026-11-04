@@ -56,6 +56,7 @@ const paths: Record<string, string> = {
   book: "M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z",
   battery: "M3 8h15v8H3zM18 10.5h2.5v3H18M6 10.5v3M9 10.5v3",
   plug: "M9 3.5V8M15 3.5V8M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5v4",
+  bookmark: "M6.5 3.5h11v17L12 16l-5.5 4.5z",
 };
 
 /** Synonyms a module author might reasonably use for a glyph above. */

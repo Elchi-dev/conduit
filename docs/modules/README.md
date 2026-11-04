@@ -120,6 +120,11 @@ recommended policies.
 | Signal (signal-cli-rest-api) | [signal.md](signal.md) | homelab |
 | listmonk | [listmonk.md](listmonk.md) | team, homelab |
 | Ghost | [ghost.md](ghost.md) | team |
+| BookStack | [bookstack.md](bookstack.md) | homelab, team |
+| Outline | [outline.md](outline.md) | team, developer |
+| Vikunja | [vikunja.md](vikunja.md) | homelab |
+| Firefly III | [firefly.md](firefly.md) | homelab |
+| Karakeep | [karakeep.md](karakeep.md) | homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

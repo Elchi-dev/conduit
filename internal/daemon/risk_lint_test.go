@@ -102,9 +102,10 @@ func TestRiskLintPattern(t *testing.T) {
 // An undo that would replay a secret value can't be kept, so such an action
 // mustn't claim to be reversible.
 var sensitiveUndo = map[string]string{
-	"consul.kv_create":        "kv_delete",       // deletes the key it created
-	"hashivault.write_secret": "restore_version", // restores the version that was current
-	"nextcloud.share":         "unshare",         // removes the link by its id
+	"consul.kv_create":           "kv_delete",          // deletes the key it created
+	"firefly.create_transaction": "delete_transaction", // deletes the transaction it recorded, by id
+	"hashivault.write_secret":    "restore_version",    // restores the version that was current
+	"nextcloud.share":            "unshare",            // removes the link by its id
 }
 
 // TestSensitiveUndo fails when a sensitive action claims an undo the audit

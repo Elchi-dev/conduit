@@ -38,6 +38,7 @@ type Config struct {
 
 type conn struct {
 	api      *rest.Client
+	host     string // the server's host[:port], for checking WebDAV hrefs
 	basePath string // the server address's path, for reading WebDAV hrefs
 }
 
@@ -135,7 +136,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		return nil
 	})
 	api.HTTP = rest.SameHostOnly(client)
-	m.set.Put(id, &conn{api: api, basePath: bp})
+	m.set.Put(id, &conn{api: api, host: u.Host, basePath: bp})
 	return nil
 }
 
@@ -406,16 +407,18 @@ func (c *conn) list(ctx context.Context, id string, segs []string, n int) (sdk.R
 		return sdk.Result{}, errors.New("unexpected answer from oCIS WebDAV")
 	}
 	self := "/" + strings.Join(segs, "/")
-	davRoot := c.basePath + prefix
+	// Hrefs are compared unescaped: oCIS escapes a share space's "!" and
+	// "$" in them, url.PathEscape escapes only the "!".
+	davRoot := c.basePath + "/dav/spaces/" + id
 	list := []map[string]any{}
 	more := false
 	for _, r := range ms.Responses {
-		href := r.Href
-		if u, err := url.Parse(href); err == nil {
-			href = u.Path // an absolute href, or one already unescaped
+		u, err := url.Parse(strings.TrimSpace(r.Href))
+		if err != nil || (u.Host != "" && !strings.EqualFold(u.Host, c.host)) {
+			continue // not a href into this server
 		}
-		rel, ok := strings.CutPrefix(href, davRoot)
-		if !ok {
+		rel, ok := strings.CutPrefix(u.Path, davRoot)
+		if !ok || (rel != "" && !strings.HasPrefix(rel, "/")) {
 			continue
 		}
 		rel = "/" + strings.Trim(rel, "/")

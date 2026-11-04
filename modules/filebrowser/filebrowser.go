@@ -6,6 +6,7 @@ package filebrowser
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -36,10 +37,11 @@ type Config struct {
 }
 
 type conn struct {
-	cfg  Config
-	host sdk.Host
-	base string // scheme://host/path, no trailing slash
-	api  *rest.Client
+	cfg      Config
+	host     sdk.Host
+	instance string
+	base     string // scheme://host/path, no trailing slash
+	api      *rest.Client
 
 	mu  sync.Mutex
 	jwt string
@@ -127,7 +129,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 			client = &http.Client{Timeout: 30 * time.Second, Transport: tr}
 		}
 	}
-	cn := &conn{cfg: c, host: h, base: u.Scheme + "://" + u.Host + strings.TrimRight(u.Path, "/")}
+	cn := &conn{cfg: c, host: h, instance: id, base: u.Scheme + "://" + u.Host + strings.TrimRight(u.Path, "/")}
 	cn.api = rest.New(cn.base, func(ctx context.Context, r *http.Request) error {
 		t, err := cn.token(ctx)
 		if err != nil {
@@ -241,11 +243,25 @@ func limit(n, def, max int) int {
 	return n
 }
 
+// idKey is the key link ids are made with: derived from the instance and
+// its password, so ids are stable across restarts but can't be worked back
+// to a link's hash without the password. File Browser's hashes are only 6
+// random bytes, few enough to try every one against a plain hash.
+func (c *conn) idKey(ctx context.Context) ([]byte, error) {
+	pw, err := c.host.Secret(ctx, c.cfg.Password)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256([]byte("conduit filebrowser link id\x00" + c.instance + "\x00" + strings.TrimRight(pw, "\r\n")))
+	return sum[:], nil
+}
+
 // linkID names a share without its hash: the hash is what opens the link,
 // so it stays out of undo tokens and the audit log.
-func linkID(hash string) string {
-	h := sha256.Sum256([]byte("filebrowser-share:" + hash))
-	return "l" + hex.EncodeToString(h[:12])
+func linkID(key []byte, hash string) string {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(hash))
+	return "l" + hex.EncodeToString(m.Sum(nil)[:12])
 }
 
 // Health implements sdk.Module.
@@ -322,13 +338,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(r)
 	case "shares":
+		key, err := c.idKey(ctx)
+		if err != nil {
+			return sdk.Result{}, err
+		}
 		ls, err := c.allShares(ctx)
 		if err != nil {
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
 		for _, l := range ls {
-			out = append(out, c.row(l))
+			out = append(out, c.row(key, l))
 		}
 		return sdk.JSON(out)
 	case "create_share":
@@ -451,8 +471,8 @@ type share struct {
 	// isn't decoded.
 }
 
-func (c *conn) row(l share) map[string]any {
-	r := map[string]any{"id": linkID(l.Hash), "url": c.base + "/share/" + url.PathEscape(l.Hash), "path": l.Path, "password": l.PasswordHash != ""}
+func (c *conn) row(key []byte, l share) map[string]any {
+	r := map[string]any{"id": linkID(key, l.Hash), "url": c.base + "/share/" + url.PathEscape(l.Hash), "path": l.Path, "password": l.PasswordHash != ""}
 	if l.Expire > 0 {
 		r["expires"] = time.Unix(l.Expire, 0).UTC().Format(time.RFC3339)
 		r["expired"] = time.Unix(l.Expire, 0).Before(time.Now())
@@ -481,6 +501,10 @@ func (c *conn) allShares(ctx context.Context) ([]share, error) {
 }
 
 func (c *conn) share(ctx context.Context, call sdk.Call, esc, clean string, p input) (sdk.Result, error) {
+	key, err := c.idKey(ctx)
+	if err != nil {
+		return sdk.Result{}, err
+	}
 	// The item must exist (and this says whether it's a folder).
 	var it item
 	if err := c.do(ctx, http.MethodGet, "/api/resources"+esc, nil, nil, &it); err != nil {
@@ -493,7 +517,7 @@ func (c *conn) share(ctx context.Context, call sdk.Call, esc, clean string, p in
 	if p.Password == "" && p.ExpireHours == 0 {
 		for _, l := range existing {
 			if hashRe.MatchString(l.Hash) && l.PasswordHash == "" && (l.Expire == 0 || time.Unix(l.Expire, 0).After(time.Now())) {
-				r := c.row(l)
+				r := c.row(key, l)
 				r["note"] = "nothing to change: the item already has a share link"
 				return sdk.JSON(r)
 			}
@@ -518,20 +542,24 @@ func (c *conn) share(ctx context.Context, call sdk.Call, esc, clean string, p in
 	if !hashRe.MatchString(l.Hash) {
 		return sdk.Result{}, errors.New("unexpected answer from File Browser")
 	}
-	res, err := sdk.JSON(c.row(l))
+	res, err := sdk.JSON(c.row(key, l))
 	// The undo names the link by its id, never by its hash.
-	res.Undo = sdk.UndoWith("delete_share", map[string]string{"id": linkID(l.Hash)}, "Delete the link to "+clean)
+	res.Undo = sdk.UndoWith("delete_share", map[string]string{"id": linkID(key, l.Hash)}, "Delete the link to "+clean)
 	return res, err
 }
 
 func (c *conn) unshare(ctx context.Context, call sdk.Call, id string) (sdk.Result, error) {
+	key, err := c.idKey(ctx)
+	if err != nil {
+		return sdk.Result{}, err
+	}
 	ls, err := c.allShares(ctx)
 	if err != nil {
 		return sdk.Result{}, err
 	}
 	var found *share
 	for i := range ls {
-		if linkID(ls[i].Hash) == id {
+		if hmac.Equal([]byte(linkID(key, ls[i].Hash)), []byte(id)) {
 			found = &ls[i]
 			break
 		}

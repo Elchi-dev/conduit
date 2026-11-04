@@ -5,6 +5,7 @@ package seafile
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -31,7 +32,12 @@ type Config struct {
 	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
 }
 
-type conn struct{ api *rest.Client }
+type conn struct {
+	api      *rest.Client
+	host     sdk.Host
+	tokenRef string
+	instance string
+}
 
 // Module implements sdk.Module.
 type Module struct {
@@ -115,7 +121,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		return nil
 	})
 	api.HTTP = rest.SameHostOnly(client)
-	m.set.Put(id, &conn{api: api})
+	m.set.Put(id, &conn{api: api, host: h, tokenRef: ref, instance: id})
 	return nil
 }
 
@@ -172,11 +178,26 @@ func checkRepo(s string) (string, error) {
 	return s, nil
 }
 
+// idKey is the key link ids are made with: derived from the instance and
+// its API token, so ids are stable across restarts but can't be worked
+// back to a link's token without the API token (some servers make tokens
+// of only 10 hex characters, few enough to try every one against a plain
+// hash).
+func (c *conn) idKey(ctx context.Context) ([]byte, error) {
+	t, err := c.host.Secret(ctx, c.tokenRef)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256([]byte("conduit seafile link id\x00" + c.instance + "\x00" + strings.TrimSpace(t)))
+	return sum[:], nil
+}
+
 // linkID names a share link without its token: the token is what opens the
 // link, so it stays out of undo tokens and the audit log.
-func linkID(token string) string {
-	h := sha256.Sum256([]byte("seafile-share:" + token))
-	return "l" + hex.EncodeToString(h[:12])
+func linkID(key []byte, token string) string {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(token))
+	return "l" + hex.EncodeToString(m.Sum(nil)[:12])
 }
 
 // Health implements sdk.Module.
@@ -277,13 +298,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				q.Set("path", path)
 			}
 		}
+		key, err := c.idKey(ctx)
+		if err != nil {
+			return sdk.Result{}, err
+		}
 		ls, err := c.links(ctx, q)
 		if err != nil {
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
 		for _, l := range ls {
-			out = append(out, l.row())
+			out = append(out, l.row(key))
 		}
 		return sdk.JSON(out)
 	case "create_share_link":
@@ -392,11 +417,21 @@ type link struct {
 	Created  string `json:"ctime"`
 	Expires  string `json:"expire_date"`
 	Expired  bool   `json:"is_expired"`
+	Perms    *struct {
+		CanEdit   bool `json:"can_edit"`
+		CanUpload bool `json:"can_upload"`
+	} `json:"permissions"`
 	// The password (some versions return it to the owner) isn't decoded.
 }
 
-func (l link) row() map[string]any {
-	r := map[string]any{"id": linkID(l.Token), "url": l.Link, "library": l.RepoName, "repo": l.RepoID, "path": l.Path, "name": l.ObjName,
+// viewOnly reports whether a link only lets people view and download: one
+// that can edit or upload isn't the link create_share_link promises.
+func (l link) viewOnly() bool {
+	return l.Perms == nil || (!l.Perms.CanEdit && !l.Perms.CanUpload)
+}
+
+func (l link) row(key []byte) map[string]any {
+	r := map[string]any{"id": linkID(key, l.Token), "url": l.Link, "library": l.RepoName, "repo": l.RepoID, "path": l.Path, "name": l.ObjName,
 		"folder": l.IsDir, "views": l.Views, "created": l.Created}
 	if l.Expires != "" {
 		r["expires"] = l.Expires
@@ -439,13 +474,19 @@ func (c *conn) links(ctx context.Context, q url.Values) ([]link, error) {
 }
 
 func (c *conn) share(ctx context.Context, call sdk.Call, repo, path string, p input) (sdk.Result, error) {
+	key, err := c.idKey(ctx)
+	if err != nil {
+		return sdk.Result{}, err
+	}
 	existing, err := c.links(ctx, url.Values{"repo_id": {repo}, "path": {path}})
 	if err != nil {
 		return sdk.Result{}, err
 	}
+	had := map[string]bool{}
 	for _, l := range existing {
-		if l.RepoID == repo && strings.TrimRight(l.Path, "/") == path && !l.Expired && p.Password == "" && p.ExpireDays == 0 {
-			r := l.row()
+		had[l.Token] = true
+		if l.RepoID == repo && strings.TrimRight(l.Path, "/") == path && !l.Expired && l.viewOnly() && p.Password == "" && p.ExpireDays == 0 {
+			r := l.row(key)
 			r["note"] = "nothing to change: the item already has a share link"
 			return sdk.JSON(r)
 		}
@@ -475,21 +516,33 @@ func (c *conn) share(ctx context.Context, call sdk.Call, repo, path string, p in
 	if !tokenRe.MatchString(l.Token) {
 		return sdk.Result{}, errors.New("unexpected answer from Seafile")
 	}
-	res, err := sdk.JSON(l.row())
-	id := linkID(l.Token)
+	if had[l.Token] {
+		// An older Seafile answers with the item's existing link instead of
+		// making one (and ignores the password and expiry). Undoing must not
+		// revoke a link that was there before.
+		r := l.row(key)
+		r["note"] = "Seafile returned the item's existing link instead of making a new one; the password and expiry asked for weren't applied"
+		return sdk.JSON(r)
+	}
+	res, err := sdk.JSON(l.row(key))
+	id := linkID(key, l.Token)
 	// The undo names the link by its id, never by its token.
 	res.Undo = sdk.UndoWith("revoke_share_link", map[string]string{"id": id}, "Revoke the link to "+path)
 	return res, err
 }
 
 func (c *conn) revoke(ctx context.Context, call sdk.Call, id string) (sdk.Result, error) {
+	key, err := c.idKey(ctx)
+	if err != nil {
+		return sdk.Result{}, err
+	}
 	ls, err := c.links(ctx, url.Values{})
 	if err != nil {
 		return sdk.Result{}, err
 	}
 	var found *link
 	for i := range ls {
-		if linkID(ls[i].Token) == id {
+		if hmac.Equal([]byte(linkID(key, ls[i].Token)), []byte(id)) {
 			found = &ls[i]
 			break
 		}

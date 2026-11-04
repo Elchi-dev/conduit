@@ -2,6 +2,8 @@ package filebrowser
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -138,6 +140,12 @@ func TestFileBrowser(t *testing.T) {
 	}
 	if strings.Contains(string(r.Undo.Input), "Hash") {
 		t.Fatalf("undo holds the hash: %s", r.Undo.Input)
+	}
+	// The id is keyed with the password: a plain hash of the link's 6-byte
+	// hash could be found by trying every one.
+	plain := sha256.Sum256([]byte("filebrowser-share:Hash0001"))
+	if strings.Contains(string(r.Undo.Input), hex.EncodeToString(plain[:12])) || !strings.Contains(string(r.Undo.Input), `"id":"l`) {
+		t.Fatalf("undo id: %s", r.Undo.Input)
 	}
 	if r2, err := invoke(m, "create_share", in, false); err != nil || !strings.Contains(string(r2.Output), "nothing to change") || len(f.shares) != 1 {
 		t.Fatalf("existing: %s %v", r2.Output, err)

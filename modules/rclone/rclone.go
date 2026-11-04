@@ -19,6 +19,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,6 +80,7 @@ var (
 	userRe     = regexp.MustCompile(`^[^\x00-\x1f\x7f:]{1,128}$`)
 	remoteRe   = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_. +@-]{0,63}$`)
 	driveRe    = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
+	versionRe  = regexp.MustCompile(`^v?(\d{1,4})\.(\d{1,4})(\.\d{1,6})?([-.+][A-Za-z0-9.+-]{0,40})?$`)
 )
 
 // Timing of a sync or copy preview. Variables so tests can shorten them.
@@ -581,6 +583,34 @@ func (c *conn) list(ctx context.Context, l location, recursive bool, n int) (sdk
 	return sdk.JSON(res)
 }
 
+// dryRunVersion checks the server is rclone v1.55 or later, the first to
+// take _config on an rc call. An older one ignores _config, so a preview
+// sent to it would run the sync or copy for real; and since a dry run counts
+// what it would transfer and delete in the job's stats, the stats can't
+// tell the two apart afterwards.
+func (c *conn) dryRunVersion(ctx context.Context) error {
+	var v struct {
+		Version    string  `json:"version"`
+		Decomposed []int64 `json:"decomposed"`
+	}
+	if err := c.rc(ctx, "core/version", nil, &v); err != nil {
+		return err
+	}
+	var major, minor int64
+	if len(v.Decomposed) >= 2 {
+		major, minor = v.Decomposed[0], v.Decomposed[1]
+	} else if m := versionRe.FindStringSubmatch(strings.TrimSpace(v.Version)); m != nil {
+		major, _ = strconv.ParseInt(m[1], 10, 64)
+		minor, _ = strconv.ParseInt(m[2], 10, 64)
+	} else {
+		return errors.New("rclone didn't say its version, so a dry-run preview can't be trusted to be one (it needs v1.55 or later)")
+	}
+	if major < 1 || major == 1 && minor < 55 {
+		return fmt.Errorf("rclone v%d.%d is too old for a dry-run preview: before v1.55 it ignores the dry-run setting and would run the transfer for real; upgrade rclone", major, minor)
+	}
+	return nil
+}
+
 func (c *conn) transfer(ctx context.Context, call sdk.Call, src, dst location) (sdk.Result, error) {
 	method := "sync/" + call.Action
 	verb := "Sync"
@@ -589,6 +619,9 @@ func (c *conn) transfer(ctx context.Context, call sdk.Call, src, dst location) (
 	}
 	body := map[string]any{"srcFs": src.String(), "dstFs": dst.String(), "_async": true}
 	if call.DryRun {
+		if err := c.dryRunVersion(ctx); err != nil {
+			return sdk.Result{}, err
+		}
 		body["_config"] = map[string]any{"DryRun": true}
 	}
 	var started struct {

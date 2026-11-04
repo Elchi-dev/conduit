@@ -41,3 +41,6 @@ plain http(s) URL without credentials, query or `..`. Conversation, message,
 account and agent ids are numbers, statuses come from fixed lists and texts
 are checked (up to 20,000 characters, no control characters) before they
 reach a request.
+Texts go as a message's `content`, which Chatwoot renders as Markdown (in
+the widget and in reply emails) with raw HTML left out, so markup an agent
+writes isn't passed on to the customer as HTML.

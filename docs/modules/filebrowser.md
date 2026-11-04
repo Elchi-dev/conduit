@@ -22,9 +22,11 @@ sees every user's share links. For a self-signed certificate, set
 | `delete_share` | destructive, sensitive | Deletes a link by its `id`; people with it can't open it any more. The preview names the path. |
 
 **Link ids.** A share's hash is what opens the link, so Conduit names each
-link by an id made from a one-way hash of it instead. That id is what
-`delete_share` takes and what the undo holds, so the audit log never keeps
-a working link.
+link by an id made from a keyed hash (HMAC-SHA-256) of it instead, keyed
+with the instance and its password: File Browser's hashes are only 6
+random bytes, so a plain hash could be reversed by trying them all. That id
+is what `delete_share` takes and what the undo holds, so the audit log
+never keeps a working link. Ids change when the password does.
 
 **Security.** The password is sent only to File Browser's sign-in, and the
 session token goes in the `X-Auth` header; the client won't follow a

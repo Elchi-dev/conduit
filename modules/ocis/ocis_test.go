@@ -62,6 +62,15 @@ func (f *fakeOCIS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
  <d:response><d:href>/o/dav/spaces/`+space+`/My%20Docs/a%20b.pdf</d:href><d:propstat><d:prop><d:resourcetype/><d:getcontentlength>5</d:getcontentlength><d:getcontenttype>application/pdf</d:getcontenttype><oc:fileid>fid1</oc:fileid></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>
   <d:propstat><d:prop><oc:size/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>
 </d:multistatus>`)
+	case r.Method == "PROPFIND" && r.URL.EscapedPath() == "/o/dav/spaces/a$b%21c/":
+		// A share space: oCIS escapes its "$" and "!" in hrefs.
+		w.WriteHeader(207)
+		io.WriteString(w, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">
+ <d:response><d:href>/o/dav/spaces/a%24b%21c/</d:href></d:response>
+ <d:response><d:href>/o/dav/spaces/a%24b%21c/x.txt</d:href></d:response>
+ <d:response><d:href>https://other.example/o/dav/spaces/a%24b%21c/LEAKME.txt</d:href></d:response>
+ <d:response><d:href>/o/dav/spaces/a%24b%21cd/LEAKME2.txt</d:href></d:response>
+</d:multistatus>`)
 	default:
 		w.WriteHeader(404)
 	}
@@ -124,6 +133,11 @@ func TestOCIS(t *testing.T) {
 			t.Fatal(err)
 		}
 		maxPropfind = old
+		f.huge = false
+		r, err := invoke(m, "list", `{"drive":"a$b!c"}`)
+		if err != nil || !strings.Contains(string(r.Output), `"path":"/x.txt"`) || strings.Contains(string(r.Output), "LEAKME") {
+			t.Fatalf("share space: %s %v", r.Output, err)
+		}
 	}
 }
 

@@ -35,6 +35,8 @@ and never from https to http. Website and session ids must have Crisp's
 exact shape, states come from fixed lists, texts are checked (up to 10,000
 characters, no control characters) and notes with a wildcard mention such
 as `@everyone` are refused, all before a request is made.
+Messages are sent as Crisp `text` messages, which the chat box shows as
+text with Crisp's light formatting, not as HTML.
 
 **Notes.** Messages and notes have no undo. Only text messages are sent;
 files and other message types show in `messages` without their content.

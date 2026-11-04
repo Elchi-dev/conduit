@@ -24,7 +24,8 @@ personal space's quota is critical or exceeded.
 won't follow a redirect to another host or from https to http. Space ids
 and paths are checked (no `..` parts, no control characters) before any
 request, and each path part is escaped. A folder listing is a WebDAV
-PROPFIND of depth 1, read up to 8 MB.
+PROPFIND of depth 1, read up to 8 MB; hrefs naming another host or
+outside the listed folder's space are skipped.
 
 ## Notes
 

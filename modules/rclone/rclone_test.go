@@ -27,7 +27,8 @@ type fakeRclone struct {
 	bodies  []map[string]any
 	jobs    map[int64]*job
 	next    int64
-	slow    bool // dry runs never finish
+	slow    bool   // dry runs never finish
+	version string // core/version's answer, when not v1.68.1
 }
 
 func (f *fakeRclone) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +52,10 @@ func (f *fakeRclone) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := func() int64 { n, _ := b["jobid"].(float64); return int64(n) }
 	switch m {
 	case "core/version":
+		if f.version != "" {
+			io.WriteString(w, f.version)
+			return
+		}
 		io.WriteString(w, `{"version":"v1.68.1","os":"linux"}`)
 	case "config/listremotes":
 		io.WriteString(w, `{"remotes":["gdrive","b2","secret-remote"]}`)
@@ -269,6 +274,31 @@ func TestRcloneValidation(t *testing.T) {
 	for _, meth := range []string{"core/command", "config/dump", "config/get", "backend/command", "options/set", "operations/purge", "operations/deletefile", "operations/delete"} {
 		if allowed[meth] {
 			t.Fatalf("%s is allowed", meth)
+		}
+	}
+}
+
+// An rclone older than v1.55 ignores _config: its "dry run" would sync for
+// real, so the preview is refused before anything starts.
+func TestRcloneDryRunNeedsV155(t *testing.T) {
+	in := `{"source":"gdrive:a","destination":"b2:a"}`
+	for _, v := range []string{`{"version":"v1.54.1","decomposed":[1,54,1]}`, `{"version":"v1.53.0"}`, `{"version":"LEAKME-custom"}`, `{}`} {
+		m, f := setup(t, nil)
+		f.version = v
+		if _, err := invoke(m, "sync", in, true); err == nil || strings.Contains(err.Error(), "LEAKME") {
+			t.Fatalf("%s: %v", v, err)
+		}
+		for _, meth := range f.methods {
+			if strings.HasPrefix(meth, "sync/") {
+				t.Fatalf("%s: started %s", v, meth)
+			}
+		}
+	}
+	for _, v := range []string{`{"version":"v1.55.0","decomposed":[1,55,0]}`, `{"version":"v1.69.0-beta.8443.2f0b1dd"}`, `{"version":"v2.0.0"}`} {
+		m, f := setup(t, nil)
+		f.version = v
+		if r, err := invoke(m, "copy", in, true); err != nil || r.Plan == nil {
+			t.Fatalf("%s: %v", v, err)
 		}
 	}
 }

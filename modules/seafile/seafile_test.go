@@ -2,6 +2,8 @@ package seafile
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,11 +24,16 @@ type fakeSeafile struct {
 	seen  []string
 	links map[string]string // token -> path
 	n     int
+	// editable links let people edit; old makes POST answer with the
+	// item's existing link, as Seafile before multiple links per item did.
+	editable map[string]bool
+	old      bool
 }
 
 func (f *fakeSeafile) link(tok, path string) string {
 	return fmt.Sprintf(`{"username":"alice@example.com","repo_id":%q,"repo_name":"Docs","path":%q,"obj_name":"report.pdf","is_dir":false,"token":%q,
-		"link":"https://sf.example.com/f/%s/","view_cnt":2,"ctime":"2026-11-01T00:00:00+00:00","expire_date":"","is_expired":false,"password":"LEAKME-PW"}`, repo, path, tok, tok)
+		"link":"https://sf.example.com/f/%s/","view_cnt":2,"ctime":"2026-11-01T00:00:00+00:00","expire_date":"","is_expired":false,"password":"LEAKME-PW",
+		"permissions":{"can_edit":%t,"can_download":true,"can_upload":false}}`, repo, path, tok, tok, f.editable[tok])
 }
 
 func (f *fakeSeafile) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +72,14 @@ func (f *fakeSeafile) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "POST" && r.URL.Path == "/seafile/api/v2.1/share-links/":
 		var b map[string]any
 		json.Unmarshal(body, &b)
+		if f.old {
+			for tok, path := range f.links {
+				if path == b["path"] {
+					io.WriteString(w, f.link(tok, path))
+					return
+				}
+			}
+		}
 		f.n++
 		tok := fmt.Sprintf("tok%017d", f.n)
 		f.links[tok] = b["path"].(string)
@@ -80,7 +95,7 @@ func (f *fakeSeafile) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func setup(t *testing.T, tok string) (*Module, *fakeSeafile) {
-	f := &fakeSeafile{links: map[string]string{}}
+	f := &fakeSeafile{links: map[string]string{}, editable: map[string]bool{}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	m := New()
@@ -198,5 +213,33 @@ func TestSeafileRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "s"); h.Status != "down" || leaked != "" || strings.Contains(h.Message, "good-token") {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestSeafileShareLinkReuseAndUndo(t *testing.T) {
+	m, f := setup(t, "secret://sf")
+	in := `{"repo":"` + repo + `","path":"/Docs/report.pdf"}`
+	// An existing link that lets people edit isn't handed out as a
+	// view-and-download link.
+	f.links["tok00000000000000099"] = "/Docs/report.pdf"
+	f.editable["tok00000000000000099"] = true
+	r, err := invoke(m, "create_share_link", in, false)
+	if err != nil || strings.Contains(string(r.Output), "tok00000000000000099") || r.Undo == nil || len(f.links) != 2 {
+		t.Fatalf("%s %+v %v", r.Output, r.Undo, err)
+	}
+	// An older server answers a POST with the existing link: no undo, since
+	// it would revoke a link that was there before.
+	m2, f2 := setup(t, "secret://sf")
+	f2.old = true
+	f2.links["tok00000000000000077"] = "/Docs/report.pdf"
+	r, err = invoke(m2, "create_share_link", `{"repo":"`+repo+`","path":"/Docs/report.pdf","password":"long-password"}`, false)
+	if err != nil || r.Undo != nil || !strings.Contains(string(r.Output), "weren't applied") || len(f2.links) != 1 {
+		t.Fatalf("%s %+v %v", r.Output, r.Undo, err)
+	}
+	// Ids are keyed with the API token: a plain hash of the link's token
+	// isn't one.
+	plain := sha256.Sum256([]byte("seafile-share:tok00000000000000077"))
+	if strings.Contains(string(r.Output), hex.EncodeToString(plain[:12])) || !strings.Contains(string(r.Output), `"id":"l`) {
+		t.Fatalf("%s", r.Output)
 	}
 }

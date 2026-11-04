@@ -44,3 +44,6 @@ the client follows redirects only within the same host and never from https
 to http. Ticket, view and agent ids are numbers, statuses come from a fixed
 list and texts are checked (up to 20,000 characters, no control characters)
 before they reach a request.
+Replies and notes go in the comment's plain-text `body` (never
+`html_body`), so the customer sees the text exactly as written; markup in
+it isn't rendered.

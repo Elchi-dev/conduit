@@ -27,7 +27,11 @@ self-signed certificate, set `fingerprint`.
 option as a job, waits up to 20 seconds for it, and turns its stats into
 the plan. When the dry run finds nothing to transfer or delete, the plan
 says so. A dry run that takes longer is stopped and the plan reports what
-it had found so far.
+it had found so far. Previews need rclone v1.55 or later (the first to
+take `_config`): an older rclone ignores the setting and would run the
+transfer for real, and a dry run's stats count what it would transfer, so
+they can't show afterwards which one ran. On an older or unidentified
+server the preview is refused before anything starts.
 
 **Security.** Only a fixed list of rc methods is called: `core/version`,
 `core/stats`, `config/listremotes`, `job/list`, `job/status`, `job/stop`,
@@ -42,8 +46,14 @@ won't follow a redirect to another host or from https to http.
 
 ## Notes
 
-- A remote of type `local` or `alias` reaches whatever folder it points
-  to; use `allowedRemotes` to keep such remotes out of an instance.
+- A remote of type `local` or `alias` (or `union`, `combine`, `crypt` over
+  a local folder) reaches whatever folder it points to, outside
+  `localRoots`; Conduit can't see a remote's type without reading its
+  configuration, so use `allowedRemotes` to keep such remotes out of an
+  instance.
+- A Windows drive path in `localRoots` (`C:/…`) only means a local folder
+  when rclone runs on Windows; elsewhere rclone reads `c:` as a remote
+  named `c`.
 - Undo isn't offered for `sync` or `copy`: files replaced or deleted at the
   destination can't be brought back through rclone.
 - Finished jobs are kept by rclone for a while (`--rc-job-expire-duration`,

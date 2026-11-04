@@ -16,7 +16,7 @@ one. For a self-signed certificate, set `fingerprint`.
 | `receivers` | read | The receivers' names. |
 | `silences` | read | Active and pending silences with their matchers, start, end, author and comment; `includeExpired` adds expired ones. |
 | `create_silence` | destructive | Mutes the alerts matching every matcher for `durationMinutes` (1 to 43200, default 120), with a `comment`. The preview shows the matchers and the time. Undo expires it. |
-| `expire_silence` | write | Ends a silence by id, so its alerts notify again. The preview shows what it covered. Undo silences the same matchers for the time it had left. |
+| `expire_silence` | write | Ends a silence by id, so its alerts notify again. The preview shows what it covered. Undo silences the same matchers for the time it had left (not for a silence that hadn't started yet, since the undo would start muting at once). |
 
 A silence stops every notification for what it matches, and a broad or long
 one can hide an outage, so creating one is destructive whatever its

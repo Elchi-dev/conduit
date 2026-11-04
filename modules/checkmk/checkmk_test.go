@@ -28,6 +28,7 @@ type fakeCMK struct {
 	acked     map[string]bool
 	downtimes []dt
 	next      int
+	twin      bool // a POST makes two identical downtimes
 }
 
 func (f *fakeCMK) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +103,11 @@ func (f *fakeCMK) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			d.service = b.Services[0]
 		}
 		f.downtimes = append(f.downtimes, d)
+		if f.twin {
+			f.next++
+			d.id = fmt.Sprint(f.next)
+			f.downtimes = append(f.downtimes, d)
+		}
 		w.WriteHeader(204)
 	case "POST /domain-types/downtime/actions/delete/invoke":
 		var b map[string]string
@@ -283,5 +289,38 @@ func TestCheckmkRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "c"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// The undo of schedule_downtime must end the downtime this call made, never
+// one that was there before (someone else's, with the same comment and end).
+func TestCheckmkDowntimeUndoSkipsOthers(t *testing.T) {
+	m, f := setup(t, "secret://cmk")
+	end := now.Add(90 * time.Minute).Format("2006-01-02T15:04:05+00:00")
+	// Starts a minute from now, so it doesn't cover the new one: one is
+	// made, and its id is lower than the old one's.
+	f.downtimes = []dt{{id: "99", host: "web1", comment: "rack move", start: now.Add(time.Minute).Format("2006-01-02T15:04:05+00:00"), end: end}}
+	r, err := invoke(m, "schedule_downtime", `{"host":"web1","durationMinutes":90,"comment":"rack move"}`, false)
+	if err != nil || len(f.downtimes) != 2 || r.Undo == nil || string(r.Undo.Input) != `{"id":"1","site":"mysite"}` {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// Two new ones fit (someone made the same at the same moment): which
+	// is ours can't be told, so there's no undo.
+	m, f = setup(t, "secret://cmk")
+	f.twin = true
+	r, err = invoke(m, "schedule_downtime", `{"host":"web1","durationMinutes":90,"comment":"rack move"}`, false)
+	if err != nil || len(f.downtimes) != 2 || r.Undo != nil {
+		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+// Ending a downtime that hasn't started has no undo: scheduling it again
+// would start it now.
+func TestCheckmkFutureDowntimeNoUndo(t *testing.T) {
+	m, f := setup(t, "secret://cmk")
+	f.downtimes = []dt{{id: "7", host: "web1", comment: "next week", start: now.Add(48 * time.Hour).Format("2006-01-02T15:04:05+00:00"), end: now.Add(50 * time.Hour).Format("2006-01-02T15:04:05+00:00")}}
+	r, err := invoke(m, "end_downtime", `{"id":"7","site":"mysite"}`, false)
+	if err != nil || len(f.downtimes) != 0 || r.Undo != nil {
+		t.Fatalf("%+v %v", r, err)
 	}
 }

@@ -230,3 +230,25 @@ func TestYouTrackRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+func TestYouTrackCommandPreviewNamesMentions(t *testing.T) {
+	m, f := setup(t, "secret://yt")
+	r, err := invoke(m, "apply_command", `{"issue":"PRJ-12","command":"State In Progress","comment":"@kim please check"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "the comment mentions @kim") || f.commands != 0 {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "apply_command", `{"issue":"PRJ-12","command":"State In Progress","comment":"@here look"}`, true); err == nil {
+		t.Fatal("a wildcard mention in the command's comment was accepted")
+	}
+}
+
+func TestYouTrackCreatePreviewNamesMentions(t *testing.T) {
+	m, _ := setup(t, "secret://yt")
+	r, err := invoke(m, "create_issue", `{"project":"PRJ","summary":"Disk","description":"cc @kim"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "its description mentions @kim") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "create_issue", `{"project":"PRJ","summary":"Disk","description":"@everyone"}`, true); err == nil {
+		t.Fatal("a wildcard mention in the description was accepted")
+	}
+}

@@ -84,7 +84,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"includeExpired":{"type":"boolean","default":false}}}`)},
 			{Name: "create_silence", Title: "Silence alerts", Description: "Mutes the alerts matching every matcher for 1 minute to 30 days, so nobody is notified about them. Hiding alerts can hide an outage, so this is destructive. Undo expires the silence.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["matchers","comment"],"properties":{` + matchers + `,"durationMinutes":{"type":"integer","minimum":1,"maximum":43200,"default":120},"comment":{"type":"string","description":"Why"}}}`)},
-			{Name: "expire_silence", Title: "Expire a silence", Description: "Ends a silence now, so its alerts notify again. Undo silences them again for the time it had left.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "expire_silence", Title: "Expire a silence", Description: "Ends a silence now, so its alerts notify again. Undo silences them again for the time it had left (when it had started).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Silence id (from silences)"}}}`)},
 		},
 	}
@@ -552,7 +552,13 @@ func (m *Module) expireSilence(ctx context.Context, c *conn, call sdk.Call, sid 
 		return sdk.Result{}, err
 	}
 	res, err := sdk.JSON(map[string]any{"expired": sid})
-	if end, perr := time.Parse(time.RFC3339, s.EndsAt); perr == nil {
+	// A silence that hadn't started yet isn't offered back: the undo would
+	// start muting now, hiding alerts the original never covered.
+	started := false
+	if st, serr := time.Parse(time.RFC3339, s.StartsAt); serr == nil && !st.After(m.clock()) && s.Status.State != "pending" {
+		started = true
+	}
+	if end, perr := time.Parse(time.RFC3339, s.EndsAt); perr == nil && started {
 		if left := end.Sub(m.clock()); left > time.Minute {
 			mins := int(math.Ceil(left.Minutes()))
 			if mins > maxSilence {

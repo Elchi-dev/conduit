@@ -20,7 +20,7 @@ them). For a self-signed certificate, set `fingerprint`.
 | `downtimes` | read | Id, site, host, service, start, end, author, comment and recurrence. `host` filters. |
 | `acknowledge` | destructive | Acknowledges a host or service problem with a `comment`. `sticky` (default on) keeps it until the host or service is OK; `notify` (default off) tells the contacts. With a preview; no undo. |
 | `schedule_downtime` | destructive | Puts a host (with its services) or one `service` into downtime from now for `durationMinutes` (1 to 43200, default 60), with a `comment`. The preview shows the target and the window. Undo ends it. |
-| `end_downtime` | write | Ends a downtime by `id` and `site`, so its target notifies again. The preview shows what it covered. Undo schedules it again for the time it had left. |
+| `end_downtime` | write | Ends a downtime by `id` and `site`, so its target notifies again. The preview shows what it covered. Undo schedules it again for the time it had left (not for a downtime that hadn't started yet or recurs, since the undo would start one at once). |
 
 Acknowledging and downtimes both stop notifications, and either can hide an
 outage, so both are destructive. Ending a downtime only lets notifications
@@ -37,6 +37,8 @@ text. Check output is cut at 500 characters and anything that looks like a
 credential in it is redacted.
 
 **Notes.** Checkmk answers a new downtime without its id, so the module
-finds it by its target, comment and end to offer the undo; if it can't, the
-downtime is created without one. Removing an acknowledgement over the API
+finds it by its target, comment, start and end to offer the undo, among the
+downtimes that weren't there before; if none or more than one fits (someone
+made the same one at the same moment), the downtime is created without one,
+so an undo never ends someone else's downtime. Removing an acknowledgement over the API
 needs Checkmk 2.4, so `acknowledge` has no undo: remove it in Checkmk.

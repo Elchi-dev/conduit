@@ -15,9 +15,9 @@ self-signed certificate, set `fingerprint`.
 | `projects` | read | Short name, name, description. `archived` includes archived projects. |
 | `issues` | read | Issues matching a `query` (`for: me #Unresolved`, `project: PRJ State: Open sort by: updated`): id, summary, project, resolved, fields (state, priority, assignee, tags …), updated, link. `limit` and `skip` page through them. |
 | `issue` | read | Everything above plus description, reporter and the 20 latest comments. |
-| `create_issue` | write | Creates an issue in a project (by short name) with a summary and Markdown description. Undo deletes it. |
+| `create_issue` | write | Creates an issue in a project (by short name) with a summary and Markdown description. The preview names the people the description @mentions, who are notified. Undo deletes it. |
 | `comment` | write | Adds a Markdown comment. The preview names the people it @mentions, who are notified. Undo deletes it. |
-| `apply_command` | destructive | Runs a YouTrack command on an issue (`State In Progress`, `for me`, `Priority Critical`, `tag Backend`), optionally with a comment, optionally `silent`. YouTrack checks the command first; the preview lists what it will do. |
+| `apply_command` | destructive | Runs a YouTrack command on an issue (`State In Progress`, `for me`, `Priority Critical`, `tag Backend`), optionally with a comment, optionally `silent`. YouTrack checks the command first (without running it); the preview lists what it will do and names the people the comment @mentions. |
 | `delete_comment` | destructive | Deletes a comment. |
 | `delete_issue` | destructive | Deletes the issue for good. The preview shows it. |
 
@@ -33,5 +33,5 @@ are never requested.
 
 - `apply_command` is destructive because a command can change any field,
   move or delete the issue; it has no undo.
-- Wildcard mentions such as `@all` are refused in comments and command
-  comments.
+- Wildcard mentions such as `@all` are refused in comments, command
+  comments and descriptions.

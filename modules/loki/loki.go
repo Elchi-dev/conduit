@@ -81,12 +81,12 @@ func (m *Module) Manifest() sdk.Manifest {
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the server certificate, for a self-signed one"},
 			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"}}}`),
 		Actions: []sdk.ActionSpec{
-			{Name: "query", Title: "Query logs", Description: "One LogQL query over the last minutes (default 60, at most 7 days). A log query returns at most 1000 lines (default 100), newest first, each cut at 2000 characters; a metric query returns at most 100 series of at most 1000 steps. At most 20 seconds. Logs can hold passwords and tokens, so results stay out of the audit log.", Risk: sdk.RiskRead, Sensitive: true,
+			{Name: "query", Title: "Query logs", Description: "One LogQL query over the last minutes (default 60, at most 7 days). A log query returns at most 1000 lines (default 100), newest first, each cut at 2000 characters; a metric query returns at most 100 series of at most 1000 steps. Ranges ([5m]) and offsets in the query reach back at most 7 days together. At most 20 seconds. Logs can hold passwords and tokens, so results stay out of the audit log.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["query"],"properties":{
 					"query":{"type":"string","x-multiline":true,"description":"e.g. {app=\"nginx\"} |= \"error\", or sum by (level) (count_over_time({app=\"nginx\"} | logfmt [5m]))"},
 					"sinceMinutes":{"type":"integer","minimum":1,"maximum":10080,"default":60},
 					"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100,"description":"Log lines, for a log query"},
-					"stepSeconds":{"type":"integer","minimum":1,"description":"Step of a metric query (default: the range in 250 steps)"},
+					"stepSeconds":{"type":"integer","minimum":1,"maximum":604800,"description":"Step of a metric query (default: the range in 250 steps)"},
 					"direction":{"type":"string","enum":["backward","forward"],"default":"backward","description":"Newest (backward) or oldest (forward) lines first"}}}`)},
 			{Name: "labels", Title: "Labels", Description: "Label names seen in the last minutes (default 60).", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"sinceMinutes":{"type":"integer","minimum":1,"maximum":10080,"default":60}}}`)},
@@ -267,7 +267,129 @@ func CheckQuery(q string) error {
 			return errors.New("the query holds a control character")
 		}
 	}
+	return checkLookback(q)
+}
+
+// maxLookback bounds a range ([5m]) plus an offset (offset 1h) in a query:
+// Loki reads that far back before the query's start, so without it
+// count_over_time({app="x"}[365d]) or offset 1y would scan a year of logs
+// whatever the time range.
+const maxLookback = time.Duration(maxMinutes) * time.Minute
+
+// checkLookback reads every range and offset in a query, outside string
+// literals and # comments, and refuses one it can't read or that reaches
+// back more than maxLookback.
+func checkLookback(q string) error {
+	var ranges, offsets []time.Duration
+	for i := 0; i < len(q); i++ {
+		switch ch := q[i]; {
+		case ch == '"' || ch == '`':
+			j := i + 1
+			for j < len(q) && q[j] != ch {
+				if ch == '"' && q[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			if j >= len(q) {
+				return errors.New("the query has a string that isn't closed")
+			}
+			i = j
+		case ch == '#':
+			for i < len(q) && q[i] != '\n' {
+				i++
+			}
+		case ch == '[':
+			j := strings.IndexByte(q[i:], ']')
+			if j < 0 {
+				return errors.New("the query has a [ that isn't closed")
+			}
+			body := strings.TrimSpace(q[i+1 : i+j])
+			if k := strings.IndexByte(body, ':'); k >= 0 { // [range:step]
+				body = strings.TrimSpace(body[:k])
+			}
+			d, ok := duration(body)
+			if !ok {
+				return fmt.Errorf("can't read the range [%s]; write it like [5m]", clip(body, 40))
+			}
+			ranges = append(ranges, d)
+			i += j
+		case isWordStart(ch) && (i == 0 || !isWord(q[i-1])):
+			j := i
+			for j < len(q) && isWord(q[j]) {
+				j++
+			}
+			if strings.EqualFold(q[i:j], "offset") {
+				k := j
+				for k < len(q) && (q[k] == ' ' || q[k] == '\t' || q[k] == '\n' || q[k] == '\r') {
+					k++
+				}
+				if k < len(q) && (q[k] == '-' || (q[k] >= '0' && q[k] <= '9')) {
+					e := k + 1
+					for e < len(q) && (isWord(q[e]) || q[e] == '.' || q[e] == 0xC2 || q[e] == 0xB5) {
+						e++
+					}
+					d, ok := duration(strings.TrimPrefix(q[k:e], "-"))
+					if !ok {
+						return fmt.Errorf("can't read the offset %s", clip(q[k:e], 40))
+					}
+					offsets = append(offsets, d)
+					j = e
+				}
+			}
+			i = j - 1
+		}
+	}
+	longest := func(ds []time.Duration) time.Duration {
+		var m time.Duration
+		for _, d := range ds {
+			if d > m {
+				m = d
+			}
+		}
+		return m
+	}
+	if longest(ranges)+longest(offsets) > maxLookback {
+		return errors.New("ranges and offsets in the query reach back at most 7 days together")
+	}
 	return nil
+}
+
+func isWordStart(c byte) bool { return c == '_' || (c|0x20 >= 'a' && c|0x20 <= 'z') }
+func isWord(c byte) bool      { return isWordStart(c) || (c >= '0' && c <= '9') }
+
+// durationUnits are the units LogQL reads in a duration (Prometheus' and
+// Go's).
+var durationUnits = map[string]time.Duration{
+	"y": 365 * 24 * time.Hour, "w": 7 * 24 * time.Hour, "d": 24 * time.Hour, "h": time.Hour, "m": time.Minute,
+	"s": time.Second, "ms": time.Millisecond, "us": time.Microsecond, "µs": time.Microsecond, "ns": time.Nanosecond,
+}
+
+var durationPart = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)(ms|us|µs|ns|y|w|d|h|m|s)`)
+
+// duration reads a duration like 5m, 1h30m, 1.5h or 2d; false when it
+// isn't one, or is beyond any bound (so it's refused, not wrapped).
+func duration(s string) (time.Duration, bool) {
+	if s == "" {
+		return 0, false
+	}
+	var total float64
+	for s != "" {
+		m := durationPart.FindStringSubmatch(s)
+		if m == nil {
+			return 0, false
+		}
+		n, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
+			return 0, false
+		}
+		total += n * float64(durationUnits[m[2]])
+		if total > float64(100*365*24*time.Hour) {
+			return 0, false
+		}
+		s = s[len(m[0]):]
+	}
+	return time.Duration(total), true
 }
 
 // Invoke implements sdk.Module.
@@ -347,8 +469,8 @@ func (c *conn) query(ctx context.Context, p input, start, end time.Time) (sdk.Re
 	}
 	span := end.Sub(start)
 	step := time.Duration(p.StepSeconds) * time.Second
-	if p.StepSeconds < 0 {
-		return sdk.Result{}, errors.New("the step is at least 1 second")
+	if p.StepSeconds < 0 || p.StepSeconds > maxMinutes*60 {
+		return sdk.Result{}, errors.New("the step is 1 second to 7 days")
 	}
 	if step == 0 {
 		step = span / 250

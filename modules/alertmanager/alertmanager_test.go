@@ -214,3 +214,17 @@ func TestAlertmanagerRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+// Expiring a silence that hasn't started has no undo: recreating it would
+// start muting now, before the window the original covered.
+func TestAlertmanagerPendingSilenceNoUndo(t *testing.T) {
+	m, f := setup(t, "secret://am")
+	id := "00000009-aaaa-bbbb-cccc-dddddddddddd"
+	f.silences[id] = map[string]any{"id": id, "status": map[string]any{"state": "pending"}, "comment": "tomorrow's maintenance",
+		"matchers": []map[string]any{{"name": "alertname", "value": "DiskFull", "isRegex": false, "isEqual": true}},
+		"startsAt": now.Add(24 * time.Hour).Format(time.RFC3339), "endsAt": now.Add(26 * time.Hour).Format(time.RFC3339)}
+	r, err := invoke(m, "expire_silence", `{"id":"`+id+`"}`, false)
+	if err != nil || r.Undo != nil {
+		t.Fatalf("%+v %v", r, err)
+	}
+}

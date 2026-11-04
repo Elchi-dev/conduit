@@ -100,7 +100,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["host","comment"],"properties":{` + target + `,"comment":{"type":"string"},"sticky":{"type":"boolean","default":true,"description":"Keep it until the host or service is OK, not just until the next state change"},"notify":{"type":"boolean","default":false,"description":"Notify the contacts about the acknowledgement"}}}`)},
 			{Name: "schedule_downtime", Title: "Schedule a downtime", Description: "Puts a host (with its services) or one service into downtime from now for 1 minute to 30 days, which suppresses its notifications. Destructive, since it can hide an outage. Undo ends the downtime.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["host","comment"],"properties":{` + target + `,"durationMinutes":{"type":"integer","minimum":1,"maximum":43200,"default":60},"comment":{"type":"string"}}}`)},
-			{Name: "end_downtime", Title: "End a downtime", Description: "Ends a downtime now, so its host or service notifies again. Undo schedules it again for the time it had left.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "end_downtime", Title: "End a downtime", Description: "Ends a downtime now, so its host or service notifies again. Undo schedules it again for the time it had left (when it had started).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id","site"],"properties":{"id":{"type":"string","description":"Downtime id (from downtimes)"},"site":{"type":"string","description":"Its site id (from downtimes)"}}}`)},
 		},
 	}
@@ -669,26 +669,32 @@ func (m *Module) scheduleDowntime(ctx context.Context, c *conn, call sdk.Call, p
 	res, err := sdk.JSON(map[string]any{"host": p.Host, "service": p.Service, "start": body["start_time"], "end": body["end_time"]})
 	// Checkmk answers 204 without the new downtime's id: find it by its
 	// target, comment and end, to offer the undo.
+	// Only a downtime that wasn't there before, with the same start too, and
+	// only when exactly one fits: ending someone else's downtime on undo
+	// would bring back notifications they silenced.
+	existed := map[string]bool{}
+	for _, d := range ds {
+		existed[d.Extensions.SiteID+"/"+d.ID] = true
+	}
 	if after, lerr := c.downtimes(ctx, p.Host); lerr == nil {
 		var found *downtime
+		n := 0
 		for i, d := range after {
+			s, serr := time.Parse(time.RFC3339, d.Extensions.Start)
 			e, perr := time.Parse(time.RFC3339, d.Extensions.End)
-			if !d.covers(p) || d.Extensions.Comment != p.Comment || perr != nil || math.Abs(e.Sub(end).Seconds()) > 60 || !dtRe.MatchString(d.ID) || !siteRe.MatchString(d.Extensions.SiteID) {
+			if existed[d.Extensions.SiteID+"/"+d.ID] || !d.covers(p) || d.Extensions.Comment != p.Comment || perr != nil || serr != nil ||
+				math.Abs(e.Sub(end).Seconds()) > 60 || math.Abs(s.Sub(start).Seconds()) > 60 || !dtRe.MatchString(d.ID) || !siteRe.MatchString(d.Extensions.SiteID) {
 				continue
 			}
-			if found == nil || atoi(d.ID) > atoi(found.ID) {
-				found = &after[i]
-			}
+			found, n = &after[i], n+1
 		}
-		if found != nil {
+		if n == 1 {
 			res, err = sdk.JSON(map[string]any{"id": found.ID, "site": found.Extensions.SiteID, "host": p.Host, "service": p.Service, "start": body["start_time"], "end": body["end_time"]})
 			res.Undo = sdk.UndoWith("end_downtime", map[string]string{"id": found.ID, "site": found.Extensions.SiteID}, "End the downtime on "+p.label())
 		}
 	}
 	return res, err
 }
-
-func atoi(s string) int64 { n, _ := strconv.ParseInt(s, 10, 64); return n }
 
 func (m *Module) endDowntime(ctx context.Context, c *conn, call sdk.Call, p input) (sdk.Result, error) {
 	ds, err := c.downtimes(ctx, "")
@@ -716,7 +722,11 @@ func (m *Module) endDowntime(ctx context.Context, c *conn, call sdk.Call, p inpu
 		return sdk.Result{}, err
 	}
 	res, err := sdk.JSON(map[string]any{"ended": p.ID, "site": p.Site, "host": target.Host, "service": target.Service})
-	if end, perr := time.Parse(time.RFC3339, d.Extensions.End); perr == nil && hostRe.MatchString(target.Host) {
+	// A downtime that hadn't started yet (or recurs) isn't offered back: the
+	// undo would start one now, hiding problems the original never covered.
+	start, serr := time.Parse(time.RFC3339, d.Extensions.Start)
+	started := serr == nil && !start.After(m.clock()) && (d.Extensions.Recurring == "" || d.Extensions.Recurring == "no")
+	if end, perr := time.Parse(time.RFC3339, d.Extensions.End); perr == nil && started && hostRe.MatchString(target.Host) {
 		if left := end.Sub(m.clock()); left > time.Minute {
 			mins := int(math.Ceil(left.Minutes()))
 			if mins > maxDowntime {

@@ -132,6 +132,8 @@ func TestLokiValidation(t *testing.T) {
 		{"query", `{"query":"{a=\"b\"}","limit":5000}`},
 		{"query", `{"query":"{a=\"b\"}","direction":"sideways"}`},
 		{"query", `{"query":"{a=\"b\"}","sinceMinutes":10080,"stepSeconds":1}`},
+		{"query", `{"query":"{a=\"b\"}","stepSeconds":36028797018963968}`},
+		{"query", `{"query":"count_over_time({a=\"b\"}[30d])"}`},
 		{"label_values", `{"label":"../labels"}`},
 		{"label_values", `{}`},
 	} {
@@ -180,5 +182,40 @@ func TestLokiRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "l"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestLokiBoundsLookback(t *testing.T) {
+	for _, q := range []string{
+		`count_over_time({a="b"}[8d])`,
+		`count_over_time({a="b"}[1y])`,
+		`count_over_time({a="b"}[169h])`,
+		`count_over_time({a="b"}[5m] offset 7d)`,
+		`count_over_time({a="b"}[5m] OFFSET -30d)`,
+		`count_over_time({a="b"}[6d]) / count_over_time({a="b"}[1h] offset 2d)`,
+		`count_over_time({a="b"}[$__range])`,
+		`count_over_time({a="b"}[5m`,
+		`count_over_time({a="b"}[99999999999999999999y])`,
+		`count_over_time({a="b"} |= "x # [" [30d])`,
+		`{a="b} [1m]`,
+		"count_over_time({a=\"b\"} # \" hidden\n[30d])",
+	} {
+		if err := CheckQuery(q); err == nil {
+			t.Errorf("accepted %s", q)
+		}
+	}
+	for _, q := range []string{
+		`{app="nginx"} |= "error"`,
+		`{app="nginx"} |~ "[0-9]+ [a-z]{3}" | json offset="x"`,
+		"{app=\"nginx\"} |= `[30d]`",
+		`sum by (level) (count_over_time({app="nginx"} | logfmt [5m]))`,
+		`rate({a="b"}[1h30m] offset 1d)`,
+		`count_over_time({a="b"}[7d])`,
+		`count_over_time({a="b"}[1.5h]) # a comment [30d]`,
+		`{a="b"} | offset > 5`,
+	} {
+		if err := CheckQuery(q); err != nil {
+			t.Errorf("refused %s: %v", q, err)
+		}
 	}
 }

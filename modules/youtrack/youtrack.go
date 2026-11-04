@@ -449,6 +449,11 @@ func (c *conn) create(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if len(p.Description) > maxText {
 		return sdk.Result{}, errors.New("the description is too long")
 	}
+	// People @mentioned in a description are notified, as in a comment.
+	found := mention.Find(p.Description)
+	if found.Wildcard != "" {
+		return sdk.Result{}, fmt.Errorf("%s would reach everyone; wildcard mentions aren't sent from Conduit", found.Wildcard)
+	}
 	var ps []project
 	if err := c.do(ctx, http.MethodGet, "/admin/projects", url.Values{"fields": {"id,shortName,name,archived"}, "$top": {"500"}}, nil, &ps); err != nil {
 		return sdk.Result{}, err
@@ -470,7 +475,11 @@ func (c *conn) create(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		body["description"] = d
 	}
 	if call.DryRun {
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Create issue %q in %s", sum, pr.ShortName),
+		s := fmt.Sprintf("Create issue %q in %s", sum, pr.ShortName)
+		if pv := found.Preview(); pv != "" {
+			s += "; its description " + pv
+		}
+		return sdk.Result{Plan: &sdk.Plan{Summary: s,
 			Changes: []sdk.Change{{Target: "issue in " + pr.ShortName, Op: "create", After: mustJSON(map[string]string{"summary": sum, "description": strings.TrimSpace(p.Description)})}}}}, nil
 	}
 	var i issue
@@ -527,8 +536,9 @@ func (c *conn) command(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 	if len(note) > maxText {
 		return sdk.Result{}, errors.New("the comment is too long")
 	}
-	if f := mention.Find(note); f.Wildcard != "" {
-		return sdk.Result{}, fmt.Errorf("%s would reach everyone; wildcard mentions aren't sent from Conduit", f.Wildcard)
+	found := mention.Find(note)
+	if found.Wildcard != "" {
+		return sdk.Result{}, fmt.Errorf("%s would reach everyone; wildcard mentions aren't sent from Conduit", found.Wildcard)
 	}
 	i, err := c.issue(ctx, p.Issue, "")
 	if err != nil {
@@ -561,7 +571,11 @@ func (c *conn) command(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 		if note != "" {
 			after["comment"] = note
 		}
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Apply %q to %s: %s", cmd, i.IDReadable, strings.Join(steps, "; ")),
+		sum := fmt.Sprintf("Apply %q to %s: %s", cmd, i.IDReadable, strings.Join(steps, "; "))
+		if pv := found.Preview(); pv != "" {
+			sum += "; the comment " + pv
+		}
+		return sdk.Result{Plan: &sdk.Plan{Summary: sum,
 			Changes: []sdk.Change{{Target: fmt.Sprintf("issue %s %q", i.IDReadable, i.Summary), Op: "command", After: mustJSON(after)}}}}, nil
 	}
 	body := map[string]any{"query": cmd, "issues": issues, "silent": p.Silent}

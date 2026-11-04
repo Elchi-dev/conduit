@@ -16,7 +16,10 @@ certificate, set `fingerprint`.
 | `labels` | read | Label names seen in the range. |
 | `label_values` | read | One label's values seen in the range, at most 1000. |
 
-Queries are bounded on every side: the range is at most 7 days, a metric
+Queries are bounded on every side: the range is at most 7 days, the
+ranges (`[5m]`) and offsets (`offset 1h`) written in a query reach back at
+most 7 days together (Loki reads that far before the range's start, so
+`[365d]` would otherwise scan a year), a metric
 query has at most 1000 steps (the step defaults to the range in 250 steps,
 and a smaller `stepSeconds` that would exceed 1000 is refused before the
 request), it returns at most 100 series, and a query stops after 20 seconds.

@@ -80,7 +80,11 @@ var (
 	percentRe = regexp.MustCompile(`^(10|[1-9])(\.[0-9])?%$|^0\.[1-9]%$`)
 	partRe    = regexp.MustCompile(`^([1-9][0-9]{0,3})/([1-9][0-9]{0,3})$`)
 	envNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,63}$`)
-	secretish = regexp.MustCompile(`KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL|PASS$`)
+	secretish = regexp.MustCompile(`KEY|SECRET|PASSWORD|TOKEN|CREDENTIAL|SAS|PASS$`)
+	// runsCommand matches settings under an allowed prefix that make a
+	// backend tool run a program (rclone's RCLONE_PASSWORD_COMMAND,
+	// Google's GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES).
+	runsCommand = regexp.MustCompile(`COMMAND|EXECUTABLE|PROCESS`)
 )
 
 // envPrefixes are the backend settings an instance may pass to restic.
@@ -142,7 +146,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		return errors.New("store the repository password in the vault and enter its secret:// reference")
 	}
 	for k, v := range c.Env {
-		if !envNameRe.MatchString(k) || !allowedEnv(k) {
+		if !envNameRe.MatchString(k) || !allowedEnv(k) || runsCommand.MatchString(k) {
 			return fmt.Errorf("%s isn't a backend setting restic is given (allowed: %s…, RESTIC_REST_USERNAME, RESTIC_REST_PASSWORD, RESTIC_COMPRESSION, RESTIC_PACK_SIZE, RESTIC_HOST)", k, strings.Join(envPrefixes, "…, "))
 		}
 		if strings.ContainsAny(v, "\r\n\x00") {
@@ -573,8 +577,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		defer c.busy.Unlock()
 		out, err := c.run(ctx, long, args...)
 		var re *runError
-		if errors.As(err, &re) && re.code == 1 {
-			// Exit 1 after a completed check: the repository has errors.
+		if errors.As(err, &re) && re.code == 1 && strings.Contains(re.stderr, "repository contains errors") {
+			// The check completed and found errors. Any other exit 1 (a
+			// backend that can't be reached) is a failure to check.
 			return sdk.JSON(map[string]any{"ok": false, "readData": p.ReadData, "summary": lastLines(string(out)+"\n"+re.stderr, 8)})
 		}
 		if err != nil {

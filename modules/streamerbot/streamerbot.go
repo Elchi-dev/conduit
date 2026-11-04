@@ -172,7 +172,7 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 	}
 	msg := fmt.Sprintf("%d actions", len(as))
 	if c.cfg.WebSocket != "" {
-		if err := c.withWS(ctx, func(*wsSession) error { return nil }); err != nil {
+		if err := c.withWS(ctx, func(context.Context, *wsSession) error { return nil }); err != nil {
 			return sdk.Health{Status: "degraded", Message: msg + "; the WebSocket server (for globals) doesn't answer: " + err.Error()}
 		}
 	}
@@ -242,11 +242,16 @@ func (s *wsSession) request(ctx context.Context, req map[string]any) (map[string
 	return msg, nil
 }
 
-func (c *conn) withWS(ctx context.Context, f func(*wsSession) error) error {
+// wsTimeout bounds a whole WebSocket session (a variable for tests).
+var wsTimeout = 15 * time.Second
+
+// withWS opens an authenticated session and runs f with a context bounded
+// by wsTimeout; f must use that context for its requests.
+func (c *conn) withWS(ctx context.Context, f func(context.Context, *wsSession) error) error {
 	if c.cfg.WebSocket == "" {
 		return errors.New("global variables come through Streamer.bot's WebSocket server: add its address in the settings")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, wsTimeout)
 	defer cancel()
 	ws, _, err := websocket.Dial(ctx, c.cfg.WebSocket, &websocket.DialOptions{HTTPClient: c.ws})
 	if err != nil {
@@ -278,7 +283,7 @@ func (c *conn) withWS(ctx context.Context, f func(*wsSession) error) error {
 			return errors.New("Streamer.bot refused the WebSocket password")
 		}
 	}
-	if err := f(s); err != nil {
+	if err := f(ctx, s); err != nil {
 		return err
 	}
 	return ws.Close(websocket.StatusNormalClosure, "")
@@ -414,7 +419,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			LastWrite string          `json:"lastWrite,omitempty"`
 		}
 		rows := []row{}
-		err := c.withWS(ctx, func(s *wsSession) error {
+		err := c.withWS(ctx, func(ctx context.Context, s *wsSession) error {
 			msg, err := s.request(ctx, map[string]any{"request": "GetGlobals", "persisted": persisted})
 			if err != nil {
 				return err

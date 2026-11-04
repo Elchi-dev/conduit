@@ -45,6 +45,8 @@ func (f *fakeNetBird) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `[%s,%s]`, f.peer("cabc1"), f.peer("cdef2"))
 	case "GET /api/peers/cabc1", "GET /api/peers/cdef2":
 		io.WriteString(w, f.peer(strings.TrimPrefix(r.URL.Path, "/api/peers/")))
+	case "GET /api/peers/cxyz3": // answers with another peer
+		io.WriteString(w, f.peer("cabc1"))
 	case "PUT /api/peers/cabc1", "PUT /api/peers/cdef2":
 		id := strings.TrimPrefix(r.URL.Path, "/api/peers/")
 		var b map[string]any
@@ -152,6 +154,10 @@ func TestNetBirdValidation(t *testing.T) {
 	}
 	if len(f.seen) != 0 {
 		t.Fatalf("invalid input reached the server: %v", f.seen)
+	}
+	// The peer changed is the one asked for, whatever the server answers.
+	if _, err := invoke(m, "approve_peer", `{"peer":"cxyz3"}`, false); err == nil || len(f.seen) != 1 {
+		t.Fatalf("changed another peer: %v %v", err, f.seen)
 	}
 	for _, c := range []Config{{Token: "nbp_plain"}, {URL: "netbird.example.com", Token: "secret://nb"}, {URL: "https://nb.example.com/?x=1", Token: "secret://nb"}} {
 		raw, _ := json.Marshal(c)

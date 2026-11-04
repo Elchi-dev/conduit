@@ -60,6 +60,8 @@ func (f *fakeHeadscale) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"nodes":[%s,%s]}`, f.node("1"), f.node("2"))
 	case r.Method == "GET" && (p == "/node/1" || p == "/node/2"):
 		fmt.Fprintf(w, `{"node":%s}`, f.node(p[6:]))
+	case r.Method == "GET" && p == "/node/3": // answers with another node
+		fmt.Fprintf(w, `{"node":%s}`, f.node("1"))
 	case r.Method == "GET" && p == "/user":
 		io.WriteString(w, `{"users":[{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","profilePicUrl":"https://x/LEAKME","createdAt":"2026-01-01T00:00:00Z","provider":"oidc"}]}`)
 	case r.Method == "GET" && p == "/preauthkey":
@@ -237,6 +239,10 @@ func TestHeadscaleValidation(t *testing.T) {
 		if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err == nil {
 			t.Fatalf("accepted %+v", c)
 		}
+	}
+	// The node acted on is the one asked for, whatever the server answers.
+	if _, err := invoke(m, "expire_node", `{"node":"3"}`, false); err == nil || len(f.seen) != 1 {
+		t.Fatalf("acted on another node: %v %v", err, f.seen)
 	}
 	bad, _ := setup(t, "secret://bad", false)
 	if h := bad.Health(context.Background(), "h"); h.Status != "down" || h.Message != "Headscale refused the API key" {

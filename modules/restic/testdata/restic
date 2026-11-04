@@ -34,6 +34,10 @@ stats)
 	echo '{"total_size":123456,"total_uncompressed_size":234567,"compression_ratio":1.9,"compression_space_saving":47.4,"total_file_count":100,"total_blob_count":250,"snapshots_count":3}'
 	;;
 check)
+	if [ -f "$HOME/unreachable" ]; then
+		echo "Fatal: unable to open repository: dial tcp: connection refused" >&2
+		exit 1
+	fi
 	echo "using temporary cache in /tmp/restic-check-cache"
 	echo "load indexes"
 	echo "check all packs"

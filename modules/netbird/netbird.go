@@ -443,6 +443,10 @@ func (c *conn) setApproval(ctx context.Context, call sdk.Call, id string) (sdk.R
 	if p.ID == "" {
 		return sdk.Result{}, fmt.Errorf("there's no peer %s", id)
 	}
+	if p.ID != id {
+		// The id goes into the update's path and the undo.
+		return sdk.Result{}, fmt.Errorf("NetBird answered with another peer for %s", id)
+	}
 	if p.ApprovalRequired != approve {
 		return sdk.JSON(map[string]any{"peer": p.ID, "name": p.label(), "approved": approve, "note": "nothing to change"})
 	}

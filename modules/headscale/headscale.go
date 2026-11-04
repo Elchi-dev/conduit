@@ -216,6 +216,10 @@ func (c *conn) node(ctx context.Context, id string) (node, error) {
 	if err == nil && res.Node.ID == "" {
 		return node{}, fmt.Errorf("there's no node %s", id)
 	}
+	if err == nil && res.Node.ID != id {
+		// The id goes into the paths of the calls that follow.
+		return node{}, fmt.Errorf("Headscale answered with another node for %s", id)
+	}
 	return res.Node, err
 }
 

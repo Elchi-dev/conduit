@@ -75,7 +75,8 @@ func (f *fakeVLC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{"type":"node","id":"1","name":"Playlist","children":[
 				{"type":"leaf","id":"4","name":"Intro","duration":90,"uri":"smb://user:secretpw@nas/music/intro.flac","current":"current"},
 				{"type":"node","id":"9","name":"Folder","children":[{"type":"leaf","id":"5","name":"Main Theme","duration":200,"uri":"file:///x"}]},
-				{"type":"leaf","id":"6","name":"Credits","duration":-1,"uri":"file:///y"}]},
+				{"type":"leaf","id":"6","name":"Credits","duration":-1,"uri":"file:///y"},
+				{"type":"leaf","id":"8","name":"http://iptv.example:8080/live/alice/hunter22pw/123.ts","duration":-1,"uri":"http://iptv.example:8080/live/alice/hunter22pw/123.ts"}]},
 			{"type":"node","id":"2","name":"Media Library","children":[{"type":"leaf","id":"7","name":"Library item","uri":"file:///z"}]}]}`)
 	default:
 		w.WriteHeader(404)
@@ -113,6 +114,11 @@ func TestVLC(t *testing.T) {
 		t.Fatalf("now_playing %s %v", r.Output, err)
 	}
 
+	// A stream named after its URL loses the parts that can hold credentials.
+	if got := safeName("rtsp://cam:pw@10.0.0.5/live?token=abc"); got != "rtsp://10.0.0.5/live?…" {
+		t.Fatalf("safeName %q", got)
+	}
+
 	// Pause, then undo resumes.
 	if r, err := call(m, "pause", `{}`, true); err != nil || r.Plan == nil || f.state != "playing" {
 		t.Fatalf("dry run %v %q", err, f.state)
@@ -124,6 +130,10 @@ func TestVLC(t *testing.T) {
 	r, err = call(m, r.Undo.Action, string(r.Undo.Input), false)
 	if err != nil || f.state != "playing" || r.Undo == nil || r.Undo.Action != "pause" {
 		t.Fatalf("resume %v %q", err, f.state)
+	}
+	// A preview promises no change that the call wouldn't make.
+	if r, err := call(m, "play", `{}`, true); err != nil || r.Plan != nil || !strings.Contains(string(r.Output), `"unchanged":true`) {
+		t.Fatalf("dry-run play while playing %+v %v", r.Plan, err)
 	}
 	if r, err := call(m, "play", `{}`, false); err != nil || !strings.Contains(string(r.Output), `"unchanged":true`) || r.Undo != nil {
 		t.Fatalf("play while playing %s %v", r.Output, err)
@@ -148,10 +158,11 @@ func TestVLC(t *testing.T) {
 	}
 
 	r, err = call(m, "playlist", `{}`, false)
-	if err != nil || !strings.Contains(string(r.Output), `"total":3`) || !strings.Contains(string(r.Output), `{"id":"4","name":"Intro","duration":90,"current":true}`) {
+	if err != nil || !strings.Contains(string(r.Output), `"total":4`) || !strings.Contains(string(r.Output), `{"id":"4","name":"Intro","duration":90,"current":true}`) ||
+		!strings.Contains(string(r.Output), `"name":"http://iptv.example:8080/live/…"`) {
 		t.Fatalf("playlist %s %v", r.Output, err)
 	}
-	if strings.Contains(string(r.Output), "secretpw") || strings.Contains(string(r.Output), "Library item") {
+	if strings.Contains(string(r.Output), "secretpw") || strings.Contains(string(r.Output), "hunter22pw") || strings.Contains(string(r.Output), "Library item") {
 		t.Fatalf("playlist shows a URI or the library: %s", r.Output)
 	}
 

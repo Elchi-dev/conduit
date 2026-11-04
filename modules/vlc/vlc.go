@@ -126,7 +126,17 @@ type status struct {
 
 func (s status) meta(k string) string {
 	v, _ := s.Info.Category.Meta[k].(string)
-	return v
+	return safeName(v)
+}
+
+// safeName shortens a name that is a network address. VLC names a stream
+// without a title after its URL, and those carry credentials: in the user
+// part, the query, or the path (IPTV addresses like /live/<user>/<pass>/1.ts).
+func safeName(s string) string {
+	if strings.Contains(s, "://") {
+		return rest.ShortURL(s)
+	}
+	return s
 }
 
 func (s status) title() string {
@@ -250,16 +260,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		want := map[string]string{"play": "playing", "pause": "paused"}[call.Action]
-		if call.DryRun {
-			return sdk.Result{Plan: plan(strings.ToUpper(call.Action[:1])+call.Action[1:]+" VLC", "VLC", map[string]string{"state": before.State}, map[string]string{"state": want})}, nil
-		}
 		if before.State == want {
 			return sdk.JSON(map[string]any{"state": before.State, "unchanged": true})
 		}
+		if call.Action == "pause" && before.State == "stopped" {
+			return sdk.Result{}, errors.New("VLC is stopped; there's nothing to pause")
+		}
+		if call.DryRun {
+			return sdk.Result{Plan: plan(strings.ToUpper(call.Action[:1])+call.Action[1:]+" VLC", "VLC", map[string]string{"state": before.State}, map[string]string{"state": want})}, nil
+		}
 		var cmd string
 		switch {
-		case call.Action == "pause" && before.State == "stopped":
-			return sdk.Result{}, errors.New("VLC is stopped; there's nothing to pause")
 		case call.Action == "pause":
 			cmd = "pl_forcepause"
 		case before.State == "paused":
@@ -362,7 +373,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 					total++
 					if len(items) < limit {
 						// The URI is left out: a network share's can hold its password.
-						items = append(items, item{ID: ch.ID, Name: ch.Name, Duration: max(ch.Duration, 0), Current: ch.Current == "current"})
+						items = append(items, item{ID: ch.ID, Name: safeName(ch.Name), Duration: max(ch.Duration, 0), Current: ch.Current == "current"})
 					}
 					continue
 				}

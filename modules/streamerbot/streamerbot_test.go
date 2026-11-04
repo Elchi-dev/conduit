@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -30,6 +31,7 @@ type fakeSB struct {
 	ran      []map[string]any
 	password string
 	redirect string
+	silent   bool // never answer GetGlobals
 }
 
 func (f *fakeSB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +95,9 @@ func (f *fakeSB) serveWS(w http.ResponseWriter, r *http.Request) {
 				send(map[string]any{"id": id, "status": "error", "error": "Authentication failed"})
 			}
 		case "GetGlobals":
+			if f.silent {
+				continue
+			}
 			if !authed {
 				send(map[string]any{"id": id, "status": "error", "error": "not authenticated"})
 				continue
@@ -210,6 +215,19 @@ func TestStreamerBotBadPassword(t *testing.T) {
 	m3, _, _ := setup(t, "", Config{WebSocket: "-"})
 	if _, err := call(m3, "globals", `{}`, false); err == nil || !strings.Contains(err.Error(), "WebSocket server") {
 		t.Fatalf("globals without a WebSocket address: %v", err)
+	}
+}
+
+// A WebSocket server that never answers the request is given up on after
+// wsTimeout, not waited on for as long as the caller's context allows.
+func TestStreamerBotSilentWebSocket(t *testing.T) {
+	defer func(d time.Duration) { wsTimeout = d }(wsTimeout)
+	wsTimeout = 300 * time.Millisecond
+	m, f, _ := setup(t, "", Config{})
+	f.silent = true
+	start := time.Now()
+	if _, err := call(m, "globals", `{}`, false); err == nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("globals from a silent server: %v after %s", err, time.Since(start))
 	}
 }
 

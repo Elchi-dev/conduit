@@ -132,6 +132,14 @@ func TestRestic(t *testing.T) {
 	if r, err := invoke(m, "check", `{}`, false); err != nil || !strings.Contains(string(r.Output), `"ok":false`) || !strings.Contains(string(r.Output), "repository contains errors") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
+	// Exit 1 without a finished check (a backend that can't be reached) is
+	// an error, not a report that the repository is damaged.
+	os.Remove(filepath.Join(home, "broken"))
+	os.WriteFile(filepath.Join(home, "unreachable"), nil, 0o600)
+	if r, err := invoke(m, "check", `{}`, false); err == nil || !strings.Contains(err.Error(), "connection refused") || r.Output != nil {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	os.Remove(filepath.Join(home, "unreachable"))
 	if _, err := invoke(m, "forget", `{"ids":["99999999"]}`, false); err == nil || !strings.Contains(err.Error(), "no snapshot") {
 		t.Fatal(err)
 	}
@@ -213,6 +221,9 @@ func TestResticValidation(t *testing.T) {
 		{Repository: repo, Password: "secret://pw", Env: map[string]string{"LD_PRELOAD": "/tmp/x.so"}},
 		{Repository: repo, Password: "secret://pw", Env: map[string]string{"RESTIC_PASSWORD_COMMAND": "cat /etc/shadow"}},
 		{Repository: repo, Password: "secret://pw", Env: map[string]string{"B2_ACCOUNT_KEY": "plain-key"}},
+		{Repository: repo, Password: "secret://pw", Env: map[string]string{"AZURE_ACCOUNT_SAS": "sv=2024&sig=plain"}},
+		{Repository: repo, Password: "secret://pw", Env: map[string]string{"RCLONE_PASSWORD_COMMAND": "secret://x"}},
+		{Repository: repo, Password: "secret://pw", Env: map[string]string{"GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES": "1"}},
 		{Repository: repo, Password: "secret://pw", Binary: "restic"},
 		{Repository: repo, Password: "secret://pw", TimeoutMinutes: 5000},
 	} {

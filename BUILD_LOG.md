@@ -3,6 +3,31 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · After 1.0, late afternoon (262 modules, reviews 25–29)
+
+- **Modules 242–262:** backends and CMS (PocketBase, Appwrite, Directus,
+  Strapi, NocoDB, with a shared validated record filter in
+  `modules/internal/records`), money and time (Ghostfolio, Invoice Ninja,
+  Kimai, WakaTime), AI compute (Replicate, RunPod, Vast.ai, ElevenLabs),
+  help desks (Intercom, Crisp, Help Scout, FreeScout) and file sync
+  (Seafile, File Browser, ownCloud Infinite Scale, rclone).
+- **Decisions:** starting a GPU rental is destructive (it spends by the
+  hour), unlike starting a cloud server. rclone calls only a fixed list of
+  rc methods and never reads its config. Share links are named by a hash of
+  their secret part, so undo tokens never hold a link.
+- **Review 25:** mail addresses must be plain, so the preview names the
+  real recipient; encoded-word subjects; a replaced Microsoft refresh
+  token wins; meeting previews show the body.
+- **Review 26:** Directus refuses nested writes through relations (they
+  could create admin users); NocoDB lookups never show e-mails; PocketBase
+  refuses views over auth collections.
+- **Review 27:** Invoice Ninja email previews name the real recipients
+  (the invitations); amounts keep their decimals.
+- **Review 28:** server text is redacted before it is shortened, in the
+  new modules and seven older ones.
+- **Review 29:** help desks that render HTML get escaped plain text, so
+  agents can't put links or hidden content into customer mail.
+
 ## 2026-11-04 · After 1.0, evening (241 modules, reviews 20–24)
 
 - **Modules 220–241:** clouds (Azure, Google Cloud, OVHcloud, IONOS),

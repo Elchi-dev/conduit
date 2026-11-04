@@ -26,6 +26,21 @@ and why.
   PBS verify runs only what the preview counted.
 - **CI:** GitHub Actions still starts no jobs (zero steps), the repository
   is private; verified locally instead.
+- **Modules 323–325:** Wiki.js, MediaWiki and HedgeDoc, with a shared
+  `modules/internal/textdiff` for edit previews that never quote removed
+  text. Content edits undo by reading the earlier revision back (outline's
+  approach), so no old content lands in the audit log.
+- **Review 43:** ioBroker aliases are judged by their target; openHAB items
+  linked to a lock's channel are critical; German device names are
+  recognised. Then extended to Homebridge, Zigbee2MQTT and ESPHome.
+- **Review 44:** mailcow's queue flush sent the action where mailcow
+  doesn't read it (it flushed nothing); role accounts are refused through
+  +tags and aliases.
+- **Home Assistant (found while widening the German words):** turn_on,
+  turn_off and toggle worked on any entity, so a garage relay needed no
+  approval. Critical entities now need the new destructive
+  `turn_critical`. A sweep of every module for actions whose harmless
+  name hides a risky effect followed.
 
 ## 2026-11-04 · After 1.0, night (286 modules, reviews 32–34)
 

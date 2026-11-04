@@ -5,7 +5,7 @@ and why.
 
 ## 2026-11-04 · v1.0.0
 
-Released ~09:00 CET from ff2d970: 105 modules, signed for every platform,
+Released 05:49 CET from ff2d970: 105 modules, signed for every platform,
 after seven independent reviews and a seventh-review pass that made
 revealing secrets destructive and kept undo working for sensitive actions
 whose undo carries no secret (core.keepUndo). The 1.0 polish: twelve module

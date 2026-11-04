@@ -29,7 +29,7 @@ owner and a company equally; never tailor it to one setup.
   console, mDNS discovery, home tiles, guides, browser tests and an
   accessibility pass in CI, installing signed modules from a hub,
   restricted vault folders for teams.
-- **Released v1.0.0 (Wed 4 Nov, ~09:00 CET):** 105 modules, signed builds
+- **Released v1.0.0 (Wed 4 Nov, 05:49 CET):** 105 modules, signed builds
   for every platform (39 files), owner tests it now.
 - **Now:** toward v1.1 before Thu 00:00: smart-home devices (Hue, Shelly,
   ESPHome, Zigbee2MQTT, Tasmota) and analytics/uptime (Plausible, Umami,

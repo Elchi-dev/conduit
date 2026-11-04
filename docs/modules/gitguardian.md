@@ -22,8 +22,10 @@ dashboard.eu1.gitguardian.com; the default, `us`, is dashboard.gitguardian.com.
 An incident already in the state asked for is left as it is. Resolving or
 ignoring works on open incidents (triggered or assigned); one that's
 resolved or ignored is reopened first. After a change, the incident is read
-back, and a server that kept it as it was makes the action fail with that
-explanation.
+back, and a server that kept it as it was (or dropped the revoked answer or
+the ignore reason) makes the action fail with that explanation. The
+dashboard link is shown only for an https address on a gitguardian.com host,
+never a share link.
 
 **Security.** The key goes in the `Authorization` header to the region's
 fixed API host, and the client won't follow a redirect to another host or

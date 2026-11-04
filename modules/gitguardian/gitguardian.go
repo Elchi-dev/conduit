@@ -388,7 +388,7 @@ func (c *conn) detail(ctx context.Context, id int64) (sdk.Result, error) {
 	}
 	out := i.row()
 	if i.Dashboard != "" {
-		if u, err := url.Parse(i.Dashboard); err == nil && u.Scheme == "https" && strings.HasSuffix(u.Host, "gitguardian.com") {
+		if u, err := url.Parse(i.Dashboard); err == nil && dashboardLink(u) {
 			out["dashboard"] = u.Scheme + "://" + u.Host + u.EscapedPath()
 		}
 	}
@@ -415,6 +415,19 @@ func (c *conn) detail(ctx context.Context, id int64) (sdk.Result, error) {
 	out["locations"] = occ
 	out["locationsTruncated"] = i.Occurrences > len(occ)
 	return sdk.JSON(out)
+}
+
+// dashboardLink accepts only an incident page on a GitGuardian dashboard
+// host: not a look-alike host (evilgitguardian.com) or a public share link.
+func dashboardLink(u *url.URL) bool {
+	if u.Scheme != "https" || u.User != nil || u.Port() != "" {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	if h != "gitguardian.com" && !strings.HasSuffix(h, ".gitguardian.com") || strings.HasPrefix(h, "share.") {
+		return false
+	}
+	return !strings.Contains(strings.ToLower(u.Path), "/share")
 }
 
 func open(status string) bool { return status == "TRIGGERED" || status == "ASSIGNED" }
@@ -445,7 +458,8 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id int64, revoked *boo
 		verb, endpoint = "Resolve", "/resolve"
 		body = map[string]any{"secret_revoked": *revoked}
 		after["status"], after["secretRevoked"] = "RESOLVED", *revoked
-		done = func(x incident) bool { return x.Status == "RESOLVED" }
+		want := *revoked
+		done = func(x incident) bool { return x.Status == "RESOLVED" && x.SecretRevoked == want }
 		undo = sdk.UndoWith("reopen_incident", map[string]int64{"incident": id}, fmt.Sprintf("Reopen incident %d", id))
 	case "ignore_incident":
 		if i.Status == "IGNORED" && i.IgnoreReason == reason {
@@ -457,7 +471,7 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id int64, revoked *boo
 		verb, endpoint = "Ignore", "/ignore"
 		body = map[string]any{"ignore_reason": reason}
 		after["status"], after["ignoreReason"] = "IGNORED", reason
-		done = func(x incident) bool { return x.Status == "IGNORED" }
+		done = func(x incident) bool { return x.Status == "IGNORED" && x.IgnoreReason == reason }
 		undo = sdk.UndoWith("reopen_incident", map[string]int64{"incident": id}, fmt.Sprintf("Reopen incident %d", id))
 	case "reopen_incident":
 		if open(i.Status) {
@@ -488,7 +502,7 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id int64, revoked *boo
 		return sdk.Result{}, err
 	}
 	if !done(now) {
-		return sdk.Result{}, fmt.Errorf("GitGuardian kept incident %d as it was", id)
+		return sdk.Result{}, fmt.Errorf("GitGuardian didn't apply the change to incident %d (now %s)", id, strings.ToLower(clip(now.Status, 12)))
 	}
 	out := map[string]any{"incident": id, "type": i.kind(), "status": clip(now.Status, 12)}
 	if undo == nil {

@@ -20,7 +20,10 @@ out of the audit log, approvals and events.
 **Security.** The token goes in the `Authorization` header, and the client
 won't follow a redirect to another host or from https to http. Queries are
 sent as GraphQL variables, never pasted into the request. The module sets
-the result count itself, so a query with `count:` is refused. GraphQL
+the result count itself, so a query with `count:` (anywhere, also inside
+parentheses) is refused; the caps on results and lines are applied again to
+the answer. Commit, diff and other result types are counted only: no
+authors, emails or diffs are requested. GraphQL
 errors are passed on with credentials masked.
 
 **Notes.** Masking catches keys, tokens and `password=` style values, not

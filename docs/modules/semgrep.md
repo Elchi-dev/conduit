@@ -17,8 +17,11 @@ token's own deployment is used when it's empty.
 
 A finding already in the state asked for is left as it is. `triage_finding`
 needs the finding's repository (both come from `findings`), since the
-finding is looked up there first. Semgrep also triages the same finding on
-the repository's other branches.
+finding is looked up there first. The triage request names the finding's id
+and also carries the repository filter and a limit of one, so it can't reach
+other findings should the id ever be ignored. Semgrep also triages the same
+finding on the repository's other branches; if its answer names findings
+outside the repository, the action fails and says how many were changed.
 
 **Security.** The token goes in the `Authorization` header to semgrep.dev
 only, and the client won't follow a redirect to another host or from https

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,8 @@ type fakeGG struct {
 	status  map[int64]string
 	reason  map[int64]string
 	revoked map[int64]bool
+	// dropBody makes resolve and ignore keep revoked false and the reason empty.
+	dropBody bool
 }
 
 func (g *fakeGG) incident(id int64, occ bool) string {
@@ -72,10 +75,16 @@ func (g *fakeGG) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/resolve"):
 		g.status[id] = "RESOLVED"
 		g.revoked[id], _ = b["secret_revoked"].(bool)
+		if g.dropBody {
+			g.revoked[id] = false
+		}
 		io.WriteString(w, g.incident(id, false))
 	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/ignore"):
 		g.status[id] = "IGNORED"
 		g.reason[id], _ = b["ignore_reason"].(string)
+		if g.dropBody {
+			g.reason[id] = ""
+		}
 		io.WriteString(w, g.incident(id, false))
 	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/reopen"):
 		g.status[id], g.reason[id], g.revoked[id] = "TRIGGERED", "", false
@@ -123,6 +132,7 @@ func TestGitGuardian(t *testing.T) {
 		{"incident", `{"incident":7}`, `"commit":"d670460"`},
 		{"incident", `{"incident":7}`, `"file":"config/prod.env"`},
 		{"incident", `{"incident":7}`, `"repository":"acme/api"`},
+		{"incident", `{"incident":7}`, `"dashboard":"https://dashboard.gitguardian.com/workspace/1/incidents/7"`},
 	} {
 		r, err := invoke(m, c.action, c.in, false)
 		if err != nil || !strings.Contains(string(r.Output), c.want) {
@@ -172,6 +182,39 @@ func TestGitGuardian(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		if (a.Name == "resolve_incident" || a.Name == "ignore_incident") && (a.Risk != sdk.RiskDestructive || !a.DryRun || !a.Reversible) {
 			t.Fatalf("%s is %s", a.Name, a.Risk)
+		}
+	}
+}
+
+// A resolve that loses the revoked flag, or an ignore that loses its reason,
+// is reported, not taken as done: undo would otherwise set back a state
+// GitGuardian never had.
+func TestGitGuardianChecksTheChange(t *testing.T) {
+	m, g := setup(t, "secret://gg")
+	g.dropBody = true
+	if _, err := invoke(m, "resolve_incident", `{"incident":7,"revoked":true}`, false); err == nil || !strings.Contains(err.Error(), "didn't apply") {
+		t.Fatal(err)
+	}
+	g.status[7] = "TRIGGERED"
+	if _, err := invoke(m, "ignore_incident", `{"incident":7,"reason":"low_risk"}`, false); err == nil || !strings.Contains(err.Error(), "didn't apply") {
+		t.Fatal(err)
+	}
+}
+
+func TestDashboardLink(t *testing.T) {
+	for s, want := range map[string]bool{
+		"https://dashboard.gitguardian.com/workspace/1/incidents/7":     true,
+		"https://dashboard.eu1.gitguardian.com/workspace/1/incidents/7": true,
+		"https://evilgitguardian.com/workspace/1/incidents/7":           false,
+		"https://dashboard.gitguardian.com.evil.io/x":                   false,
+		"http://dashboard.gitguardian.com/workspace/1/incidents/7":      false,
+		"https://share.gitguardian.com/AKIA":                            false,
+		"https://dashboard.gitguardian.com/share/incidents/abc":         false,
+		"https://u:p@dashboard.gitguardian.com/workspace/1":             false,
+	} {
+		u, _ := url.Parse(s)
+		if dashboardLink(u) != want {
+			t.Errorf("%s: want %t", s, want)
 		}
 	}
 }

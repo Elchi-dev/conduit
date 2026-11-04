@@ -45,9 +45,12 @@ type Module struct {
 func New() *Module { return &Module{} }
 
 var (
-	pathRe  = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
-	repoRe  = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,200}$`)
-	countRe = regexp.MustCompile(`(?i)(^|\s)-?count:`)
+	pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
+	repoRe = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,200}$`)
+	// countRe finds a count: parameter at the start of a term: after
+	// the start, any (Unicode) space or an opening parenthesis, as in
+	// "(x count:all)".
+	countRe = regexp.MustCompile(`(?i)(^|[\s\p{Z}(])-?count:`)
 )
 
 const (
@@ -310,7 +313,7 @@ func (c *conn) code(ctx context.Context, q string, limit int) (sdk.Result, error
 				ls = append(ls, map[string]any{"line": l.LineNumber + 1, "text": clean(l.Preview, maxLine)})
 				lines++
 			}
-			files = append(files, map[string]any{"repo": clip(r.Repository.Name, 200), "path": clip(r.File.Path, 300), "matches": ls})
+			files = append(files, map[string]any{"repo": clip(r.Repository.Name, 200), "path": clean(r.File.Path, 300), "matches": ls})
 		case "Repository":
 			repos = append(repos, clip(r.Name, 200))
 		default:

@@ -19,11 +19,12 @@ import (
 var leaks = []string{"AKIAPLANTEDSNIPPETVALUE", "plantedFixCodeSecret", "plantedTriageComment"}
 
 type fakeSemgrep struct {
-	mu     sync.Mutex
-	seen   []string
-	state  string
-	reason string
-	triage map[string]any
+	mu      sync.Mutex
+	seen    []string
+	state   string
+	reason  string
+	triage  map[string]any
+	triaged string // the triage answer's ids; ["42"] when empty
 }
 
 func (s *fakeSemgrep) finding(id int, sev string) string {
@@ -66,7 +67,11 @@ func (s *fakeSemgrep) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if st == "reopened" {
 			s.state = "untriaged"
 		}
-		io.WriteString(w, `{"num_triaged":"1","triaged_issues":["42"]}`)
+		ids := s.triaged
+		if ids == "" {
+			ids = `["42"]`
+		}
+		io.WriteString(w, `{"num_triaged":"1","triaged_issues":`+ids+`}`)
 	default:
 		w.WriteHeader(404)
 		io.WriteString(w, `{"error":"not found"}`)
@@ -131,7 +136,7 @@ func TestSemgrep(t *testing.T) {
 	if err != nil || s.state != "ignored" || s.reason != "false_positive" || r.Undo == nil || !strings.Contains(string(r.Undo.Input), `"state":"reopened"`) {
 		t.Fatalf("%s %+v %v", r.Output, r.Undo, err)
 	}
-	if ids, _ := s.triage["issue_ids"].([]any); len(ids) != 1 || s.triage["limit"] != float64(1) || s.triage["issue_type"] != "sast" {
+	if ids, _ := s.triage["issue_ids"].([]any); len(ids) != 1 || s.triage["limit"] != float64(1) || s.triage["issue_type"] != "sast" || fmt.Sprint(s.triage["repos"]) != "[acme/api]" {
 		t.Fatalf("%v", s.triage)
 	}
 	if r, err := invoke(m, "triage_finding", in, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
@@ -147,6 +152,23 @@ func TestSemgrep(t *testing.T) {
 	}
 	if _, err := invoke(m, "triage_finding", `{"finding":7,"repo":"acme/api","state":"reviewing"}`, false); err == nil || !strings.Contains(err.Error(), "no sast finding 7") {
 		t.Fatal(err)
+	}
+}
+
+// A triage answer naming findings outside the repository means Semgrep
+// changed more than the one finding: that's reported as a failure, while
+// copies within the repository (other branches) are accepted.
+func TestSemgrepTriageScope(t *testing.T) {
+	m, s := setup(t, "secret://sg")
+	in := `{"finding":42,"repo":"acme/api","state":"reviewing"}`
+	s.triaged = `["42","41"]`
+	if r, err := invoke(m, "triage_finding", in, false); err != nil || !strings.Contains(string(r.Output), "other branches") {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	s.state = "untriaged"
+	s.triaged = `["42","9001","9002"]`
+	if r, err := invoke(m, "triage_finding", in, false); err == nil || !strings.Contains(err.Error(), "3 findings for finding 42, 2 of them outside acme/api") || r.Undo != nil {
+		t.Fatalf("%+v %v", r, err)
 	}
 }
 

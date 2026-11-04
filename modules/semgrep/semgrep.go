@@ -533,25 +533,36 @@ func (c *conn) findings(ctx context.Context, slug, typ, repo, status, severity s
 }
 
 // find looks a finding up among its repository's findings (the API has no
-// call for one finding).
-func (c *conn) find(ctx context.Context, slug, typ, repo string, id int64) (finding, error) {
+// call for one finding). It also returns the ids of every finding listed for
+// the repository (all branches and statuses) and whether that list is
+// complete, so a triage answer naming any other id can be caught.
+func (c *conn) find(ctx context.Context, slug, typ, repo string, id int64) (finding, map[int64]bool, bool, error) {
 	fs, more, err := c.list(ctx, slug, url.Values{"issue_type": {typ}, "repos": {repo}}, findSize, findPages)
 	if err != nil {
-		return finding{}, err
+		return finding{}, nil, false, err
 	}
-	for _, f := range fs {
-		if int64(f.ID) == id {
-			return f, nil
+	ids := map[int64]bool{}
+	var hit *finding
+	for i, f := range fs {
+		if f.Repository.Name != "" && f.Repository.Name != repo {
+			continue
+		}
+		ids[int64(f.ID)] = true
+		if int64(f.ID) == id && hit == nil {
+			hit = &fs[i]
 		}
 	}
-	if more {
-		return finding{}, fmt.Errorf("finding %d isn't among the first %d %s findings of %s; triage it in Semgrep", id, findSize*findPages, typ, repo)
+	if hit != nil {
+		return *hit, ids, !more, nil
 	}
-	return finding{}, fmt.Errorf("there's no %s finding %d in %s", typ, id, repo)
+	if more {
+		return finding{}, nil, false, fmt.Errorf("finding %d isn't among the first %d %s findings of %s; triage it in Semgrep", id, findSize*findPages, typ, repo)
+	}
+	return finding{}, nil, false, fmt.Errorf("there's no %s finding %d in %s", typ, id, repo)
 }
 
 func (c *conn) triage(ctx context.Context, call sdk.Call, slug, typ, repo string, id int64, state, reason, note string) (sdk.Result, error) {
-	f, err := c.find(ctx, slug, typ, repo, id)
+	f, repoIDs, complete, err := c.find(ctx, slug, typ, repo, id)
 	if err != nil {
 		return sdk.Result{}, err
 	}
@@ -597,9 +608,11 @@ func (c *conn) triage(ctx context.Context, call sdk.Call, slug, typ, repo string
 		a, _ := json.Marshal(after)
 		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Set finding %d to %s", id, state), Changes: []sdk.Change{{Target: label, Op: "triage", Before: b, After: a}}}}, nil
 	}
-	// limit 1 keeps the change to this finding should the ids ever be
-	// ignored (Semgrep still triages its copies on other branches).
-	body := map[string]any{"issue_type": typ, "issue_ids": []int64{id}, "new_triage_state": state, "limit": 1}
+	// The repository filter and limit 1 keep the change to this finding
+	// should the ids ever be ignored (an empty filter would match every
+	// finding of the deployment). Semgrep still triages the finding's copies
+	// on other branches, which share its fingerprint and repository.
+	body := map[string]any{"issue_type": typ, "issue_ids": []int64{id}, "repos": []string{repo}, "new_triage_state": state, "limit": 1}
 	if reason != "" {
 		body["new_triage_reason"] = reason
 	}
@@ -613,11 +626,20 @@ func (c *conn) triage(ctx context.Context, call sdk.Call, slug, typ, repo string
 	if err := c.do(ctx, http.MethodPost, "/deployments/"+url.PathEscape(slug)+"/triage", nil, body, &res); err != nil {
 		return sdk.Result{}, err
 	}
-	ok := false
+	ok, others := false, 0
 	for _, t := range res.Triaged {
 		if t.String() == strconv.FormatInt(id, 10) {
 			ok = true
+			continue
 		}
+		if n, err := t.Int64(); err != nil || !repoIDs[n] {
+			others++
+		}
+	}
+	if complete && others > 0 {
+		// Copies on other branches are among the repository's findings;
+		// anything else means Semgrep triaged more than this finding.
+		return sdk.Result{}, fmt.Errorf("Semgrep triaged %d findings for finding %d, %d of them outside %s; check them in Semgrep (no undo)", len(res.Triaged), id, others, repo)
 	}
 	if !ok {
 		return sdk.Result{}, fmt.Errorf("Semgrep didn't triage finding %d", id)
@@ -628,6 +650,9 @@ func (c *conn) triage(ctx context.Context, call sdk.Call, slug, typ, repo string
 	}
 	if undo == nil {
 		out["note"] = "no undo: the finding's earlier state (" + cur + ") can't be set back from here"
+	}
+	if others > 0 {
+		out["note"] = fmt.Sprintf("Semgrep also triaged %d findings this module couldn't match to %s (it lists only the first %d); check them in Semgrep", others, repo, findSize*findPages)
 	}
 	r, err := sdk.JSON(out)
 	r.Undo = undo

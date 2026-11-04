@@ -151,6 +151,7 @@ func TestSourcegraphValidation(t *testing.T) {
 	m, s := setup(t, "secret://sg")
 	for _, c := range []struct{ action, in string }{
 		{"search", `{}`}, {"search", `{"query":"  "}`}, {"search", `{"query":"x count:all"}`}, {"search", `{"query":"COUNT:5 x"}`},
+		{"search", `{"query":"(x count:all)"}`}, {"search", `{"query":"x\u00a0count:all"}`}, {"search", `{"query":"x\u2003-count:all"}`},
 		{"search", `{"query":"a\nb"}`}, {"search", `{"query":"x","limit":101}`}, {"search", `{"query":"` + strings.Repeat("a", 1001) + `"}`},
 		{"repositories", `{"name":"x\" OR y"}`}, {"repositories", `{"limit":500}`}, {"repositories", `{"name":"a b"}`},
 	} {

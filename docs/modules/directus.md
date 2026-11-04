@@ -35,7 +35,10 @@ log, approvals and events. System collections (`directus_users`,
 are never read or changed, so users' e-mails, password hashes and tokens
 stay on the server. Hash, concealed and masked fields are left out of every
 item and can't be filtered on, sorted by or set; filters take a collection's
-own fields only, not paths through relations. Running a flow is
+own fields only, not paths through relations. A relational field is set to
+the related item's key only: an object there would be a nested write that
+creates or changes the related item, which can be a `directus_users` or
+`directus_files` one, so it's refused. Running a flow is
 destructive because its operations can do anything (send mail, call APIs,
 change data); flows on event, schedule or operation triggers aren't run
 from here. The token goes in the `Authorization` header and the client

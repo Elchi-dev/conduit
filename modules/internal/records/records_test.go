@@ -37,6 +37,12 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+func TestPage(t *testing.T) {
+	if Page(0) != 1 || Page(3) != 3 || Page(int(^uint(0)>>1)) != MaxPage {
+		t.Fatal(Page(0), Page(3))
+	}
+}
+
 func TestClipFit(t *testing.T) {
 	v := Clip(map[string]any{"a": []any{strings.Repeat("é", MaxString)}}).(map[string]any)
 	s := v["a"].([]any)[0].(string)

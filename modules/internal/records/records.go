@@ -221,12 +221,16 @@ func Limit(n, def, max int) int {
 	return n
 }
 
-// Page returns a page number of at least 1.
+// MaxPage is the highest page number asked for, so an offset worked out
+// from it (page × limit) can't overflow.
+const MaxPage = 100000
+
+// Page returns a page number between 1 and MaxPage.
 func Page(n int) int {
 	if n < 1 {
 		return 1
 	}
-	return n
+	return min(n, MaxPage)
 }
 
 // Sort reads a sort input: a field, with "-" in front for descending.

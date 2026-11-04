@@ -51,6 +51,9 @@ func (f *fakeDirectus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{"field":"pin","type":"hash","meta":{"special":["hash"],"interface":"input-hash"}},
 			{"field":"api_key","type":"string","meta":{"interface":"input","options":{"masked":true}}},
 			{"field":"tags","type":"alias","meta":{"special":["o2m"]}},
+			{"field":"author","type":"uuid","meta":{"special":["m2o"]}},
+			{"field":"cover","type":"uuid","meta":{"special":["file"]}},
+			{"field":"extra","type":"json","meta":{"special":["cast-json"]}},
 			{"field":"date_created","type":"timestamp","meta":{"special":["date-created"]}}]}`)
 	case r.Method == "GET" && r.URL.Path == "/items/articles":
 		f.filter = r.URL.Query().Get("filter")
@@ -163,6 +166,9 @@ func TestDirectus(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if _, err := invoke(m, "update_item", `{"collection":"articles","id":"1","data":{"author":"`+hookID+`","extra":{"a":[1]}}}`, true); err != nil {
+		t.Fatal(err)
+	}
 	if r, err := invoke(m, "update_item", `{"collection":"articles","id":"1","data":{"title":"Hello"}}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatal(string(r.Output), err)
 	}
@@ -231,6 +237,11 @@ func TestDirectusValidation(t *testing.T) {
 		{"create_item", `{"collection":"articles","data":{"id":5}}`},
 		{"create_item", `{"collection":"articles","data":{"date_created":"x"}}`},
 		{"update_item", `{"collection":"articles","id":"1","data":{"tags":[1]}}`},
+		// Nested writes reach the related collection (directus_users, directus_files).
+		{"create_item", `{"collection":"articles","data":{"title":"x","author":{"email":"a@b.c","password":"p","role":"admin"}}}`},
+		{"update_item", `{"collection":"articles","id":"1","data":{"author":{"id":"u1","password":"p"}}}`},
+		{"update_item", `{"collection":"articles","id":"1","data":{"cover":{"id":"f1","title":"x"}}}`},
+		{"update_item", `{"collection":"articles","id":"1","data":{"title":["x"]}}`},
 	} {
 		if _, err := invoke(m, c.action, c.in, false); err == nil {
 			t.Fatalf("accepted %s %s", c.action, c.in)

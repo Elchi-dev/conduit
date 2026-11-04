@@ -55,8 +55,12 @@ var (
 	idRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	// A field is its title: anything but control characters and the
 	// characters of the where syntax.
-	titleRe = regexp.MustCompile(`^[^(),~\x00-\x1f\x7f]{1,100}$`)
+	titleRe = regexp.MustCompile(`^[^(),~\\\x00-\x1f\x7f]{1,100}$`)
 )
+
+// whereChars are refused in condition values: the where syntax's own
+// characters, and a backslash, which some NocoDB versions read as an escape.
+const whereChars = `(),~\`
 
 // people are the field types that hold users (with their e-mails).
 var people = map[string]bool{"User": true, "CreatedBy": true, "LastModifiedBy": true}
@@ -185,9 +189,12 @@ func (t table) column(title string) (column, bool) {
 	return column{}, false
 }
 
+// readable says whether a field may be filtered and sorted on. Lookups are
+// left out: one can show a linked table's user field, and a condition on it
+// would find users' e-mails one guess at a time.
 func (t table) readable(title string) bool {
 	c, ok := t.column(title)
-	return titleRe.MatchString(title) && ok && !people[c.Type] && c.Type != "Links" && c.Type != "LinkToAnotherRecord" && c.Type != "Button" && c.Type != "Attachment"
+	return titleRe.MatchString(title) && ok && !people[c.Type] && c.Type != "Lookup" && c.Type != "Links" && c.Type != "LinkToAnotherRecord" && c.Type != "Button" && c.Type != "Attachment"
 }
 
 func (t table) writable(create bool) func(string) error {
@@ -253,11 +260,35 @@ func person(v any) any {
 	return v
 }
 
+// users replaces, at any depth, the users a lookup shows (objects with an
+// e-mail) by their names.
+func users(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		if _, ok := x["email"]; ok {
+			return person(x)
+		}
+		for k, e := range x {
+			x[k] = users(e)
+		}
+	case []any:
+		for i, e := range x {
+			x[i] = users(e)
+		}
+	}
+	return v
+}
+
 // clean replaces users by their names and shortens long values.
 func (t table) clean(r map[string]any) map[string]any {
 	for _, c := range t.Columns {
-		if v, ok := r[c.Title]; ok && people[c.Type] {
+		v, ok := r[c.Title]
+		switch {
+		case !ok:
+		case people[c.Type]:
 			r[c.Title] = person(v)
+		case c.Type == "Lookup" || c.Type == "Rollup" || c.Type == "Formula":
+			r[c.Title] = users(v)
 		}
 	}
 	records.Clip(r)
@@ -408,7 +439,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	if (call.Action == "create_record" || call.Action == "update_record") && len(p.Data) == 0 {
 		return sdk.Result{}, errors.New("give the fields to set in data")
 	}
-	if err := records.Check(p.Where, titleRe.MatchString, "(),~"); err != nil {
+	if err := records.Check(p.Where, titleRe.MatchString, whereChars); err != nil {
 		return sdk.Result{}, err
 	}
 	t, err := c.table(ctx, p.Table)
@@ -435,7 +466,8 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 var ncOps = map[string]string{"eq": "eq", "ne": "neq", "gt": "gt", "gte": "ge", "lt": "lt", "lte": "le"}
 
 // Where renders checked conditions in NocoDB's where syntax. Titles and
-// values were checked to hold none of its characters ( ) , ~.
+// values were checked to hold none of its characters ( ) , ~ (nor values a
+// backslash).
 func Where(cs []records.Cond) string {
 	parts := []string{}
 	for _, c := range cs {
@@ -463,7 +495,7 @@ func Where(cs []records.Cond) string {
 }
 
 func (c *conn) list(ctx context.Context, t table, p input) (sdk.Result, error) {
-	if err := records.Check(p.Where, t.readable, "(),~"); err != nil {
+	if err := records.Check(p.Where, t.readable, whereChars); err != nil {
 		return sdk.Result{}, err
 	}
 	sortBy, desc, err := records.Sort(p.Sort, t.readable)

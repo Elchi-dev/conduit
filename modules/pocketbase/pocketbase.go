@@ -217,6 +217,7 @@ type collection struct {
 	CreateRule *string `json:"createRule"`
 	UpdateRule *string `json:"updateRule"`
 	DeleteRule *string `json:"deleteRule"`
+	ViewQuery  string  `json:"viewQuery"`
 }
 
 // private says whether a collection's records are never read or written:
@@ -293,7 +294,35 @@ func (c *conn) collection(ctx context.Context, name string) (collection, error) 
 	if col.private() {
 		return col, fmt.Errorf("%s is an auth or system collection; its records hold sign-in details and aren't read or changed here", col.Name)
 	}
+	if col.Type == "view" {
+		if err := c.viewOK(ctx, col); err != nil {
+			return col, err
+		}
+	}
 	return col, nil
+}
+
+// viewOK refuses a view collection whose query reads an auth or system
+// collection: it would show users' e-mails (or more) as plain fields.
+func (c *conn) viewOK(ctx context.Context, view collection) error {
+	var page struct {
+		Items []collection `json:"items"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/collections", url.Values{"perPage": {"500"}, "fields": {"id,name,type,system"}}, nil, &page); err != nil {
+		return err
+	}
+	q := strings.ToLower(view.ViewQuery)
+	for _, col := range page.Items {
+		if !col.private() {
+			continue
+		}
+		for _, n := range []string{col.Name, col.ID} {
+			if n != "" && regexp.MustCompile(`(^|[^a-z0-9_])`+regexp.QuoteMeta(strings.ToLower(n))+`($|[^a-z0-9_])`).MatchString(q) {
+				return fmt.Errorf("%s is a view of the auth or system collection %s; its records aren't read here", view.Name, col.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // Health implements sdk.Module.

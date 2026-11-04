@@ -11,6 +11,7 @@
 package directus
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -197,6 +198,30 @@ func (f field) secret() bool {
 }
 
 func (f field) pk() bool { return f.Schema != nil && f.Schema.PrimaryKey }
+
+// structured says whether a field stores an object or a list itself: a JSON,
+// CSV or geometry field.
+func (f field) structured() bool {
+	return (f.Type == "json" || f.Type == "csv" || f.Type == "geometry" || strings.HasPrefix(f.Type, "geometry.")) &&
+		!f.special("m2o") && !f.special("file") && !f.special("files")
+}
+
+// values refuses an object or list for any other field: Directus takes one
+// on a relational (many-to-one or file) field as a nested write, creating or
+// changing the related item, which can be in directus_users (a new admin, a
+// new password) or directus_files, the system collections refused here.
+func (c collection) values(data map[string]json.RawMessage) error {
+	for k, v := range data {
+		t := bytes.TrimSpace(v)
+		if len(t) == 0 || (t[0] != '{' && t[0] != '[') {
+			continue
+		}
+		if f, _ := c.field(k); !f.structured() {
+			return fmt.Errorf("%s takes a plain value (for a relation, the related item's key): nested items aren't created or changed here", k)
+		}
+	}
+	return nil
+}
 
 type collection struct {
 	Name   string
@@ -531,6 +556,9 @@ func (c *conn) create(ctx context.Context, call sdk.Call, col collection, data m
 	if err := records.Data(data, col.writable(true)); err != nil {
 		return sdk.Result{}, err
 	}
+	if err := col.values(data); err != nil {
+		return sdk.Result{}, err
+	}
 	if call.DryRun {
 		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Create an item in %s (%s)", col.Name, strings.Join(records.Keys(data), ", ")),
 			Changes: []sdk.Change{{Target: "collection " + col.Name, Op: "create", After: records.Raw(data)}}}}, nil
@@ -551,6 +579,9 @@ func (c *conn) create(ctx context.Context, call sdk.Call, col collection, data m
 
 func (c *conn) update(ctx context.Context, call sdk.Call, col collection, id string, data map[string]json.RawMessage) (sdk.Result, error) {
 	if err := records.Data(data, col.writable(false)); err != nil {
+		return sdk.Result{}, err
+	}
+	if err := col.values(data); err != nil {
 		return sdk.Result{}, err
 	}
 	cur, err := c.item(ctx, col, id)

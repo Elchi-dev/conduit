@@ -30,7 +30,8 @@ sensitive: their content stays out of the audit log, approvals and events.
 Records of auth collections (`users` and any other) and system collections
 (`_superusers`, `_mfas`, `_otps`, `_externalAuths`, `_authOrigins`) are
 never read or changed, so e-mail addresses, password hashes and token keys
-stay on the server. Hidden fields are left out of every record and can't be
+stay on the server, and neither are those of a view collection whose query
+reads one of them (it would show their e-mails as plain fields). Hidden fields are left out of every record and can't be
 filtered on, sorted by or set. The password is only sent to sign in; the
 client won't follow a redirect to another host or from https to http.
 Collection names and record ids must be plain identifiers before any

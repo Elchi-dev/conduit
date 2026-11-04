@@ -27,12 +27,14 @@ against the table and writes NocoDB's where expression itself.
 **Security.** Records are sensitive: their content stays out of the audit
 log, approvals and events. User fields (User, Created by, Last modified by)
 come back as display names, never e-mail addresses, and can't be filtered
-on or set. The token goes in the `xc-token` header and the client won't
+on or set; so do users a lookup, rollup or formula shows, and lookups can't
+be filtered on or sorted by (a condition on one could find e-mails a guess
+at a time). The token goes in the `xc-token` header and the client won't
 follow a redirect to another host or from https to http. Table ids and
 record keys must be plain identifiers before any request is made.
 
 **Notes.** NocoDB's where syntax has no quoting, so field titles and values
-in conditions can't contain `(`, `)`, `,` or `~`. Formula, lookup, rollup,
+in conditions can't contain `(`, `)`, `,`, `~` or a backslash. Formula, lookup, rollup,
 link, attachment and automatic fields can't be set here. An update has no
 undo: it would need the previous values in the undo record, which the
 audit log doesn't keep for sensitive actions.

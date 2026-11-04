@@ -57,6 +57,12 @@ func (f *fakePB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"page":1,"perPage":500,"totalItems":3,"items":[`+postsJSON+`,
 			{"id":"_pb_users_auth_","name":"users","type":"auth","system":false,"fields":[{"name":"email","type":"email"}]},
 			{"id":"pbc_su","name":"_superusers","type":"auth","system":true,"fields":[]}]}`)
+	case r.Method == "GET" && r.URL.Path == "/api/collections/members":
+		io.WriteString(w, `{"id":"pbc_m","name":"members","type":"view","viewQuery":"SELECT u.id, u.email FROM Users u","fields":[{"name":"email","type":"email"}]}`)
+	case r.Method == "GET" && r.URL.Path == "/api/collections/totals":
+		io.WriteString(w, `{"id":"pbc_t","name":"totals","type":"view","viewQuery":"SELECT id, users_count FROM posts","fields":[{"name":"users_count","type":"number"}]}`)
+	case r.Method == "GET" && r.URL.Path == "/api/collections/totals/records":
+		io.WriteString(w, `{"page":1,"totalPages":1,"totalItems":0,"items":[]}`)
 	case r.Method == "GET" && r.URL.Path == "/api/collections/posts":
 		io.WriteString(w, postsJSON)
 	case r.Method == "GET" && r.URL.Path == "/api/collections/users":
@@ -214,8 +220,15 @@ func TestPocketBaseRefusesAuthCollections(t *testing.T) {
 			t.Fatalf("%s: %s %v", in, r.Output, err)
 		}
 	}
+	// A view over an auth collection shows its e-mails.
+	if _, err := invoke(m, "list_records", `{"collection":"members"}`, false); err == nil || !strings.Contains(err.Error(), "view of the auth or system collection users") {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "list_records", `{"collection":"totals"}`, false); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range f.seen {
-		if strings.Contains(p, "/records") {
+		if strings.Contains(p, "/records") && p != "GET /api/collections/totals/records" {
 			t.Fatalf("read an auth collection's records: %v", f.seen)
 		}
 	}

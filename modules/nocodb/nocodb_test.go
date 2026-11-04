@@ -46,7 +46,8 @@ func (f *fakeNoco) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v2/meta/tables/mtasks":
 		io.WriteString(w, `{"id":"mtasks","title":"Tasks","columns":[
 			{"title":"Id","uidt":"ID","pk":true,"ai":true},{"title":"Title","uidt":"SingleLineText","rqd":true},{"title":"Due date","uidt":"Date"},
-			{"title":"Owner","uidt":"User"},{"title":"CreatedBy","uidt":"CreatedBy","system":true},{"title":"Total","uidt":"Formula"}]}`)
+			{"title":"Owner","uidt":"User"},{"title":"CreatedBy","uidt":"CreatedBy","system":true},{"title":"Total","uidt":"Formula"},
+			{"title":"Lead","uidt":"Lookup"}]}`)
 	case r.URL.Path == "/api/v2/meta/tables/mother": // answers with another table
 		io.WriteString(w, `{"id":"mtasks","title":"Tasks","columns":[]}`)
 	case r.Method == "GET" && r.URL.Path == "/api/v2/tables/mtasks/records":
@@ -88,7 +89,8 @@ func (f *fakeNoco) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func setup(t *testing.T, tok string) (*Module, *fakeNoco) {
 	f := &fakeNoco{next: 1, recs: map[string]map[string]any{"1": {"Id": 1.0, "Title": "Backup", "Due date": "2026-11-05",
-		"Owner": []any{map[string]any{"id": "us1", "email": "LEAKME@example.com", "display_name": "Ana"}}, "CreatedBy": map[string]any{"id": "us2", "email": "LEAKME@example.com"}}}}
+		"Owner": []any{map[string]any{"id": "us1", "email": "LEAKME@example.com", "display_name": "Ana"}}, "CreatedBy": map[string]any{"id": "us2", "email": "LEAKME@example.com"},
+		"Lead": []any{[]any{map[string]any{"id": "us3", "email": "LEAKME@example.com", "display_name": "Bo"}}}}}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	m := New()
@@ -129,7 +131,7 @@ func TestNocoDB(t *testing.T) {
 		{"bases", `{}`, `"title":"Ops"`},
 		{"tables", `{"base":"pbase1"}`, `"id":"mtasks"`},
 		{"fields", `{"table":"mtasks"}`, `"automatic":true,"primaryKey":false,"required":false,"title":"Total"`},
-		{"list_records", `{"table":"mtasks","where":[{"field":"Title","op":"contains","value":"back up"},{"field":"Due date","op":"lte","value":"2026-12-01"},{"field":"Due date","op":"notempty"}],"sort":"-Due date"}`, `"Owner":["Ana"]`},
+		{"list_records", `{"table":"mtasks","where":[{"field":"Title","op":"contains","value":"back up"},{"field":"Due date","op":"lte","value":"2026-12-01"},{"field":"Due date","op":"notempty"}],"sort":"-Due date"}`, `"Lead":[["Bo"]],"Owner":["Ana"]`},
 	} {
 		r, err := invoke(m, c.action, c.in, false)
 		if out := noLeak(t, r, err); err != nil || !strings.Contains(out, c.want) || strings.Contains(out, "_nc_m2m") {
@@ -185,6 +187,7 @@ func TestNocoDBValidation(t *testing.T) {
 		{"list_records", `{"table":"mtasks","where":[{"field":"Title","op":"eq","value":"x)~or(Id,gt,0"}]}`},
 		{"list_records", `{"table":"mtasks","where":[{"field":"Title,eq,x)~or(Id","op":"eq","value":"0"}]}`},
 		{"list_records", `{"table":"mtasks","where":[{"field":"Title","op":"eq","value":"a~b"}]}`},
+		{"list_records", `{"table":"mtasks","where":[{"field":"Title","op":"eq","value":"a\\"}]}`},
 		{"update_record", `{"table":"mtasks","id":"1/2","data":{"Title":"x"}}`},
 		{"delete_record", `{"table":"mtasks","id":{"Id":1}}`},
 		{"create_record", `{"table":"mtasks"}`},
@@ -200,6 +203,7 @@ func TestNocoDBValidation(t *testing.T) {
 		{"list_records", `{"table":"mtasks","where":[{"field":"Owner","op":"contains","value":"@example.com"}]}`},
 		{"list_records", `{"table":"mtasks","where":[{"field":"Nope","op":"eq","value":"x"}]}`},
 		{"list_records", `{"table":"mtasks","sort":"CreatedBy"}`},
+		{"list_records", `{"table":"mtasks","where":[{"field":"Lead","op":"contains","value":"@example.com"}]}`},
 		{"create_record", `{"table":"mtasks","data":{"Id":5}}`},
 		{"create_record", `{"table":"mtasks","data":{"Total":5}}`},
 		{"create_record", `{"table":"mtasks","data":{"Owner":"x"}}`},

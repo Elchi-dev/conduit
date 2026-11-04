@@ -209,6 +209,16 @@ recommended policies.
 | SABnzbd | [sabnzbd.md](sabnzbd.md) | homelab |
 | Netdata | [netdata.md](netdata.md) | homelab, developer, team |
 | Zabbix | [zabbix.md](zabbix.md) | homelab, team |
+| Alertmanager | [alertmanager.md](alertmanager.md) | homelab, developer, team |
+| Loki | [loki.md](loki.md) | homelab, developer, team |
+| Beszel | [beszel.md](beszel.md) | homelab, developer |
+| Checkmk | [checkmk.md](checkmk.md) | homelab, team |
+| Gatus | [gatus.md](gatus.md) | homelab, developer |
+| Asana | [asana.md](asana.md) | team, developer |
+| ClickUp | [clickup.md](clickup.md) | team, developer |
+| monday.com | [monday.md](monday.md) | team |
+| Plane | [plane.md](plane.md) | developer, team, homelab |
+| YouTrack | [youtrack.md](youtrack.md) | developer, team |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

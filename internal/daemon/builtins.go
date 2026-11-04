@@ -5,14 +5,17 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/modules/adguard"
+	"github.com/elchi-dev/conduit/modules/alertmanager"
 	"github.com/elchi-dev/conduit/modules/amp"
 	"github.com/elchi-dev/conduit/modules/argocd"
 	"github.com/elchi-dev/conduit/modules/arr"
+	"github.com/elchi-dev/conduit/modules/asana"
 	"github.com/elchi-dev/conduit/modules/audiobookshelf"
 	"github.com/elchi-dev/conduit/modules/authentik"
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/azuredevops"
 	"github.com/elchi-dev/conduit/modules/backblaze"
+	"github.com/elchi-dev/conduit/modules/beszel"
 	"github.com/elchi-dev/conduit/modules/betterstack"
 	"github.com/elchi-dev/conduit/modules/bitbucket"
 	"github.com/elchi-dev/conduit/modules/bitwardensm"
@@ -24,8 +27,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/caprover"
 	"github.com/elchi-dev/conduit/modules/chatwoot"
+	"github.com/elchi-dev/conduit/modules/checkmk"
 	"github.com/elchi-dev/conduit/modules/circleci"
 	"github.com/elchi-dev/conduit/modules/clickhouse"
+	"github.com/elchi-dev/conduit/modules/clickup"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/codecov"
 	"github.com/elchi-dev/conduit/modules/comfyui"
@@ -53,6 +58,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/frigate"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
+	"github.com/elchi-dev/conduit/modules/gatus"
 	"github.com/elchi-dev/conduit/modules/ghost"
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
@@ -90,6 +96,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/linode"
 	"github.com/elchi-dev/conduit/modules/listmonk"
 	"github.com/elchi-dev/conduit/modules/litellm"
+	"github.com/elchi-dev/conduit/modules/loki"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/mailgun"
 	"github.com/elchi-dev/conduit/modules/mastodon"
@@ -101,6 +108,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mikrotik"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/miniflux"
+	"github.com/elchi-dev/conduit/modules/monday"
 	"github.com/elchi-dev/conduit/modules/mongodb"
 	"github.com/elchi-dev/conduit/modules/monica"
 	"github.com/elchi-dev/conduit/modules/mqtt"
@@ -131,6 +139,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/paperless"
 	"github.com/elchi-dev/conduit/modules/photoprism"
 	"github.com/elchi-dev/conduit/modules/pihole"
+	"github.com/elchi-dev/conduit/modules/plane"
 	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
 	"github.com/elchi-dev/conduit/modules/porkbun"
@@ -203,6 +212,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
+	"github.com/elchi-dev/conduit/modules/youtrack"
 	"github.com/elchi-dev/conduit/modules/youtube"
 	"github.com/elchi-dev/conduit/modules/zabbix"
 	"github.com/elchi-dev/conduit/modules/zammad"
@@ -432,6 +442,16 @@ func builtins(app *App) []sdk.Module {
 		sabnzbd.New(),
 		netdata.New(),
 		zabbix.New(),
+		alertmanager.New(),
+		loki.New(),
+		beszel.New(),
+		checkmk.New(),
+		gatus.New(),
+		asana.New(),
+		clickup.New(),
+		monday.New(),
+		plane.New(),
+		youtrack.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

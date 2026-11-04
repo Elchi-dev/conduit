@@ -60,6 +60,11 @@ recommended policies.
 | Immich | [immich.md](immich.md) | homelab |
 | Paperless-ngx | [paperless.md](paperless.md) | homelab |
 | n8n | [n8n.md](n8n.md) | homelab, developer, team |
+| Synology DSM | [synology.md](synology.md) | homelab |
+| Backblaze B2 | [backblaze.md](backblaze.md) | homelab, developer |
+| Mattermost | [mattermost.md](mattermost.md) | team, developer |
+| OPNsense | [opnsense.md](opnsense.md) | homelab |
+| Woodpecker CI | [woodpecker.md](woodpecker.md) | developer, homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

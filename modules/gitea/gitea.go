@@ -1,6 +1,6 @@
 // Package gitea works with a Gitea or Forgejo server (API v1): repositories,
-// pull requests, issues and Actions runs; it can open and close issues,
-// comment and merge.
+// pull requests, issues and Actions runs (with jobs and logs); it can open
+// and close issues, comment, merge, start workflows and rerun runs.
 package gitea
 
 import (
@@ -55,7 +55,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	num := `"number":{"type":"integer","minimum":1}`
 	return sdk.Manifest{
 		ID: "gitea", Name: "Gitea / Forgejo", Version: "0.1.0", Category: "Development", Icon: "git",
-		Description: "Repositories, pull requests, issues and Actions runs on a Gitea or Forgejo server (including Codeberg).",
+		Description: "Repositories, pull requests, issues and Actions runs, jobs and logs on a Gitea or Forgejo server (including Codeberg).",
 		Presets:     []string{"developer", "homelab"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","token"],"properties":{
 			"url":{"type":"string","description":"The server's address, e.g. https://git.example.com"},
@@ -67,6 +67,14 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "issues", Title: "Open issues", Risk: sdk.RiskRead, Input: sdk.Schema(`{"type":"object","required":["repo"],"properties":{` + repo + `}}`)},
 			{Name: "runs", Title: "Actions runs", Description: "Recent workflow runs (Gitea 1.23+ / Forgejo).", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["repo"],"properties":{` + repo + `,"limit":{"type":"integer","default":20,"maximum":50}}}`)},
+			{Name: "run", Title: "Actions run", Description: "One run with its jobs and steps (Gitea 1.23+; Forgejo shows the run without jobs where it lacks the API).", Risk: sdk.RiskRead,
+				Input: sdk.Schema(`{"type":"object","required":["repo","id"],"properties":{` + repo + `,"id":{"type":"integer","minimum":1,"description":"Run id (from runs)"}}}`)},
+			{Name: "job_log", Title: "Actions job log", Description: "The end of one job's log (up to 2000 lines; Gitea 1.23+). Logs can hold sensitive output, so they stay out of the audit log.", Risk: sdk.RiskRead, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","required":["repo","job"],"properties":{` + repo + `,"job":{"type":"integer","minimum":1,"description":"Job id (from run)"},"lines":{"type":"integer","default":200,"maximum":2000}}}`)},
+			{Name: "rerun", Title: "Rerun an Actions run", Description: "Runs the workflow again (its code runs with the repository's secrets); failedOnly reruns just the failed jobs. Needs Gitea 1.27+.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["repo","id"],"properties":{` + repo + `,"id":{"type":"integer","minimum":1},"failedOnly":{"type":"boolean","default":false}}}`)},
+			{Name: "dispatch_workflow", Title: "Start a workflow", Description: "Triggers a workflow with workflow_dispatch on a branch or tag (its code runs with the repository's secrets).", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["repo","workflow","ref"],"properties":{` + repo + `,"workflow":{"type":"string","description":"Workflow file name, e.g. deploy.yml"},"ref":{"type":"string","description":"Branch or tag"},"inputs":{"type":"object","additionalProperties":{"type":"string"}}}}`)},
 			{Name: "create_issue", Title: "Open an issue", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","title"],"properties":{` + repo + `,"title":{"type":"string"},"body":{"type":"string"}}}`)},
 			{Name: "close_issue", Title: "Close an issue", Risk: sdk.RiskWrite, Reversible: true,
@@ -113,6 +121,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		// server inside a WireGuard network).
 		api.HTTP = sdk.HTTPClient(h, 30*time.Second)
 	}
+	api.HTTP = rest.SameHostOnly(api.HTTP)
 	m.set.Put(id, &conn{api: api})
 	return nil
 }
@@ -190,14 +199,20 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.Result{}, err
 	}
 	var p struct {
-		Repo         string `json:"repo"`
-		Number       int    `json:"number"`
-		ID           int64  `json:"id"`
-		Title        string `json:"title"`
-		Body         string `json:"body"`
-		Limit        int    `json:"limit"`
-		Method       string `json:"method"`
-		DeleteBranch bool   `json:"deleteBranch"`
+		Repo         string            `json:"repo"`
+		Number       int               `json:"number"`
+		ID           int64             `json:"id"`
+		Title        string            `json:"title"`
+		Body         string            `json:"body"`
+		Limit        int               `json:"limit"`
+		Method       string            `json:"method"`
+		DeleteBranch bool              `json:"deleteBranch"`
+		Job          int64             `json:"job"`
+		Lines        int               `json:"lines"`
+		FailedOnly   bool              `json:"failedOnly"`
+		Workflow     string            `json:"workflow"`
+		Ref          string            `json:"ref"`
+		Inputs       map[string]string `json:"inputs"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
 		return sdk.Result{}, err
@@ -283,6 +298,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			r.Runs = r.Runs[:limit]
 		}
 		return sdk.JSON(r)
+
+	case "run", "job_log", "rerun", "dispatch_workflow":
+		return c.actions(ctx, call, p.Repo, rp, actionsInput{ID: p.ID, Job: p.Job, Lines: p.Lines, FailedOnly: p.FailedOnly, Workflow: p.Workflow, Ref: p.Ref, Inputs: p.Inputs})
 
 	case "create_issue":
 		title := strings.TrimSpace(p.Title)

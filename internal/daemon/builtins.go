@@ -6,6 +6,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/modules/adguard"
 	"github.com/elchi-dev/conduit/modules/aws"
+	"github.com/elchi-dev/conduit/modules/backblaze"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/containerregistry"
@@ -30,6 +31,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/mastodon"
+	"github.com/elchi-dev/conduit/modules/mattermost"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/n8n"
@@ -38,6 +40,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
+	"github.com/elchi-dev/conduit/modules/opnsense"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/paperless"
 	"github.com/elchi-dev/conduit/modules/pihole"
@@ -51,6 +54,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
+	"github.com/elchi-dev/conduit/modules/synology"
 	"github.com/elchi-dev/conduit/modules/system"
 	"github.com/elchi-dev/conduit/modules/tailscale"
 	"github.com/elchi-dev/conduit/modules/truenas"
@@ -61,6 +65,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/web"
+	"github.com/elchi-dev/conduit/modules/woodpecker"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -134,6 +139,11 @@ func builtins(app *App) []sdk.Module {
 		immich.New(),
 		paperless.New(),
 		n8n.New(),
+		synology.New(),
+		backblaze.New(),
+		mattermost.New(),
+		opnsense.New(),
+		woodpecker.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

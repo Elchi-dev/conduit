@@ -1,5 +1,6 @@
 // Package cloudflare manages Cloudflare DNS: zones, records and cache purges.
-// Record changes preview as a diff and can be undone.
+// Record changes preview as a diff and can be undone. It also reads Zero
+// Trust tunnels (cloudflared): their health, connectors and routes.
 package cloudflare
 
 import (
@@ -21,9 +22,20 @@ import (
 type Config struct {
 	Token string `json:"token"` // secret:// API token
 	API   string `json:"api"`   // default https://api.cloudflare.com/client/v4 (tests)
+	// AccountID is the account whose tunnels to read; when empty, the only
+	// account the token can see.
+	AccountID string `json:"accountId"`
 }
 
-type account struct{ api *rest.Client }
+type account struct {
+	api       *rest.Client
+	accountID string
+}
+
+var (
+	accountRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	uuidRe    = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+)
 
 // Module implements sdk.Module.
 type Module struct {
@@ -46,10 +58,11 @@ const recordProps = `"zone":{"type":"string","description":"Zone name, e.g. exam
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
 		ID: "cloudflare", Name: "Cloudflare", Version: "0.1.0", Category: "Infrastructure", Icon: "globe",
-		Description: "DNS zones and records, and cache purges, with previews and undo.",
+		Description: "DNS zones and records, and cache purges, with previews and undo; Zero Trust tunnels and their connectors.",
 		Presets:     []string{"developer", "homelab", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["token"],"properties":{
-			"token":{"type":"string","x-secret":true,"description":"API token with Zone:Read and DNS:Edit (and Cache Purge to purge)"}}}`),
+			"token":{"type":"string","x-secret":true,"description":"API token with Zone:Read and DNS:Edit (Cache Purge to purge, Account: Cloudflare Tunnel: Read for tunnels)"},
+			"accountId":{"type":"string","description":"Account ID for tunnels (from the dashboard's overview page); not needed when the token sees one account"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "zones", Title: "Zones", Risk: sdk.RiskRead},
 			{Name: "records", Title: "DNS records", Risk: sdk.RiskRead,
@@ -62,6 +75,9 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["zone","record"],"properties":{"zone":{"type":"string"},"record":{"type":"object","additionalProperties":true},"replace":{"type":"string"}}}`)},
 			{Name: "purge_cache", Title: "Purge cache", Description: "Specific URLs, or everything when none are given.", Risk: sdk.RiskWrite,
 				Input: sdk.Schema(`{"type":"object","required":["zone"],"properties":{"zone":{"type":"string"},"files":{"type":"array","items":{"type":"string"}}}}`)},
+			{Name: "tunnels", Title: "Tunnels", Description: "Zero Trust (cloudflared) tunnels: healthy, degraded, down or inactive, with their connections.", Risk: sdk.RiskRead},
+			{Name: "tunnel", Title: "Tunnel", Description: "One tunnel's connectors (cloudflared version, platform, edge locations) and, for dashboard-managed tunnels, its public hostnames.", Risk: sdk.RiskRead,
+				Input: sdk.Schema(`{"type":"object","required":["tunnel"],"properties":{"tunnel":{"type":"string","description":"Tunnel name or id"}}}`)},
 		},
 	}
 }
@@ -78,6 +94,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if c.API == "" {
 		c.API = "https://api.cloudflare.com/client/v4"
 	}
+	c.AccountID = strings.ToLower(strings.TrimSpace(c.AccountID))
+	if c.AccountID != "" && !accountRe.MatchString(c.AccountID) {
+		return errors.New("the account ID is 32 hexadecimal characters")
+	}
 	tok := c.Token
 	api := rest.New(c.API, func(ctx context.Context, r *http.Request) error {
 		t, err := h.Secret(ctx, tok)
@@ -90,7 +110,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if m.HTTP != nil {
 		api.HTTP = m.HTTP
 	}
-	m.set.Put(id, &account{api: api})
+	// The bearer token is dropped on other hosts by Go, but refuse the
+	// redirect outright, like the other API modules.
+	api.HTTP = rest.SameHostOnly(api.HTTP)
+	m.set.Put(id, &account{api: api, accountID: c.AccountID})
 	return nil
 }
 
@@ -254,6 +277,9 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 			out = append(out, Zone{ID: z.ID, Name: z.Name, Status: z.Status, Plan: z.PlanInfo.Name})
 		}
 		return sdk.JSON(out)
+	}
+	if c.Action == "tunnels" || c.Action == "tunnel" {
+		return a.tunnels(ctx, c)
 	}
 	zid, err := a.zoneID(ctx, p.Zone)
 	if err != nil {

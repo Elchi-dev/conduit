@@ -9,6 +9,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/amp"
 	"github.com/elchi-dev/conduit/modules/appwrite"
 	"github.com/elchi-dev/conduit/modules/argocd"
+	"github.com/elchi-dev/conduit/modules/argoworkflows"
 	"github.com/elchi-dev/conduit/modules/arr"
 	"github.com/elchi-dev/conduit/modules/asana"
 	"github.com/elchi-dev/conduit/modules/audiobookshelf"
@@ -41,6 +42,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/codecov"
 	"github.com/elchi-dev/conduit/modules/comfyui"
+	"github.com/elchi-dev/conduit/modules/concourse"
 	"github.com/elchi-dev/conduit/modules/consul"
 	"github.com/elchi-dev/conduit/modules/containerregistry"
 	"github.com/elchi-dev/conduit/modules/coolify"
@@ -81,6 +83,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
+	"github.com/elchi-dev/conduit/modules/gocd"
 	"github.com/elchi-dev/conduit/modules/googleworkspace"
 	"github.com/elchi-dev/conduit/modules/gotify"
 	"github.com/elchi-dev/conduit/modules/grafana"
@@ -243,6 +246,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/tailscale"
 	"github.com/elchi-dev/conduit/modules/tasmota"
 	"github.com/elchi-dev/conduit/modules/tautulli"
+	"github.com/elchi-dev/conduit/modules/teamcity"
 	"github.com/elchi-dev/conduit/modules/technitium"
 	"github.com/elchi-dev/conduit/modules/telegram"
 	"github.com/elchi-dev/conduit/modules/terraformcloud"
@@ -419,6 +423,10 @@ func builtins(app *App) []sdk.Module {
 		sonarqube.New(),
 		circleci.New(),
 		buildkite.New(),
+		teamcity.New(),
+		gocd.New(),
+		concourse.New(),
+		argoworkflows.New(),
 		codecov.New(),
 		snyk.New(),
 		drone.New(),

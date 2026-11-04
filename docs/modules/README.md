@@ -149,6 +149,10 @@ recommended policies.
 | SonarQube (SonarCloud) | [sonarqube.md](sonarqube.md) | developer, team |
 | CircleCI | [circleci.md](circleci.md) | developer, team |
 | Buildkite | [buildkite.md](buildkite.md) | developer, team |
+| TeamCity | [teamcity.md](teamcity.md) | developer, team |
+| GoCD | [gocd.md](gocd.md) | developer, team |
+| Concourse | [concourse.md](concourse.md) | developer, team |
+| Argo Workflows | [argoworkflows.md](argoworkflows.md) | developer, team |
 | Codecov | [codecov.md](codecov.md) | developer, team |
 | Snyk | [snyk.md](snyk.md) | developer, team |
 | Drone CI | [drone.md](drone.md) | developer, team |

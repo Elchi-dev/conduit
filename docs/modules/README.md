@@ -228,6 +228,11 @@ recommended policies.
 | RomM | [romm.md](romm.md) | gamer, homelab |
 | Bazarr | [bazarr.md](bazarr.md) | homelab |
 | NZBGet | [nzbget.md](nzbget.md) | homelab |
+| OpenWrt | [openwrt.md](openwrt.md) | homelab |
+| TP-Link Omada | [omada.md](omada.md) | homelab |
+| FRITZ!Box | [fritzbox.md](fritzbox.md) | homelab |
+| ntopng | [ntopng.md](ntopng.md) | homelab, team |
+| LibreNMS | [librenms.md](librenms.md) | homelab, team |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

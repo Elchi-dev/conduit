@@ -59,6 +59,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/freshdesk"
 	"github.com/elchi-dev/conduit/modules/freshrss"
 	"github.com/elchi-dev/conduit/modules/frigate"
+	"github.com/elchi-dev/conduit/modules/fritzbox"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
 	"github.com/elchi-dev/conduit/modules/gatus"
@@ -97,6 +98,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/lemmy"
 	"github.com/elchi-dev/conduit/modules/lemonsqueezy"
+	"github.com/elchi-dev/conduit/modules/librenms"
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/linkding"
 	"github.com/elchi-dev/conduit/modules/linode"
@@ -131,13 +133,16 @@ import (
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/notion"
 	"github.com/elchi-dev/conduit/modules/npm"
+	"github.com/elchi-dev/conduit/modules/ntopng"
 	"github.com/elchi-dev/conduit/modules/nut"
 	"github.com/elchi-dev/conduit/modules/nzbget"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
+	"github.com/elchi-dev/conduit/modules/omada"
 	"github.com/elchi-dev/conduit/modules/onepassword"
 	"github.com/elchi-dev/conduit/modules/openaicompat"
 	"github.com/elchi-dev/conduit/modules/openrouter"
+	"github.com/elchi-dev/conduit/modules/openwrt"
 	"github.com/elchi-dev/conduit/modules/openxbl"
 	"github.com/elchi-dev/conduit/modules/opnsense"
 	"github.com/elchi-dev/conduit/modules/outline"
@@ -465,6 +470,11 @@ func builtins(app *App) []sdk.Module {
 		monday.New(),
 		plane.New(),
 		youtrack.New(),
+		openwrt.New(),
+		omada.New(),
+		fritzbox.New(),
+		ntopng.New(),
+		librenms.New(),
 		kavita.New(),
 		calibreweb.New(),
 		romm.New(),

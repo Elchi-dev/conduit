@@ -34,6 +34,12 @@ and why.
   check NAT64 forms; DefectDojo close keeps its flags.
 - **Shared:** `rest` keeps server error messages to one line of 500 bytes,
   cut after redaction.
+- **Review 38:** Victron's raw summary drops GPS, serial and network
+  records; HomeWizard refuses numeric host names that are public addresses
+  and accepts Tailscale and NetBird addresses.
+- **Full local check at 19:40 CET (dcca1fa):** gofmt, vet, race tests,
+  web and site builds with i18n, 51 browser tests, and upgrades from every
+  release including v1.0.0 all pass.
 
 
 ## 2026-11-04 · After 1.0, late afternoon (262 modules, reviews 25–29)

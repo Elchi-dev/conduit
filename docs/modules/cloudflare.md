@@ -15,7 +15,7 @@ it in the vault.
 | `set_record` | write | Changes the one record with that type and name, or creates it. Dry run shows before and after. Undo restores the old value, or removes a new record. Refuses when several records share the type and name. |
 | `delete_record` | destructive | Dry run shows the record; undo recreates it |
 | `restore_record` | write | Used by undo |
-| `purge_cache` | write | Given URLs, or everything |
+| `purge_cache` | destructive | Given URLs, or everything. Purging drops the cached copies, so every visitor hits the origin until the cache fills again. |
 | `tunnels` | read | Zero Trust tunnels: healthy, degraded, down or inactive (problems first), dashboard- or locally-managed, live connections and edge locations |
 | `tunnel` | read | One tunnel by name or id: its connectors (cloudflared version, platform, start time, edge connections) and, for dashboard-managed tunnels, its public hostnames and the services behind them |
 

@@ -125,7 +125,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(rp)},
 			{Name: "comment", Title: "Comment on a pull request", Description: "Adds a comment (Markdown). Participants are notified.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","id","text"],"properties":{` + repo + `,` + pr + `,"text":{"type":"string","maxLength":32000}}}`)},
-			{Name: "approve", Title: "Approve", Description: "Approves the pull request as the token's user. Undo removes the approval.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "approve", Title: "Approve", Description: "Approves the pull request as the token's user. Destructive: the approval counts toward merge checks as a human review. Undo removes the approval.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(rp)},
 			{Name: "unapprove", Title: "Remove approval", Description: "Withdraws the token user's approval. Undo approves again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(rp)},
@@ -141,7 +141,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["repo","pipeline"],"properties":{` + repo + `,` + pipe + `,"step":{"type":"string","description":"Step UUID or name"},"lines":{"type":"integer","default":200,"maximum":2000}}}`)},
 			{Name: "run_pipeline", Title: "Run a pipeline", Description: "Starts the branch's pipeline (or a custom one) from bitbucket-pipelines.yml. It runs the repository's code with its variables and deployment credentials, so it's destructive.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","branch"],"properties":{` + repo + `,"branch":{"type":"string"},"custom":{"type":"string","description":"Name of a custom pipeline (pipelines.custom)"},"variables":{"type":"object","maxProperties":50,"additionalProperties":{"type":"string"},"description":"Variables for a custom pipeline; values are shown in the preview, so keep secrets in repository variables"}}}`)},
-			{Name: "stop_pipeline", Title: "Stop a pipeline", Description: "Stops a pending or running pipeline.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "stop_pipeline", Title: "Stop a pipeline", Description: "Stops a pending or running pipeline. Destructive: it interrupts work in flight (a deploy may be left half done).", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","pipeline"],"properties":{` + repo + `,` + pipe + `}}`)},
 		},
 	}

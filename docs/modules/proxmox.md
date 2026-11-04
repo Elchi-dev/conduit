@@ -19,7 +19,7 @@ from a public authority (ACME), leave the fingerprint empty.
 | `nodes` | read | CPU and memory use, CPU count, uptime |
 | `guests` | read | Every VM and container in the cluster with node, state, CPU and memory use, tags |
 | `start` | write | Undo shuts it down again. Does nothing if it is already running. |
-| `shutdown` | write | A clean shutdown through the guest's OS. Undo starts it again. |
+| `shutdown` | destructive | A clean shutdown through the guest's OS. Undo starts it again. The guest's services go down until it's started. |
 | `reboot` | destructive | Only for a running guest |
 | `stop` | destructive | Immediate power-off; unsaved work in the guest is lost |
 | `snapshots` | read | Name, description and when it was taken |

@@ -81,7 +81,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["service","deploy"],"properties":{` + svc + `,"deploy":{"type":"string","description":"Deploy id (dep-…)"}}}`)},
 			{Name: "events", Title: "Recent events", Description: "A service's recent events: deploys started and ended, builds, crashes, restarts, suspensions.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["service"],"properties":{` + svc + `,"limit":{"type":"integer","default":20,"maximum":100}}}`)},
-			{Name: "trigger_deploy", Title: "Trigger a deploy", Description: "Deploys the service again from its branch (or a given commit), optionally clearing the build cache.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "trigger_deploy", Title: "Trigger a deploy", Description: "Deploys the service again from its branch (or a given commit), optionally clearing the build cache. Destructive: it ships whatever revision is named to production.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["service"],"properties":{` + svc + `,"clearCache":{"type":"boolean"},"commit":{"type":"string","description":"Commit SHA to deploy instead of the branch head"}}}`)},
 			{Name: "suspend", Title: "Suspend a service", Description: "Stops a service: it stops answering and billing until resumed. Undo resumes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: in},
 			{Name: "resume", Title: "Resume a service", Description: "Starts a suspended service again. Undo suspends it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: in},

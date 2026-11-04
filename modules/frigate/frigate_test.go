@@ -172,15 +172,23 @@ func TestFrigateRead(t *testing.T) {
 
 func TestFrigateSwitches(t *testing.T) {
 	m, f := setup(t, Config{Username: "admin", Password: "secret://pw"}, true)
-	p, err := invoke(m, "set_detection", `{"camera":"front_door","enabled":false}`, true)
+	// Turning detection off is the destructive disable_detection; the write
+	// set_detection refuses enabled:false.
+	if _, err := invoke(m, "set_detection", `{"camera":"front_door","enabled":false}`, false); err == nil || !strings.Contains(err.Error(), "disable_detection") || !f.detect {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "set_recording", `{"camera":"front_door","enabled":false}`, false); err == nil || !strings.Contains(err.Error(), "disable_recording") {
+		t.Fatal(err)
+	}
+	p, err := invoke(m, "disable_detection", `{"camera":"front_door"}`, true)
 	if err != nil || p.Plan == nil || p.Plan.Summary != "Turn detection off for camera front_door (until Frigate restarts)" || !f.detect {
 		t.Fatalf("%+v %v", p, err)
 	}
-	r, err := invoke(m, "set_detection", `{"camera":"front_door","enabled":false}`, false)
+	r, err := invoke(m, "disable_detection", `{"camera":"front_door"}`, false)
 	if err != nil || f.detect || r.Undo == nil || r.Undo.Action != "set_detection" || string(r.Undo.Input) != `{"camera":"front_door","enabled":true}` {
 		t.Fatalf("%+v %v %v", r, err, f.seen)
 	}
-	if r, err = invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || !f.detect || string(r.Undo.Input) != `{"camera":"front_door","enabled":false}` {
+	if r, err = invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || !f.detect || r.Undo.Action != "disable_detection" || string(r.Undo.Input) != `{"camera":"front_door"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if _, err := invoke(m, "set_detection", `{"camera":"front_door","enabled":true}`, false); err == nil || !strings.Contains(err.Error(), "already on") {
@@ -191,8 +199,24 @@ func TestFrigateSwitches(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.recordOK = true
-	if r, err = invoke(m, "set_recording", `{"camera":"front_door","enabled":true}`, false); err != nil || !f.record || r.Undo.Action != "set_recording" {
+	if r, err = invoke(m, "set_recording", `{"camera":"front_door","enabled":true}`, false); err != nil || !f.record || r.Undo.Action != "disable_recording" {
 		t.Fatalf("%+v %v", r, err)
+	}
+	if r, err = invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.record || r.Undo.Action != "set_recording" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	for _, a := range m.Manifest().Actions {
+		want := sdk.RiskWrite
+		switch a.Name {
+		case "disable_detection", "disable_recording", "unretain_event":
+			want = sdk.RiskDestructive
+		case "set_detection", "set_recording", "retain_event":
+		default:
+			continue
+		}
+		if a.Risk != want {
+			t.Fatalf("%s is %s, want %s", a.Name, a.Risk, want)
+		}
 	}
 	if _, err := invoke(m, "set_detection", `{"camera":"porch","enabled":true}`, false); err == nil || !strings.Contains(err.Error(), "no camera porch (cameras: front_door, garage)") {
 		t.Fatal(err)
@@ -228,6 +252,7 @@ func TestFrigateRefusals(t *testing.T) {
 		{"retain_event", `{"id":"..%2f"}`},
 		{"set_detection", `{"camera":"front_door/../x","enabled":true}`},
 		{"set_detection", `{"camera":"front_door"}`},
+		{"disable_recording", `{"camera":"a/b"}`},
 		{"events", `{"camera":"a&b=c"}`},
 		{"events", `{"limit":1000}`},
 		{"events", `{"hours":-1}`},

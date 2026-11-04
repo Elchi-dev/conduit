@@ -31,7 +31,9 @@ topics, for one), so they're kept out of the audit log.
 **Topics.** Topics and filters are checked before anything is sent: UTF-8,
 no NUL or other control characters, at most 1024 bytes; a topic to publish
 to has no wildcards and doesn't start with `$`; in a filter `+` is a whole
-level and `#` the whole last level. Publishing to a topic no
+level and `#` the whole last level. Filters and prefixes may start with `$`
+only under `$SYS/`: `$share/…` and `$queue/…` would join a shared
+subscription and take messages away from its real consumers. Publishing to a topic no
 `publishTopics` filter matches is refused without connecting.
 
 **Physical things.** A topic can open a garage door or unlock a lock

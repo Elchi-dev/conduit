@@ -11,7 +11,7 @@ the team it needs and give it an expiry. For a team, also enter its id
 | --- | --- | --- |
 | `projects` | read | With the current production deployment and address |
 | `deployments` | read | State, address, target, commit message and branch; filter by project |
-| `redeploy` | write | Builds the same commit again, as a preview or for production |
+| `redeploy` | destructive | Builds the same commit again, as a preview or for production. It can put an older deployment's commit in production. |
 | `promote` | write | Points the production domains at a deployment. Undo points them back at the previous one. Preview shows before and after |
 | `cancel` | destructive | Stops a deployment that is still building |
 

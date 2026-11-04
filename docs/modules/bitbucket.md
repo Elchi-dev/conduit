@@ -26,7 +26,7 @@ write; running and stopping pipelines need pipeline write.
 | `pull_requests` | read | A repository's pull requests (open unless `state` is `MERGED`, `DECLINED` or `SUPERSEDED`) with author, branches, comment and task counts. |
 | `pull_request` | read | Description, participants with approvals and change requests, the destination's default merge strategy, source commit, and the size of the change (files, lines added and removed, conflicted files). |
 | `comment` | write | Adds a Markdown comment; participants are notified. The preview shows the text. No undo: the notifications are already sent. |
-| `approve` | write | Approves as the token's user; undo removes the approval. |
+| `approve` | destructive | Approves as the token's user; the approval counts toward merge checks like a person's review, so it's destructive. Undo removes the approval. |
 | `unapprove` | write | Removes the token user's approval; undo approves again. |
 | `merge` | destructive | Merges into the destination branch with `strategy` (the branch's default unless given, and only one the branch allows), optionally closing the source branch and with a commit `message`. The preview shows the branches, strategy, approvals, **change requests**, open tasks, draft state, conflicted files and the size of the change. If Bitbucket is still merging when it answers, the result says so. No undo. |
 | `decline` | destructive | Declines an open pull request, with an optional message. Bitbucket Cloud can't reopen a declined pull request, hence destructive. |
@@ -34,7 +34,7 @@ write; running and stopping pipelines need pipeline write.
 | `pipeline` | read | One run (by UUID or build number) with each step's status and duration. |
 | `pipeline_log` | read, sensitive | The last `lines` (up to 2000) of a step's log: the step given by name or UUID, otherwise the first failed step, otherwise the last one that started. At most the last 512 KiB of the log is fetched (with a Range request); terminal colors are removed and very long lines cut. Logs can hold secrets the run printed, so the output never reaches the audit log. |
 | `run_pipeline` | destructive | Runs the branch's pipeline, or the `custom` pipeline from `pipelines.custom`, with optional `variables` (custom pipelines only). It runs the repository's code with its variables and deployment credentials, hence destructive. The preview names the branch, pipeline and every variable value, so keep secrets in repository variables rather than passing them here. |
-| `stop_pipeline` | write | Stops a pending or running run; refused once it's finished. |
+| `stop_pipeline` | destructive | Stops a pending or running run (work in flight, such as a deploy, stops part way); refused once it's finished. |
 
 Pipelines are given by UUID (with or without braces) or build number
 (`42` or `#42`, looked up among the last 500 runs).

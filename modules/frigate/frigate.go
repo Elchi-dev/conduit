@@ -70,7 +70,8 @@ var (
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	cam := `"camera":{"type":"string","description":"Camera name as in Frigate's config"}`
-	toggle := `{"type":"object","required":["camera","enabled"],"properties":{` + cam + `,"enabled":{"type":"boolean"}}}`
+	toggle := `{"type":"object","required":["camera","enabled"],"properties":{` + cam + `,"enabled":{"type":"boolean","const":true,"description":"Must be true: turning it off is the destructive disable_ action"}}}`
+	camOnly := `{"type":"object","required":["camera"],"properties":{` + cam + `}}`
 	ev := `{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Event id (see events)"}}}`
 	return sdk.Manifest{
 		ID: "frigate", Name: "Frigate", Version: "0.1.0", Category: "Home", Icon: "video",
@@ -89,10 +90,12 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "events", Title: "Recent events", Description: "Tracked objects, newest first, with camera, label, sub label, top score, zones, times and whether there's a clip and snapshot.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + cam + `,"label":{"type":"string","description":"e.g. person, car"},"zone":{"type":"string"},"hours":{"type":"number","minimum":0,"maximum":720,"description":"Only events from the last hours"},"hasSnapshot":{"type":"boolean"},"inProgress":{"type":"boolean"},"retained":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":200,"default":25}}}`)},
 			{Name: "event", Title: "Event details", Description: "One event with its scores, box and region, attributes and snapshot and clip metadata (not the images).", Risk: sdk.RiskRead, Input: sdk.Schema(ev)},
-			{Name: "set_detection", Title: "Turn detection on or off", Description: "Switches object detection for a camera until Frigate restarts. Undo switches it back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(toggle)},
-			{Name: "set_recording", Title: "Turn recording on or off", Description: "Switches recording for a camera until Frigate restarts (recording must be enabled for it in the config). Undo switches it back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(toggle)},
+			{Name: "set_detection", Title: "Turn detection on", Description: "Switches object detection on for a camera until Frigate restarts (enabled must be true; turning it off is disable_detection). Undo turns it off again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(toggle)},
+			{Name: "disable_detection", Title: "Turn detection off", Description: "Switches object detection off for a camera until Frigate restarts. Destructive: the camera stops noticing people and cars. Undo turns it back on.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(camOnly)},
+			{Name: "set_recording", Title: "Turn recording on", Description: "Switches recording on for a camera until Frigate restarts (recording must be enabled for it in the config; enabled must be true, turning it off is disable_recording). Undo turns it off again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(toggle)},
+			{Name: "disable_recording", Title: "Turn recording off", Description: "Switches recording off for a camera until Frigate restarts. Destructive: nothing is recorded meanwhile. Undo turns it back on.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(camOnly)},
 			{Name: "retain_event", Title: "Keep an event", Description: "Keeps the event's clip and snapshot regardless of retention. Undo stops keeping it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(ev)},
-			{Name: "unretain_event", Title: "Stop keeping an event", Description: "Lets retention delete the event's clip and snapshot again. Undo keeps it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(ev)},
+			{Name: "unretain_event", Title: "Stop keeping an event", Description: "Lets retention delete the event's clip and snapshot again. Destructive: kept footage can then be deleted. Undo keeps it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(ev)},
 		},
 	}
 }
@@ -569,7 +572,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		o["submittedToFrigatePlus"] = e.PlusID != nil && *e.PlusID != ""
 		return sdk.JSON(o)
 
-	case "set_detection", "set_recording":
+	case "set_detection", "set_recording", "disable_detection", "disable_recording":
 		return c.toggle(ctx, call, p)
 
 	case "retain_event", "unretain_event":
@@ -629,10 +632,22 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if !cameraRe.MatchString(p.Camera) {
 		return sdk.Result{}, errors.New("the camera is a Frigate camera name (letters, digits, _ and -)")
 	}
-	if p.Enabled == nil {
-		return sdk.Result{}, errors.New("enabled is true or false")
+	// Turning detection or recording off blinds the camera, so it's its own
+	// destructive action; set_* (write) only turns things on.
+	recording := call.Action == "set_recording" || call.Action == "disable_recording"
+	want := true
+	switch call.Action {
+	case "disable_detection", "disable_recording":
+		want = false
+	default:
+		off := map[bool]string{false: "disable_detection", true: "disable_recording"}[recording]
+		if p.Enabled == nil {
+			return sdk.Result{}, fmt.Errorf("enabled is true (turning it off is %s)", off)
+		}
+		if !*p.Enabled {
+			return sdk.Result{}, fmt.Errorf("%s only turns it on; turning it off is %s", call.Action, off)
+		}
 	}
-	want := *p.Enabled
 	cams, err := c.cameras(ctx)
 	if err != nil {
 		return sdk.Result{}, err
@@ -644,7 +659,7 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	}
 	what, topic := "detection", "detect"
 	get := func(cc cameraCfg) bool { return on(cc.Detect) }
-	if call.Action == "set_recording" {
+	if recording {
 		what, topic = "recording", "recordings"
 		get = func(cc cameraCfg) bool { return on(cc.Record) }
 	}
@@ -678,13 +693,19 @@ func (c *conn) toggle(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		}
 	}
 	if !confirmed {
-		if call.Action == "set_recording" && want {
+		if recording && want {
 			return sdk.Result{}, fmt.Errorf("Frigate didn't turn recording on for %s; recording must be enabled for the camera in Frigate's config to switch it at runtime", p.Camera)
 		}
 		return sdk.Result{}, fmt.Errorf("Frigate didn't confirm turning %s %s for %s", what, word[want], p.Camera)
 	}
 	res, err := sdk.JSON(map[string]any{"camera": p.Camera, what: want})
-	res.Undo = sdk.UndoWith(call.Action, map[string]any{"camera": p.Camera, "enabled": now}, fmt.Sprintf("Turn %s %s for %s", what, word[now], p.Camera))
+	// The undo of turning on is the destructive disable_ action; the undo of
+	// turning off is the write set_ action.
+	undo, undoIn := map[bool]string{false: "set_detection", true: "set_recording"}[recording], map[string]any{"camera": p.Camera, "enabled": true}
+	if !now {
+		undo, undoIn = map[bool]string{false: "disable_detection", true: "disable_recording"}[recording], map[string]any{"camera": p.Camera}
+	}
+	res.Undo = sdk.UndoWith(undo, undoIn, fmt.Sprintf("Turn %s %s for %s", what, word[now], p.Camera))
 	return res, err
 }
 

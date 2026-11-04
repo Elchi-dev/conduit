@@ -78,7 +78,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "nodes", Title: "Nodes", Description: "CPU, memory and uptime of each node.", Risk: sdk.RiskRead},
 			{Name: "guests", Title: "VMs and containers", Description: "Every guest across the cluster with its state.", Risk: sdk.RiskRead},
 			{Name: "start", Title: "Start a guest", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: vm},
-			{Name: "shutdown", Title: "Shut down a guest", Description: "A clean shutdown through the guest's OS.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: vm},
+			{Name: "shutdown", Title: "Shut down a guest", Description: "A clean shutdown through the guest's OS. The guest's services go down until it's started (destructive).", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: vm},
 			{Name: "reboot", Title: "Reboot a guest", Risk: sdk.RiskDestructive, DryRun: true, Input: vm},
 			{Name: "stop", Title: "Stop a guest now", Description: "Like pulling the plug; unsaved work in the guest is lost.", Risk: sdk.RiskDestructive, DryRun: true, Input: vm},
 			{Name: "snapshots", Title: "Snapshots", Risk: sdk.RiskRead, Input: vm},

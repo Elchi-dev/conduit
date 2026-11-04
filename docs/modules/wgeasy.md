@@ -22,8 +22,9 @@ For a self-signed certificate, enter its SHA-256 `fingerprint`.
 | --- | --- | --- |
 | `clients` | read | Every client with id, on/off, IPv4 (and IPv6) address, public key, latest handshake, `online` (a handshake in the last 3 minutes), endpoint, bytes received and sent, created and expiry dates. `search` and `online` narrow it. |
 | `traffic` | read | Bytes received and sent per client, largest first, with totals and how many are connected. |
-| `enable_client` / `disable_client` | write | The preview says when a client is connected now and would be cut off. Each one's undo is the other. |
-| `create_client` | write | Creates a client with new keys and the next free address, with an optional `expiresAt` date. Names must be unique. The answer has its id and address but never its keys; use `config` to get its configuration. Undo deletes it. |
+| `enable_client` | destructive | Turns a client back on. Destructive because a client that's off may have been revoked (a lost or compromised device): turning it on gives that device its access back. Undo turns it off. |
+| `disable_client` | write | Turns a client off. The preview says when it's connected now and would be cut off. Undo is `enable_client`. |
+| `create_client` | write | Creates a client with new keys and the next free address, with an optional `expiresAt` date. Names must be unique. The answer has its id and address but never its keys; use `config` (destructive) to get its configuration. That's why it stays write: a new client grants no access until someone with destructive rights fetches its keys. Undo deletes it. |
 | `delete_client` | destructive | Deletes the client and its keys. Can't be undone: a new client gets new keys, so the device would need a new configuration. |
 | `config` | destructive, sensitive | The client's configuration file, with its private key. It reveals a secret, so it's destructive (asks by default), and its output never reaches the audit log. |
 

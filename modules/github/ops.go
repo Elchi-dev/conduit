@@ -133,7 +133,7 @@ func init() {
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			return a.post(ctx, c, p.Repo, fmt.Sprintf("/actions/jobs/%d/rerun", p.JobID), p.JobID != 0, fmt.Sprintf("Re-run job %d", p.JobID))
 		})
-	def(write("cancel_run", "Cancel a workflow run", "", schema("repo,runId", pRepo, pInt("runId", "")), false),
+	def(destructive("cancel_run", "Cancel a workflow run", "Stops a run in progress; destructive because work in flight (a deploy, say) stops part way.", schema("repo,runId", pRepo, pInt("runId", "")), false),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			return a.post(ctx, c, p.Repo, fmt.Sprintf("/actions/runs/%d/cancel", p.RunID), p.RunID != 0, fmt.Sprintf("Cancel run %d", p.RunID))
 		})
@@ -145,7 +145,7 @@ func init() {
 			}
 			return a.listSlim(ctx, "/repos/"+r+"/actions/workflows", nil, "workflows", 100)
 		})
-	def(write("dispatch_workflow", "Run a workflow", "Starts a workflow that has a workflow_dispatch trigger.", schema("repo,workflow,ref", pRepo, pStr("workflow", "Workflow file name (ci.yml) or id"),
+	def(destructive("dispatch_workflow", "Run a workflow", "Starts a workflow that has a workflow_dispatch trigger, on any branch or tag. Destructive: it runs that revision's code with the repository's secrets (deploy workflows deploy it).", schema("repo,workflow,ref", pRepo, pStr("workflow", "Workflow file name (ci.yml) or id"),
 		pStr("ref", "Branch or tag"), pObj("inputs", "The workflow's inputs")), false),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)
@@ -213,8 +213,8 @@ func init() {
 			}
 			return a.listSlim(ctx, base+"/secrets", nil, "secrets", p.limit())
 		})
-	def(sdk.ActionSpec{Name: "set_secret", Title: "Set an Actions secret", Risk: sdk.RiskWrite, DryRun: true, Sensitive: true,
-		Description: "Creates or replaces a secret. The value is encrypted for GitHub (sealed box) before it leaves Conduit and never logged.",
+	def(sdk.ActionSpec{Name: "set_secret", Title: "Set an Actions secret", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
+		Description: "Creates or replaces a secret (destructive: replacing one breaks or redirects what uses it, such as deploy credentials). The value is encrypted for GitHub (sealed box) before it leaves Conduit and never logged.",
 		Input: schema("name,value", withScope(pStr("name", "Secret name"), `"value":{"type":"string","x-secret":true,"description":"The secret value"}`,
 			pEnum("visibility", "Organization secrets: which repositories get it (default private)", "all", "private", "selected"),
 			`"selectedRepositoryIds":{"type":"array","items":{"type":"integer"},"description":"With visibility selected"}`)...)},

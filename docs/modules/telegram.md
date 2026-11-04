@@ -33,7 +33,10 @@ Telegram. Messages from allowed chats are kept in memory (the last 500) so
 reading them again still shows them; they're gone when the daemon restarts.
 Because updates are confirmed, another program reading the same bot's
 updates would miss them, and Telegram refuses `getUpdates` while the bot has
-a webhook; use a separate bot for Conduit.
+a webhook; use a separate bot for Conduit. That includes updates from chats
+that aren't in `allowedChats`: they're confirmed and dropped (only their chat
+ids are kept), so a bot that also serves other chats through another program
+must not be given to Conduit.
 
 **Security.** The token is part of every request URL, so transport errors
 are rewritten without the URL and the token never appears in messages or

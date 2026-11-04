@@ -16,7 +16,7 @@ elsewhere are refused.
 | `deploys` | read | A service's recent deploys: status, trigger, commit and first line of its message, image, start, finish and duration. |
 | `deploy` | read | One deploy (`dep-…`). |
 | `events` | read | Recent events (deploy started or ended, build, server failed, restarted, suspended…) with their short details. |
-| `trigger_deploy` | write | Deploys again from the branch head, or a `commit` SHA, optionally with `clearCache`. The preview names the branch or commit. Refused while the service is suspended. |
+| `trigger_deploy` | destructive | Deploys again from the branch head, or a `commit` SHA (any revision, so it is destructive), optionally with `clearCache`. The preview names the branch or commit. Refused while the service is suspended. |
 | `suspend` | destructive | Stops the service until resumed. Undo resumes it. |
 | `resume` | write | Starts a suspended service; undo suspends it again. |
 

@@ -58,7 +58,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "machines", Title: "Machines", Description: "State, region and image of an app's Machines.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{"app":{"type":"string"}}}`)},
 			{Name: "start", Title: "Start a Machine", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["app","machine"],"properties":{` + in + `}}`)},
-			{Name: "stop", Title: "Stop a Machine", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["app","machine"],"properties":{` + in + `}}`)},
+			{Name: "stop", Title: "Stop a Machine", Description: "The Machine stops serving until it's started (destructive).", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["app","machine"],"properties":{` + in + `}}`)},
 			{Name: "restart", Title: "Restart a Machine", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["app","machine"],"properties":{` + in + `}}`)},
 		},
 	}

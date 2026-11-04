@@ -15,7 +15,7 @@ with your permissions on every team you're in; enter a team slug (as in
 | `site` | read | One site, by id or domain (`my-site.netlify.app`). |
 | `deploys` | read | Recent deploys (`limit`, default 20; `production` for production only): state, context, branch, commit, build time, error, and which one is live. |
 | `deploy` | read | One deploy's state and build summary: the messages the build reported (titles, descriptions, details, clipped), the error and timing. Netlify's full build log is only streamed to its web app, not offered through the API. |
-| `trigger_build` | write | Builds the production branch again, optionally with `clearCache`. The preview names the branch and says when auto-publishing is locked, so the build won't go live by itself. |
+| `trigger_build` | destructive | Builds the production branch again, optionally with `clearCache`. The preview names the branch and says when auto-publishing is locked, so the build won't go live by itself. It builds and publishes whatever the branch holds now. |
 | `rollback` | destructive | Publishes an earlier ready `deploy` of the site as production, or, without one, the newest ready production deploy older than the live one. Visitors see it at once, hence destructive. The preview shows the live deploy and the one replacing it, and warns when auto-publishing is on (the next production build would replace the rollback; lock it to keep it). Undo publishes the deploy that was live. |
 | `lock_publishing` | write | Locks the live deploy so new production builds stop going live by themselves; undo unlocks. |
 | `unlock_publishing` | write | New production builds go live again; undo locks again. |

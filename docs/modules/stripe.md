@@ -26,7 +26,7 @@ so; a publishable key (`pk_…`) is refused. Start with a test-mode key
 | `invoices` | read | Number, status, due, paid and remaining amounts, customer id, subscription, due date. |
 | `refund` | destructive | Refunds a payment intent (`pi_…`) or charge (`ch_…`): the whole remaining amount, or `amount` in the smallest unit (cents) for a partial refund, with an optional `reason`. The preview shows the amount and currency, the customer id, what was charged and already refunded, the description and whether it's live. Refuses failed, uncaptured, disputed or fully refunded charges and amounts above what's left. Money goes back to the customer: there is no undo. |
 | `cancel_subscription` | destructive | Cancels at the end of the paid period by default (undo keeps the subscription), or `immediately` (optionally `prorate`, `invoiceNow`), which can't be undone. The preview shows the customer id, the plan and the period end. |
-| `keep_subscription` | write | Takes back a cancellation scheduled for the period end; undo schedules it again. |
+| `keep_subscription` | destructive | Takes back a cancellation scheduled for the period end, so the customer is billed again (that's why it's destructive); undo schedules it again. |
 
 Lists return `items`, `hasMore` and `next` (pass it as `after` for the next
 page).

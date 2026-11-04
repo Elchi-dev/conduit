@@ -58,7 +58,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "projects", Title: "Projects", Description: "With their production deployment.", Risk: sdk.RiskRead},
 			{Name: "deployments", Title: "Deployments", Description: "Recent deployments: state, address, target, when.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + proj + `,"limit":{"type":"integer","default":20,"maximum":100}}}`)},
-			{Name: "redeploy", Title: "Redeploy", Description: "Builds the same commit again.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "redeploy", Title: "Redeploy", Description: "Builds the same commit again. It can put an older deployment's commit in production (destructive).", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["deployment"],"properties":{` + dep + `,"production":{"type":"boolean","description":"Deploy to production"}}}`)},
 			{Name: "promote", Title: "Make it production", Description: "Points the production domains at this deployment (promote or roll back). Undo points them back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["project","deployment"],"properties":{` + proj + `,` + dep + `}}`)},

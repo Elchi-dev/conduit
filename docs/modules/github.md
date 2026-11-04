@@ -59,8 +59,12 @@ agents may read, writes ask, destructive actions ask more firmly):
 - **read**: everything that only looks.
 - **write**: changes that are normal maintenance and usually reversible:
   creating and editing, committing a file, opening and closing, labels,
-  re-running, dispatching a workflow, setting a secret.
-- **destructive**: deleting a repository, branch, tag, release, label,
+  re-running a run that already ran.
+- **destructive**: running a workflow on a branch or tag
+  (`dispatch_workflow`: it runs that revision's code with the repository's
+  secrets), cancelling a run in progress (`cancel_run`), setting a secret
+  (`set_secret`: replacing one can break or redirect deploy credentials),
+  deleting a file (`delete_file`), deleting a repository, branch, tag, release, label,
   milestone, webhook, environment, deploy key, secret or variable,
   transferring a repository, removing people or teams, merging, and the
   generic `api_write`, `api_delete` and `graphql_mutate`.
@@ -143,5 +147,5 @@ Health shows the signed-in user, and turns degraded when fewer than 100 API
 calls are left in the hour.
 
 Recommended policy: let agents read; ask for writes; keep destructive
-actions (which include `api_write`, `api_delete` and `graphql_mutate`) and
-`set_secret` on ask (destructive ones are by default).
+actions (which include `api_write`, `api_delete`, `graphql_mutate`,
+`dispatch_workflow` and `set_secret`) on ask (destructive ones are by default).

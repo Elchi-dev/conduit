@@ -23,12 +23,12 @@ self-signed Terraform Enterprise certificate enter its SHA-256
 | `workspace` | read | One workspace (by name or `ws-…` id) with the current run and its plan summary. |
 | `runs` | read | A workspace's recent runs with status, source, message, plan-only and destroy flags, plan summary, and which of apply, discard and cancel are possible now. |
 | `run` | read | One run with its plan summary: resources to add, change, destroy and import, targets and replacements. |
-| `queue_plan` | write | Queues a speculative, plan-only run that can never be applied, with an optional `message`. Providers and data sources still run during a plan. |
+| `queue_plan` | destructive | Queues a speculative, plan-only run that can never be applied, with an optional `message`. Destructive because providers and data sources still run during a plan, with the workspace's credentials (an `external` data source runs any program the configuration names). |
 | `apply_run` | destructive | Confirms a run waiting for confirmation so Terraform applies it. Refused for plan-only runs and runs not waiting for confirmation. The preview leads with **DESTROYS n resource(s)** (or **DESTROY RUN**) when anything is destroyed, then the counts to add, change, destroy and import, and any targets; destroyed resources get their own line. No undo. |
 | `discard_run` | write | Discards a run waiting for confirmation; nothing is applied. |
-| `cancel_run` | write | Interrupts a run that's planning or applying; the preview warns that a cancelled apply stops part way. |
+| `cancel_run` | destructive | Interrupts a run that's planning or applying; the preview warns that a cancelled apply stops part way. |
 | `lock_workspace` | write | Locks a workspace with an optional `reason`, so no run applies; undo unlocks. |
-| `unlock_workspace` | write | Unlocks a workspace the token's user locked (the preview names who holds the lock); undo locks it again. A lock held by someone else or by a run needs a force unlock in the web UI, which the module doesn't offer. |
+| `unlock_workspace` | destructive | Unlocks a workspace the token's user locked, so runs can apply again (the lock may be a change freeze) (the preview names who holds the lock); undo locks it again. A lock held by someone else or by a run needs a force unlock in the web UI, which the module doesn't offer. |
 
 The plan summary is the counts Terraform reports; the resource-by-resource
 plan (its JSON output) can hold sensitive values and is served from a

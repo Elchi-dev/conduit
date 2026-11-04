@@ -6,7 +6,9 @@
 // allow-list. Updates are fetched with a bounded, non-blocking getUpdates
 // (timeout 0) whose offset is kept in memory, and the messages from allowed
 // chats are kept in a small in-memory buffer so that reading them twice
-// still shows them.
+// still shows them. Reading confirms every update, including ones from chats
+// outside the allow-list (which are dropped), so the bot must be Conduit's
+// alone: nothing else may poll it.
 package telegram
 
 import (

@@ -228,8 +228,15 @@ func TestSetSecretEncryptsForGitHub(t *testing.T) {
 	m, f := setupFake(t, false)
 	must := mustT(t)
 	spec, _ := findSpec(m, "set_secret")
-	if !spec.Sensitive || spec.Risk != sdk.RiskWrite {
-		t.Fatalf("set_secret must be a sensitive write: %+v", spec)
+	if !spec.Sensitive || spec.Risk != sdk.RiskDestructive {
+		t.Fatalf("set_secret must be sensitive and destructive (it can replace deploy credentials): %+v", spec)
+	}
+	// Running a workflow on any ref, cancelling a run and deleting a file
+	// are destructive too.
+	for _, n := range []string{"dispatch_workflow", "cancel_run", "delete_file"} {
+		if s, _ := findSpec(m, n); s.Risk != sdk.RiskDestructive {
+			t.Fatalf("%s must be destructive: %+v", n, s)
+		}
 	}
 	if d, _ := findSpec(m, "delete_secret"); d.Risk != sdk.RiskDestructive {
 		t.Fatal("delete_secret must be destructive")

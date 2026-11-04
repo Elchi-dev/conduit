@@ -17,7 +17,7 @@ on another machine on your network).
 | `start_stream` | write | Undo stops the stream |
 | `stop_stream` | destructive | Ends the live broadcast for your viewers |
 | `start_record` | write | Undo stops the recording |
-| `stop_record` | write | Returns the path of the saved file |
+| `stop_record` | destructive | Returns the path of the saved file. It ends the recording in progress, so it is destructive like `stop_stream`. |
 | `toggle_mute` | write | For an input such as `Mic/Aux`; undo toggles it back |
 | `set_volume` | write | In dB from -100 to 26; undo restores the previous level |
 

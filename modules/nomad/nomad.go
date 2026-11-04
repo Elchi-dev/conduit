@@ -492,6 +492,11 @@ func (c *conn) getNode(ctx context.Context, raw string) (node, error) {
 	if err := c.do(ctx, http.MethodGet, "/v1/node/"+id, c.q(""), nil, &n); err != nil {
 		return n, friendly(err, "node "+id)
 	}
+	// n.ID goes into later request paths (drain, eligibility): it must be
+	// the node asked for, not whatever the server answered.
+	if n.ID != id || !uuidRe.MatchString(n.ID) {
+		return n, errors.New("unexpected node from Nomad")
+	}
 	return n, nil
 }
 
@@ -1005,6 +1010,11 @@ func (c *conn) promote(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 	var d deployment
 	if err := c.do(ctx, http.MethodGet, "/v1/deployment/"+id, c.q(""), nil, &d); err != nil {
 		return sdk.Result{}, friendly(err, "deployment "+id)
+	}
+	// d.ID and d.Namespace go into the promote request: they must be the
+	// deployment asked for and a plain namespace name.
+	if d.ID != id || !uuidRe.MatchString(d.ID) || (d.Namespace != "" && !nsRe.MatchString(d.Namespace)) {
+		return sdk.Result{}, errors.New("unexpected deployment from Nomad")
 	}
 	if d.Status != "running" {
 		return sdk.Result{}, fmt.Errorf("deployment %s is %s, not running", short(d.ID), d.Status)

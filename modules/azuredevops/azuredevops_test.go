@@ -282,7 +282,7 @@ func TestAzureDevOpsWorkItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	risks := map[string]sdk.Risk{"complete_pull_request": sdk.RiskDestructive, "queue_build": sdk.RiskDestructive, "delete_work_item": sdk.RiskDestructive,
-		"cancel_build": sdk.RiskWrite, "create_work_item": sdk.RiskWrite, "update_work_item_state": sdk.RiskWrite, "query_work_items": sdk.RiskRead}
+		"cancel_build": sdk.RiskDestructive, "create_work_item": sdk.RiskWrite, "update_work_item_state": sdk.RiskWrite, "query_work_items": sdk.RiskRead}
 	for _, a := range m.Manifest().Actions {
 		if want, ok := risks[a.Name]; ok && a.Risk != want {
 			t.Fatalf("%s: %s", a.Name, a.Risk)

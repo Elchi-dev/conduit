@@ -73,7 +73,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["zone","type","name"],"properties":{"zone":{"type":"string"},"type":{"type":"string"},"name":{"type":"string"}}}`)},
 			{Name: "restore_record", Title: "Restore a record", Description: "Puts back a record exactly as it was (used by undo).", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","record"],"properties":{"zone":{"type":"string"},"record":{"type":"object","additionalProperties":true},"replace":{"type":"string"}}}`)},
-			{Name: "purge_cache", Title: "Purge cache", Description: "Specific URLs, or everything when none are given.", Risk: sdk.RiskWrite,
+			{Name: "purge_cache", Title: "Purge cache", Description: "Specific URLs, or everything when none are given. Purging drops the cached copies, so every visitor hits the origin until the cache fills again (destructive).", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["zone"],"properties":{"zone":{"type":"string"},"files":{"type":"array","items":{"type":"string"}}}}`)},
 			{Name: "tunnels", Title: "Tunnels", Description: "Zero Trust (cloudflared) tunnels: healthy, degraded, down or inactive, with their connections.", Risk: sdk.RiskRead},
 			{Name: "tunnel", Title: "Tunnel", Description: "One tunnel's connectors (cloudflared version, platform, edge locations) and, for dashboard-managed tunnels, its public hostnames.", Risk: sdk.RiskRead,

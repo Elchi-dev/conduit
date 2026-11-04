@@ -244,7 +244,7 @@ func TestBitbucketWrites(t *testing.T) {
 	if _, err := invoke(m, "stop_pipeline", `{"repo":"web","pipeline":42}`, false); err == nil || !strings.Contains(err.Error(), "already finished") {
 		t.Fatal(err)
 	}
-	risks := map[string]sdk.Risk{"merge": sdk.RiskDestructive, "decline": sdk.RiskDestructive, "run_pipeline": sdk.RiskDestructive, "stop_pipeline": sdk.RiskWrite, "comment": sdk.RiskWrite, "approve": sdk.RiskWrite}
+	risks := map[string]sdk.Risk{"merge": sdk.RiskDestructive, "decline": sdk.RiskDestructive, "run_pipeline": sdk.RiskDestructive, "stop_pipeline": sdk.RiskDestructive, "comment": sdk.RiskWrite, "approve": sdk.RiskDestructive, "unapprove": sdk.RiskWrite}
 	for _, a := range m.Manifest().Actions {
 		if want, ok := risks[a.Name]; ok && (a.Risk != want || !a.DryRun) {
 			t.Fatalf("%s: %s dry=%v", a.Name, a.Risk, a.DryRun)

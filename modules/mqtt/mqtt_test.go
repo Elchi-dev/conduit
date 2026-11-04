@@ -288,6 +288,12 @@ func TestMQTTRefusals(t *testing.T) {
 		{"publish", `{"topic":"conduit/x","payload":"` + strings.Repeat("a", 300<<10) + `"}`},
 		{"clear_retained", `{"topic":"home/lamp"}`},
 		{"clear_retained", `{"topic":"conduit/#"}`},
+		{"subscribe_once", `{"filter":"$share/workers/jobs/#"}`}, // joins a shared group
+		{"subscribe_once", `{"filter":"$queue/jobs/#"}`},         // joins a shared queue
+		{"subscribe_once", `{"filter":"$SHARE/workers/jobs/#"}`},
+		{"subscribe_once", `{"filter":"$other/x"}`},
+		{"retained", `{"prefix":"$share/workers/jobs"}`},
+		{"retained", `{"prefix":"$queue/jobs"}`},
 		{"subscribe_once", `{"filter":"a/#/b"}`},
 		{"subscribe_once", `{"filter":"a/b#"}`},
 		{"subscribe_once", `{"filter":"a+/b"}`},
@@ -429,5 +435,25 @@ func TestGuard(t *testing.T) {
 	g = &guard{Conn: &chunks{r: bytes.NewReader([]byte{0x30, 0xff, 0xff, 0xff, 0xff, 0x01})}, max: 1 << 30}
 	if _, err := io.ReadAll(g); err == nil {
 		t.Fatal("accepted a five-byte length")
+	}
+}
+
+// Shared-subscription filters ($share/, $queue/) would divert messages away
+// from the group's real consumers; only $SYS may start with $.
+func TestValidFilterDollar(t *testing.T) {
+	for f, ok := range map[string]bool{
+		"$SYS/#":                true,
+		"$SYS":                  true,
+		"$SYS/broker/clients/+": true,
+		"home/#":                true,
+		"$share/g/home/#":       false,
+		"$queue/home/#":         false,
+		"$Share/g/#":            false,
+		"$sys/#":                false,
+		"$":                     false,
+	} {
+		if err := validFilter(f); (err == nil) != ok {
+			t.Errorf("%q: %v", f, err)
+		}
 	}
 }

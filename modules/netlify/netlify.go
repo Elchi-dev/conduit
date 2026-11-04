@@ -88,7 +88,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["site"],"properties":{` + site + `,"limit":{"type":"integer","default":20,"maximum":100},"production":{"type":"boolean","description":"Only production deploys"}}}`)},
 			{Name: "deploy", Title: "Deploy status", Description: "One deploy's state and build summary: what the build reported, the error, timing.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["deploy"],"properties":{` + deploy + `}}`)},
-			{Name: "trigger_build", Title: "Trigger a build", Description: "Starts a new build of the production branch.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "trigger_build", Title: "Trigger a build", Description: "Starts a new build of the production branch. It builds and publishes whatever the branch holds now (destructive).", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["site"],"properties":{` + site + `,"clearCache":{"type":"boolean","description":"Clear the build cache first"}}}`)},
 			{Name: "rollback", Title: "Roll back production", Description: "Publishes an earlier deploy as production (the previous good one unless given). Visitors see it at once. Undo publishes the one that was live.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["site"],"properties":{` + site + `,` + deploy + `}}`)},

@@ -33,6 +33,7 @@ type fake struct {
 	dispatched  []string
 	promoted    []string
 	reverted    []string
+	answerID    string // when set, node and deployment lookups answer with this ID
 }
 
 func (f *fake) job() map[string]any {
@@ -103,7 +104,11 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		enc.Encode([]any{map[string]any{"ID": nodeID, "Name": "n1", "Status": "ready", "SchedulingEligibility": f.eligibility, "Drain": f.drain}})
 	case "GET /v1/node/" + nodeID:
-		enc.Encode(map[string]any{"ID": nodeID, "Name": "n1", "Status": "ready", "SchedulingEligibility": f.eligibility, "Drain": f.drain})
+		id := nodeID
+		if f.answerID != "" {
+			id = f.answerID
+		}
+		enc.Encode(map[string]any{"ID": id, "Name": "n1", "Status": "ready", "SchedulingEligibility": f.eligibility, "Drain": f.drain})
 	case "GET /v1/node/" + nodeID + "/allocations":
 		enc.Encode(allocs())
 	case "POST /v1/node/" + nodeID + "/eligibility":
@@ -127,7 +132,11 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /v1/deployments":
 		io.WriteString(w, `[{"ID":"`+deployID+`","JobID":"web","Status":"running"}]`)
 	case "GET /v1/deployment/" + deployID:
-		io.WriteString(w, `{"ID":"`+deployID+`","JobID":"web","Namespace":"default","JobVersion":5,"Status":"running","TaskGroups":{"app":{"DesiredCanaries":1,"PlacedCanaries":["x"],"DesiredTotal":2,"HealthyAllocs":0,"UnhealthyAllocs":1}}}`)
+		id := deployID
+		if f.answerID != "" {
+			id = f.answerID
+		}
+		io.WriteString(w, `{"ID":"`+id+`","JobID":"web","Namespace":"default","JobVersion":5,"Status":"running","TaskGroups":{"app":{"DesiredCanaries":1,"PlacedCanaries":["x"],"DesiredTotal":2,"HealthyAllocs":0,"UnhealthyAllocs":1}}}`)
 	case "POST /v1/deployment/promote/" + deployID:
 		f.promoted = append(f.promoted, string(body))
 		io.WriteString(w, `{"EvalID":"e4"}`)
@@ -356,5 +365,29 @@ func TestNomadNoTokenAndRedirect(t *testing.T) {
 	}
 	if _, err := m2.Invoke(context.Background(), sdk.Call{Instance: "n", Action: "nodes"}); err == nil || leaked != "" {
 		t.Fatalf("followed the redirect: %v %q", err, leaked)
+	}
+}
+
+// IDs the server answers with go into later request paths, so a node or
+// deployment that comes back with another (or a path-like) ID is refused
+// before anything is posted.
+func TestNomadServerIDsChecked(t *testing.T) {
+	for _, bad := range []string{"../../v1/acl/bootstrap", alloc1, nodeID + "/../x"} {
+		m, f := setup(t, "secret://nm")
+		f.answerID = bad
+		for _, c := range []struct{ action, in string }{
+			{"drain_node", `{"node":"` + nodeID + `","deadlineMinutes":30}`},
+			{"node_eligibility", `{"node":"` + nodeID + `","eligible":false}`},
+			{"promote_deployment", `{"deployment":"` + deployID + `"}`},
+		} {
+			if _, err := invoke(m, c.action, c.in, false); err == nil || !strings.Contains(err.Error(), "unexpected") {
+				t.Fatalf("%s with %q: %v", c.action, bad, err)
+			}
+		}
+		for _, s := range f.seen {
+			if strings.HasPrefix(s, "POST") {
+				t.Fatalf("posted after a bad ID: %s", s)
+			}
+		}
 	}
 }

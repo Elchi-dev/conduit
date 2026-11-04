@@ -507,7 +507,7 @@ func init() {
 			}
 			return withUndo(out, err, "put_file", map[string]string{"repo": r, "path": p.Path, "branch": p.Branch, "sha": res.Content.SHA, "content": base64.StdEncoding.EncodeToString(prev), "encoding": "base64", "message": "Revert: " + p.Message}, "Restore the previous "+p.Path)
 		})
-	def(write("delete_file", "Delete a file", "Commits the file's removal. Undo commits it back.",
+	def(destructive("delete_file", "Delete a file", "Commits the file's removal. Undo commits it back.",
 		schema("repo,path,message", pRepo, pStr("path", ""), pStr("message", "Commit message"), pStr("branch", ""), pStr("sha", "The SHA of the file; looked up when empty")), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)

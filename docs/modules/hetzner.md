@@ -14,7 +14,7 @@ one instance per project. Store the token in the vault.
 | `images` | read | Snapshots and backups with size and source server |
 | `firewalls` | read | Rules and what they apply to |
 | `power_on` | write | Undo shuts the server down again (only if it was off). Preview shows the state change |
-| `shutdown` | write | Asks the OS to shut down (ACPI). Undo powers it on (only if it was running). A server that is off is still billed |
+| `shutdown` | destructive | Asks the OS to shut down (ACPI). Undo powers it on (only if it was running). A server that is off is still billed. The server's services go down until it's powered on. |
 | `reboot` | destructive | Restarts the OS. Preview available |
 | `snapshot` | write | Snapshots are billed by size. Undo deletes the snapshot |
 | `delete_image` | destructive | Snapshots and backups only, never system images |

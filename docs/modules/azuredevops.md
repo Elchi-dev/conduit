@@ -26,7 +26,7 @@ like, a default project; every action that works in a project takes a
 | `build` | read | One run with its stages and jobs and up to 20 failed tasks with their error messages and log ids. |
 | `build_log` | read, sensitive | The last `lines` (up to 2000) of a log: the given `log`, otherwise the first failed task's, otherwise the run's last log. Only those lines are requested. Logs can hold secrets the run printed, so the output never reaches the audit log. |
 | `queue_build` | destructive | Runs a pipeline (by id or exact name) on `branch` (the pipeline's default unless given) with optional queue-time `variables` and YAML runtime `parameters`. It runs the repository's code with the pipeline's service connections and secrets, hence destructive. The preview names the pipeline, branch and every value. Refused when the pipeline is disabled. |
-| `cancel_build` | write | Cancels a queued or running run. |
+| `cancel_build` | destructive | Cancels a queued or running run; work in flight, such as a deploy, stops part way. |
 | `query_work_items` | read | Runs a WIQL `SELECT` (only SELECT is accepted; WIQL has no statements that change anything) and returns up to `limit` (200) work items with type, title, state, assignee name, tags and link. Flat and link queries both work. |
 | `work_item` | read | Type, title, state, reason, assignee, creator, area, iteration, tags and the description (and repro steps for bugs) as plain text. Never e-mail addresses. |
 | `create_work_item` | write | Creates a work item of `type` with title and optional description (stored as text, HTML escaped), assignee, area and iteration paths and tags. Undo deletes it to the recycle bin. |

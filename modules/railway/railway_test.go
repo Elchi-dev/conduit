@@ -153,8 +153,8 @@ func TestRailwayReads(t *testing.T) {
 		if a.Name == "logs" && !a.Sensitive {
 			t.Fatal("logs must be sensitive")
 		}
-		if a.Name == "restart" && a.Risk != sdk.RiskDestructive {
-			t.Fatal("restart must be destructive")
+		if (a.Name == "restart" || a.Name == "redeploy") && a.Risk != sdk.RiskDestructive {
+			t.Fatal(a.Name + " must be destructive")
 		}
 	}
 

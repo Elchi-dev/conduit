@@ -151,9 +151,32 @@ func TestDatadogMute(t *testing.T) {
 	if _, err := invoke(m, "unmute_monitor", `{"id":42}`, false); err != nil || f.downtimes[dtID] != "canceled" {
 		t.Fatal(err)
 	}
-	// Whole monitor only when asked for explicitly.
-	if _, err := invoke(m, "mute_monitor", `{"id":42,"allGroups":true}`, false); err != nil || !strings.Contains(f.created[1], `"monitor_id":42`) {
+	// Whole monitor only when asked for explicitly, and only through the
+	// destructive mute_monitor_long.
+	if _, err := invoke(m, "mute_monitor", `{"id":42,"allGroups":true}`, false); err == nil || len(f.created) != 1 {
+		t.Fatal("mute_monitor muted every group of a monitor")
+	}
+	if _, err := invoke(m, "mute_monitor", `{"id":42,"scope":"host:web-1","minutes":1441}`, false); err == nil || len(f.created) != 1 {
+		t.Fatal("mute_monitor muted for more than a day")
+	}
+	r, err = invoke(m, "mute_monitor_long", `{"id":42,"allGroups":true,"minutes":10080}`, false)
+	if err != nil || !strings.Contains(f.created[1], `"monitor_id":42`) || !strings.Contains(f.created[1], `"scope":"*"`) || r.Undo == nil || r.Undo.Action != "unmute_monitor" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := invoke(m, "mute_monitor_long", `{"id":42,"scope":"host:web-1","minutes":2880}`, false); err != nil || len(f.created) != 3 {
 		t.Fatal(err)
+	}
+	for _, a := range m.Manifest().Actions {
+		switch a.Name {
+		case "mute_monitor":
+			if a.Risk != sdk.RiskWrite {
+				t.Fatal(a.Risk)
+			}
+		case "mute_monitor_long":
+			if a.Risk != sdk.RiskDestructive || !a.Reversible || !a.DryRun {
+				t.Fatal("mute_monitor_long must be destructive, undoable and previewed")
+			}
+		}
 	}
 }
 
@@ -182,6 +205,13 @@ func TestDatadogValidation(t *testing.T) {
 		{"mute_monitor", `{"id":42}`},
 		{"mute_monitor", `{"id":42,"scope":"host:a","allGroups":true}`},
 		{"mute_monitor", `{"id":42,"scope":"host:a","minutes":20000}`},
+		{"mute_monitor", `{"id":42,"scope":"host:a","minutes":1441}`},
+		{"mute_monitor", `{"id":42,"allGroups":true}`},
+		{"mute_monitor_long", `{"id":42,"scope":"*"}`},
+		{"mute_monitor_long", `{"scope":"*","allGroups":true}`},
+		{"mute_monitor_long", `{"id":42,"scope":"host:web-*"}`},
+		{"mute_monitor_long", `{"id":42}`},
+		{"mute_monitor_long", `{"id":42,"allGroups":true,"minutes":20000}`},
 		{"mute_monitor", `{"id":42,"scope":"host:a\nx"}`},
 		{"unmute_monitor", `{}`},
 		{"unmute_monitor", `{"downtime":"../downtime"}`},

@@ -79,7 +79,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["project","service"],"properties":{` + project + `,` + service + `,` + env + `,"limit":{"type":"integer","default":10,"maximum":50}}}`)},
 			{Name: "logs", Title: "Deployment logs", Description: "The last lines of a deployment's runtime (or build) logs. Logs can hold secrets and personal data.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["deployment"],"properties":{` + deployment + `,"lines":{"type":"integer","default":100,"maximum":500},"build":{"type":"boolean","description":"Build logs instead of runtime logs"}}}`)},
-			{Name: "redeploy", Title: "Redeploy", Description: "Builds and deploys a deployment again (the latest of a service in an environment when no deployment is given).", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "redeploy", Title: "Redeploy", Description: "Builds and deploys a deployment again (the latest of a service in an environment when no deployment is given). Destructive: an older deployment ships its older code to the environment.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{` + deployment + `,` + project + `,` + service + `,` + env + `}}`)},
 			{Name: "restart", Title: "Restart", Description: "Restarts a running deployment's containers without rebuilding; it drops connections while it comes back.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["deployment"],"properties":{` + deployment + `}}`)},

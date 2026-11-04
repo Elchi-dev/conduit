@@ -86,11 +86,12 @@ func (f *fakeJenkins) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"property":[{"_class":"hudson.model.ParametersDefinitionProperty","parameterDefinitions":[
 				{"_class":"hudson.model.ChoiceParameterDefinition","name":"ENV","type":"ChoiceParameterDefinition","choices":["staging","prod"],"defaultParameterValue":{"value":"staging"}},
 				{"_class":"hudson.model.BooleanParameterDefinition","name":"DRY","type":"BooleanParameterDefinition","defaultParameterValue":{"value":true}},
-				{"_class":"hudson.model.PasswordParameterDefinition","name":"DB_PASS","type":"PasswordParameterDefinition","defaultParameterValue":{"value":"LEAKME"}}]}],
+				{"_class":"hudson.model.PasswordParameterDefinition","name":"DB_PASS","type":"PasswordParameterDefinition","defaultParameterValue":{"value":"LEAKME"}},
+				{"_class":"hudson.model.StringParameterDefinition","name":"Api_Token","type":"StringParameterDefinition","defaultParameterValue":{"value":"LEAKME"}}]}],
 			"lastBuild":{"number":12,"building":true,"timestamp":1762250000000},"builds":[{"number":12,"building":true,"timestamp":1762250000000}]}`)
 	case "/job/team/job/web%20app/lastBuild/api/json", "/job/team/job/web%20app/12/api/json":
 		io.WriteString(w, `{"number":12,"building":`+fmt.Sprint(f.building)+`,"result":null,"timestamp":1762250000000,"displayName":"#12","estimatedDuration":300000,
-			"actions":[{"causes":[{"shortDescription":"Started by user Alice"}]},{"parameters":[{"_class":"hudson.model.StringParameterValue","name":"ENV","value":"prod"},{"_class":"hudson.model.PasswordParameterValue","name":"DB_PASS","value":"LEAKME"}]}],
+			"actions":[{"causes":[{"shortDescription":"Started by user Alice"}]},{"parameters":[{"_class":"hudson.model.StringParameterValue","name":"ENV","value":"prod"},{"_class":"hudson.model.PasswordParameterValue","name":"DB_PASS","value":"LEAKME"},{"_class":"hudson.model.StringParameterValue","name":"DEPLOY_KEY","value":"LEAKME"}]}],
 			"changeSets":[{"items":[{"msg":"Fix login\n\nlong body","commitId":"0123456789abcdef0123","author":{"fullName":"Bob"}}]}],"artifacts":[{"relativePath":"dist/app.tar.gz"}]}`)
 	case "/job/team/job/web%20app/12/consoleText":
 		for i := 1; i <= 5000; i++ {
@@ -137,6 +138,9 @@ func TestJenkinsRead(t *testing.T) {
 		{"job", `{"job":"job/team/job/web app"}`, `"health":{"description":"Build stability`},
 		{"builds", `{"job":"team/web app","limit":2}`, `{"durationSeconds":120,"number":11,"result":"SUCCESS"`},
 		{"build", `{"job":"team/web app"}`, `{"name":"DB_PASS","value":"[hidden]"}`},
+		// String parameters whose names look secret are hidden too.
+		{"build", `{"job":"team/web app"}`, `{"name":"DEPLOY_KEY","value":"[hidden]"}`},
+		{"job", `{"job":"team/web app"}`, `{"default":"[hidden]","name":"Api_Token","type":"String"}`},
 		{"build", `{"job":"team/web app","number":12}`, `"changes":[{"author":"Bob","commit":"0123456789ab","message":"Fix login"}]`},
 		{"queue", `{}`, `"why":"Waiting for next available executor"`},
 	} {
@@ -161,6 +165,14 @@ func TestJenkinsRead(t *testing.T) {
 	}
 	if !m.Manifest().Actions[4].Sensitive || m.Manifest().Actions[4].Name != "console" {
 		t.Fatal("console must be sensitive")
+	}
+	// Aborting a running build interrupts work in flight; removing a build
+	// that hasn't started from the queue doesn't.
+	for _, a := range m.Manifest().Actions {
+		want, ok := map[string]sdk.Risk{"trigger_build": sdk.RiskDestructive, "stop_build": sdk.RiskDestructive, "cancel_queued": sdk.RiskWrite}[a.Name]
+		if ok && a.Risk != want {
+			t.Fatalf("%s is %s, want %s", a.Name, a.Risk, want)
+		}
 	}
 }
 

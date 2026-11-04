@@ -57,7 +57,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "start_stream", Title: "Start streaming", Risk: sdk.RiskWrite, Reversible: true},
 			{Name: "stop_stream", Title: "Stop streaming", Description: "Ends the live broadcast.", Risk: sdk.RiskDestructive},
 			{Name: "start_record", Title: "Start recording", Risk: sdk.RiskWrite, Reversible: true},
-			{Name: "stop_record", Title: "Stop recording", Description: "Returns where the file was saved.", Risk: sdk.RiskWrite},
+			{Name: "stop_record", Title: "Stop recording", Description: "Returns where the file was saved. It ends the recording in progress (destructive, like stop_stream).", Risk: sdk.RiskDestructive},
 			{Name: "toggle_mute", Title: "Mute or unmute an input", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["input"],"properties":{"input":{"type":"string","description":"e.g. Mic/Aux"}}}`)},
 			{Name: "set_volume", Title: "Set an input's volume", Risk: sdk.RiskWrite, Reversible: true,

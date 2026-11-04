@@ -161,6 +161,10 @@ func TestRenderWrites(t *testing.T) {
 		if a.Name == "suspend" && (a.Risk != sdk.RiskDestructive || !a.Reversible || !a.DryRun) {
 			t.Fatal("suspend must be destructive, undoable and previewed")
 		}
+		// trigger_deploy ships any commit the caller names to production.
+		if a.Name == "trigger_deploy" && a.Risk != sdk.RiskDestructive {
+			t.Fatal("trigger_deploy must be destructive")
+		}
 	}
 }
 

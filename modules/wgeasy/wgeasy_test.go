@@ -230,7 +230,7 @@ func TestWGEasy(t *testing.T) {
 			if !a.Sensitive || a.Risk != sdk.RiskDestructive {
 				t.Fatal("config reveals a private key")
 			}
-		case "delete_client":
+		case "delete_client", "enable_client": // enable_client restores a revoked peer's access
 			if a.Risk != sdk.RiskDestructive {
 				t.Fatal(a)
 			}

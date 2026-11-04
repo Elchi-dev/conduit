@@ -13,7 +13,7 @@ organization's slug (`personal` for your own).
 | `apps` | read | Apps in the organization with their Machine count |
 | `machines` | read | Id, name, state, region and image of an app's Machines |
 | `start` | write | Undo stops it again (only if it was stopped) |
-| `stop` | write | Undo starts it again (only if it was running) |
+| `stop` | destructive | Undo starts it again (only if it was running). The Machine stops serving until it's started. |
 | `restart` | destructive | |
 
 All changes have a preview with the state before and after. App names and

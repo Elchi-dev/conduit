@@ -19,7 +19,7 @@ a bearer token).
 | `services` | read | A project's services with each environment's latest deployment: id, status, address. |
 | `deployments` | read | A service's recent deployments (`project`, `service`, optional `environment`, `limit` default 10, at most 50): status, commit, branch, first line of the commit message, address. |
 | `logs` | read, sensitive | The last `lines` (default 100, at most 500) of a deployment's runtime logs, or its build logs with `build`. Lines are clipped to 2000 characters. Logs can hold secrets and personal data, so they're kept out of the audit log, approvals and events. |
-| `redeploy` | write | Builds and deploys a `deployment` again, or the latest one of a `service` in an `environment`. The preview names the service, environment and deployment. |
+| `redeploy` | destructive | Builds and deploys a `deployment` again, or the latest one of a `service` in an `environment`. Destructive because an older deployment puts its older code live. The preview names the service, environment and deployment. |
 | `restart` | destructive | Restarts a deployed (or crashed) deployment's containers without rebuilding; connections drop while it comes back. With a preview. |
 
 There's no undo: a redeploy or restart can't be taken back, and rolling

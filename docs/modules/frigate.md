@@ -22,9 +22,12 @@ its SHA-256 `fingerprint`.
 | `stats` | read | Per-camera camera, process, detection and skipped FPS; detectors; storage; temperatures; GPU use. |
 | `events` | read | Tracked objects, newest first: camera, label, sub label (e.g. a recognized face), top score, zones, start and end, whether there's a clip and a snapshot, and whether it's kept. `camera`, `label`, `zone`, `hours`, `hasSnapshot`, `inProgress`, `retained` and `limit` (up to 200) narrow it. Thumbnails are never requested. |
 | `event` | read | One event with its current and top score, box, region, attributes and where its snapshot and clip are (`/api/events/<id>/snapshot.jpg`), without fetching the images. |
-| `set_detection` | write | Turns detection on or off for a camera until Frigate restarts. The module checks the config afterwards and fails if the change didn't show. Undo switches it back. |
-| `set_recording` | write | The same for recording. Frigate only switches recording on at runtime for cameras with recording enabled in its config; the module says so when it isn't. |
-| `retain_event` / `unretain_event` | write | Keep an event's clip and snapshot regardless of retention, or let retention handle it again. Each one's undo is the other. |
+| `set_detection` | write | Turns detection **on** for a camera until Frigate restarts (`enabled` must be true). The module checks the config afterwards and fails if the change didn't show. Undo is `disable_detection`. |
+| `disable_detection` | destructive | Turns detection off for a camera until Frigate restarts: the camera stops noticing people and cars. Undo is `set_detection`. |
+| `set_recording` | write | The same for turning recording **on**. Frigate only switches recording on at runtime for cameras with recording enabled in its config; the module says so when it isn't. Undo is `disable_recording`. |
+| `disable_recording` | destructive | Turns recording off for a camera until Frigate restarts. Undo is `set_recording`. |
+| `retain_event` | write | Keeps an event's clip and snapshot regardless of retention. Undo is `unretain_event`. |
+| `unretain_event` | destructive | Lets retention handle the event again, so kept footage can be deleted. Undo is `retain_event`. |
 
 **Security.** With a username, the module logs in at `/api/login` once,
 keeps the session cookie Frigate sets, and logs in again once when it

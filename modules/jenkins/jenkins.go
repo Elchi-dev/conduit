@@ -91,18 +91,18 @@ func (m *Module) Manifest() sdk.Manifest {
 		Actions: []sdk.ActionSpec{
 			{Name: "jobs", Title: "Jobs", Description: "Jobs (and folders) with their status and last build.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"folder":{"type":"string","description":"Only the jobs in this folder"},"search":{"type":"string"},"problems":{"type":"boolean","description":"Only jobs whose last build failed or was unstable"}}}`)},
-			{Name: "job", Title: "Job details", Description: "A job's status, health, last builds, parameters (with defaults, never for password parameters) and whether it's queued.", Risk: sdk.RiskRead,
+			{Name: "job", Title: "Job details", Description: "A job's status, health, last builds, parameters (with defaults, never for password parameters or ones whose name looks secret, like API_TOKEN) and whether it's queued.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `}}`)},
 			{Name: "builds", Title: "Recent builds", Description: "A job's last builds with result, start, duration and whether they're running.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `,"limit":{"type":"integer","minimum":1,"maximum":50,"default":10}}}`)},
-			{Name: "build", Title: "Build details", Description: "One build's result, causes, parameters (password values hidden), changes and artifacts.", Risk: sdk.RiskRead,
+			{Name: "build", Title: "Build details", Description: "One build's result, causes, parameters (password values and ones whose name looks secret hidden), changes and artifacts.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `,` + num + `}}`)},
 			{Name: "console", Title: "Console tail", Description: "The last lines of a build's console output. Logs can hold secrets Jenkins didn't mask, so this is sensitive.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `,` + num + `,"lines":{"type":"integer","minimum":1,"maximum":2000,"default":100}}}`)},
 			{Name: "queue", Title: "Build queue", Description: "Waiting builds with why they wait and for how long.", Risk: sdk.RiskRead},
 			{Name: "trigger_build", Title: "Start a build", Description: "Queues a build, with parameters for parameterized jobs. A build runs the job's code with its credentials, so this is destructive. Password and file parameters can't be passed.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `,"parameters":{"type":"object","description":"Parameter values by name; the job's defaults fill the rest","additionalProperties":{"type":["string","number","boolean"]}}}}`)},
-			{Name: "stop_build", Title: "Stop a build", Description: "Aborts a running build.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "stop_build", Title: "Stop a build", Description: "Aborts a running build. Destructive: it interrupts work in flight (a deploy may be left half done).", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `,` + num + `}}`)},
 			{Name: "cancel_queued", Title: "Cancel a queued build", Description: "Removes a waiting build from the queue.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"integer","minimum":1,"description":"Queue item id (see queue)"}}}`)},
@@ -456,6 +456,19 @@ func (d paramDef) secret() bool {
 	return strings.Contains(d.Class, "Password") || strings.Contains(d.Type, "Password") || strings.Contains(d.Class, "Credentials")
 }
 
+// secretNameRe matches parameter names that look like they hold a secret.
+// Jobs often keep tokens in plain string parameters (API_TOKEN, AWS_KEY);
+// their values are hidden just like password parameters.
+var secretNameRe = regexp.MustCompile(`(?i)password|passwd|secret|token|key|credential`)
+
+// secretName reports whether a parameter's name looks secret-ish.
+func secretName(name string) bool { return secretNameRe.MatchString(name) }
+
+// hidden reports whether the parameter's default value is kept out of
+// answers and previews: password and credentials parameters, and any whose
+// name looks like a secret.
+func (d paramDef) hidden() bool { return d.secret() || secretName(d.Name) }
+
 func (d paramDef) file() bool {
 	return strings.Contains(d.Class, "File") || d.Type == "FileParameterDefinition"
 }
@@ -593,8 +606,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if len(d.Choices) > 0 {
 				pe["choices"] = d.Choices
 			}
-			if d.Default != nil && !d.secret() {
+			if d.Default != nil && !d.hidden() {
 				pe["default"] = d.Default.Value
+			} else if d.Default != nil {
+				pe["default"] = "[hidden]"
 			}
 			params = append(params, pe)
 		}
@@ -815,7 +830,7 @@ func (c *conn) build(ctx context.Context, p input) (sdk.Result, error) {
 		}
 		for _, pv := range a.Parameters {
 			v := pv.Value
-			if strings.Contains(pv.Class, "Password") {
+			if strings.Contains(pv.Class, "Password") || secretName(pv.Name) {
 				v = "[hidden]"
 			}
 			if s, ok := v.(string); ok {
@@ -1003,7 +1018,7 @@ func (c *conn) trigger(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 		path = jp + "/buildWithParameters"
 		for name, d := range defs {
 			if _, set := shown[name]; !set && d.Default != nil {
-				if d.secret() {
+				if d.hidden() {
 					shown[name] = "(default, hidden)"
 				} else {
 					shown[name] = d.Default.Value

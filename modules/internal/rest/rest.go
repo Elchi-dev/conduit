@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -98,10 +99,40 @@ func (c *Client) Do(ctx context.Context, method, path string, q url.Values, body
 	return res.Header, nil
 }
 
-// message pulls a human error out of the common API error shapes.
+// maxRawMessage is the longest non-JSON error body passed on, after the
+// status: enough for "Permission denied" or "Invalid token", not for an
+// HTML page, a stack trace or an echoed request.
+const maxRawMessage = 80
+
+// secretRun matches what looks like a credential: a Bearer or Basic scheme
+// with its value, token=/key:/secret=/password= with a value, or any long run of token characters (API keys,
+// session ids, JWT segments). Error text is shown to agents and kept in
+// the audit log, and some servers echo the request's credentials in it.
+var secretRun = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}|(token|key|secret|password)["']?\s*[:=]\s*["']?[^\s"',;&]{6,}|[A-Za-z0-9_-]{20,}`)
+
+// redact replaces anything that looks like a credential with [redacted].
+func redact(s string) string {
+	return secretRun.ReplaceAllString(s, "[redacted]")
+}
+
+// message pulls a human error out of the common API error shapes. Messages
+// are redacted; a body that isn't JSON is only passed on when it's one short
+// line.
 func message(status string, raw []byte) string {
+	if m := jsonMessage(raw); m != "" {
+		return redact(m)
+	}
+	if t := strings.TrimSpace(string(raw)); t != "" && len(t) <= maxRawMessage && !strings.HasPrefix(t, "<") && !strings.ContainsAny(t, "\r\n") {
+		return status + ": " + redact(t)
+	}
+	return status
+}
+
+// jsonMessage reads the message out of a JSON error body, or "".
+func jsonMessage(raw []byte) string {
 	var e struct {
 		Message string `json:"message"`
+		Detail  string `json:"detail"` // Django REST framework
 		Error   any    `json:"error"`
 		Errors  []struct {
 			Message string `json:"message"`
@@ -109,31 +140,32 @@ func message(status string, raw []byte) string {
 			Title   string `json:"title"`
 		} `json:"errors"`
 	}
-	if json.Unmarshal(raw, &e) == nil {
-		if len(e.Errors) > 0 {
-			for _, s := range []string{e.Errors[0].Message, e.Errors[0].Detail, e.Errors[0].Title} {
-				if s != "" {
-					return s
-				}
-			}
-		}
-		if e.Message != "" {
-			return e.Message
-		}
-		if s, ok := e.Error.(string); ok && s != "" {
-			return s
-		}
-		// {"error":{"message":"..."}} (Bitbucket and others).
-		if m, ok := e.Error.(map[string]any); ok {
-			if s, ok := m["message"].(string); ok && s != "" {
+	if json.Unmarshal(raw, &e) != nil {
+		return ""
+	}
+	if len(e.Errors) > 0 {
+		for _, s := range []string{e.Errors[0].Message, e.Errors[0].Detail, e.Errors[0].Title} {
+			if s != "" {
 				return s
 			}
 		}
 	}
-	if t := strings.TrimSpace(string(raw)); t != "" && len(t) < 200 && !strings.HasPrefix(t, "<") {
-		return status + ": " + t
+	if e.Message != "" {
+		return e.Message
 	}
-	return status
+	if s, ok := e.Error.(string); ok && s != "" {
+		return s
+	}
+	if e.Detail != "" {
+		return e.Detail
+	}
+	// {"error":{"message":"..."}} (Bitbucket and others).
+	if m, ok := e.Error.(map[string]any); ok {
+		if s, ok := m["message"].(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // ValidBase checks an http(s) base URL.

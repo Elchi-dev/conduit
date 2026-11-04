@@ -226,10 +226,25 @@ func validTopic(t string) error {
 	return nil
 }
 
+// checkDollar keeps subscriptions out of the broker's special $ namespaces
+// except $SYS (its read-only statistics). $share/<group>/... and
+// $queue/... don't read a topic: they join a shared subscription, so the
+// broker diverts part of that group's messages away from its real consumers
+// to Conduit. Any other $ prefix is refused too, in any letter case.
+func checkDollar(f string) error {
+	if !strings.HasPrefix(f, "$") || f == "$SYS" || strings.HasPrefix(f, "$SYS/") {
+		return nil
+	}
+	return errors.New("filters starting with $ are only allowed under $SYS/ ($share/ and $queue/ would take messages away from a shared subscription's consumers)")
+}
+
 // validFilter checks a subscription filter: + only as a whole level, # only
-// as the whole last level.
+// as the whole last level, and $ only for $SYS.
 func validFilter(f string) error {
 	if err := checkChars(f); err != nil {
+		return err
+	}
+	if err := checkDollar(f); err != nil {
 		return err
 	}
 	levels := strings.Split(f, "/")
@@ -729,6 +744,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		if prefix != "" {
 			if err := validTopic(prefix); err != nil {
+				return sdk.Result{}, fmt.Errorf("prefix: %w", err)
+			}
+			if err := checkDollar(prefix); err != nil {
 				return sdk.Result{}, fmt.Errorf("prefix: %w", err)
 			}
 			// prefix/# covers the prefix itself in the spec, but not on

@@ -64,7 +64,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	id := `"id":{"type":"integer","minimum":1,"description":"Monitor id"}`
 	return sdk.Manifest{
 		ID: "datadog", Name: "Datadog", Version: "0.1.0", Category: "Monitoring", Icon: "chart",
-		Description: "Datadog: monitors and what's alerting, mute one monitor for a while, incidents, events, dashboards, SLO status.",
+		Description: "Datadog: monitors and what's alerting, mute one monitor for a while (whole monitor or over a day needs the destructive mute), incidents, events, dashboards, SLO status.",
 		Presets:     []string{"developer", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["site","apiKey","appKey"],"properties":{
 			"site":{"type":"string","enum":["datadoghq.com","us3.datadoghq.com","us5.datadoghq.com","datadoghq.eu","ap1.datadoghq.com","ap2.datadoghq.com","ddog-gov.com"],"default":"datadoghq.com","description":"Your Datadog site, as in the address you sign in at (app.datadoghq.eu is datadoghq.eu)"},
@@ -76,7 +76,9 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "monitor", Title: "Monitor state", Description: "One monitor: query, state of each group, when it last triggered, and active downtimes.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id + `}}`)},
 			{Name: "triggered_monitors", Title: "Triggered monitors", Description: "Monitors in Alert, Warn or No Data right now, with when they triggered.", Risk: sdk.RiskRead},
-			{Name: "mute_monitor", Title: "Mute a monitor", Description: "Schedules a downtime that silences one monitor (one scope of it, or all its groups when allGroups) for a number of minutes. Muting every monitor or a wildcard scope is refused. Undo cancels the downtime.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "mute_monitor", Title: "Mute part of a monitor", Description: "Schedules a downtime that silences one scope of one monitor (named groups such as host:web-1, no wildcards) for up to 24 hours (1440 minutes). Muting a whole monitor or for longer is mute_monitor_long. Undo cancels the downtime.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["id","scope"],"properties":{` + id + `,"scope":{"type":"string","description":"Groups to mute, e.g. host:web-1 or env:prod (no wildcards)"},"minutes":{"type":"integer","minimum":1,"maximum":1440,"default":60},"message":{"type":"string","maxLength":1000}}}`)},
+			{Name: "mute_monitor_long", Title: "Mute a whole monitor or for long", Description: "Schedules a downtime that silences one monitor (one scope of it, or all its groups when allGroups) for up to a week (10080 minutes). Destructive: it can blind alerting for a whole service. Muting every monitor or a wildcard scope is refused. Undo cancels the downtime.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id + `,"scope":{"type":"string","description":"Groups to mute, e.g. host:web-1 or env:prod (no wildcards)"},"allGroups":{"type":"boolean","description":"Mute every group of this one monitor"},"minutes":{"type":"integer","minimum":1,"maximum":10080,"default":60},"message":{"type":"string","maxLength":1000}}}`)},
 			{Name: "unmute_monitor", Title: "Unmute a monitor", Description: "Cancels a downtime by id, or every active downtime that names this monitor.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{` + id + `,"downtime":{"type":"string","description":"Downtime id"}}}`)},
@@ -372,7 +374,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(out)
 
 	case "mute_monitor":
-		return c.mute(ctx, call, p)
+		return c.mute(ctx, call, p, false)
+	case "mute_monitor_long":
+		return c.mute(ctx, call, p, true)
 	case "unmute_monitor":
 		return c.unmute(ctx, call, p)
 
@@ -448,7 +452,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
 
-func (c *conn) mute(ctx context.Context, call sdk.Call, p input) (sdk.Result, error) {
+// maxShortMute is the longest downtime mute_monitor (write) schedules;
+// longer ones, and whole-monitor ones, are mute_monitor_long (destructive).
+const maxShortMute = 1440
+
+// mute schedules a downtime for one monitor. long is mute_monitor_long: it
+// may cover every group of the monitor and last up to a week; the write
+// action is held to named groups for at most a day.
+func (c *conn) mute(ctx context.Context, call sdk.Call, p input, long bool) (sdk.Result, error) {
 	if p.ID < 1 {
 		return sdk.Result{}, errors.New("name the one monitor to mute by its id; muting every monitor isn't offered")
 	}
@@ -456,6 +467,10 @@ func (c *conn) mute(ctx context.Context, call sdk.Call, p input) (sdk.Result, er
 	switch {
 	case strings.Contains(scope, "*"):
 		return sdk.Result{}, errors.New("wildcard scopes are refused; name the groups (host:web-1) or set allGroups to mute this whole monitor")
+	case !long && p.AllGroups:
+		return sdk.Result{}, errors.New("muting every group of a monitor is mute_monitor_long; mute_monitor needs a scope like host:web-1")
+	case !long && scope == "":
+		return sdk.Result{}, errors.New("give a scope (like host:web-1); muting the whole monitor is mute_monitor_long")
 	case scope == "" && !p.AllGroups:
 		return sdk.Result{}, errors.New("give a scope (like host:web-1) or set allGroups to mute every group of this monitor")
 	case scope != "" && p.AllGroups:
@@ -466,6 +481,9 @@ func (c *conn) mute(ctx context.Context, call sdk.Call, p input) (sdk.Result, er
 	mins := p.Minutes
 	if mins == 0 {
 		mins = 60
+	}
+	if !long && (mins < 1 || mins > maxShortMute) {
+		return sdk.Result{}, errors.New("mute_monitor mutes for 1 to 1440 minutes (a day); longer mutes are mute_monitor_long")
 	}
 	if mins < 1 || mins > 10080 {
 		return sdk.Result{}, errors.New("mute for 1 to 10080 minutes (a week); indefinite mutes aren't offered")

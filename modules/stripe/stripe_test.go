@@ -172,7 +172,7 @@ func TestStripeReads(t *testing.T) {
 			if !a.Sensitive {
 				t.Fatal("customers must be sensitive")
 			}
-		case "refund", "cancel_subscription":
+		case "refund", "cancel_subscription", "keep_subscription": // keep bills the customer again
 			if a.Risk != sdk.RiskDestructive || !a.DryRun {
 				t.Fatalf("%s must be destructive with a preview", a.Name)
 			}

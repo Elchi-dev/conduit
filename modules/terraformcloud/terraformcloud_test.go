@@ -193,8 +193,13 @@ func TestTerraformRuns(t *testing.T) {
 		if a.Name == "apply_run" && (a.Risk != sdk.RiskDestructive || !a.DryRun) {
 			t.Fatal("apply must be destructive with a preview")
 		}
-		if a.Name == "queue_plan" && a.Risk != sdk.RiskWrite {
-			t.Fatal("plan-only runs are write")
+		// A plan runs providers and data sources with the workspace's
+		// credentials; cancelling interrupts an apply; unlocking ends a freeze.
+		switch a.Name {
+		case "queue_plan", "cancel_run", "unlock_workspace":
+			if a.Risk != sdk.RiskDestructive {
+				t.Fatalf("%s must be destructive", a.Name)
+			}
 		}
 	}
 }

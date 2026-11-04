@@ -50,7 +50,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "images", Title: "Snapshots and backups", Risk: sdk.RiskRead},
 			{Name: "firewalls", Title: "Firewalls", Risk: sdk.RiskRead},
 			{Name: "power_on", Title: "Power on", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["server"],"properties":{` + srv + `}}`)},
-			{Name: "shutdown", Title: "Shut down", Description: "Asks the operating system to shut down (ACPI).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["server"],"properties":{` + srv + `}}`)},
+			{Name: "shutdown", Title: "Shut down", Description: "Asks the operating system to shut down (ACPI). The server's services go down until it's powered on (destructive).", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["server"],"properties":{` + srv + `}}`)},
 			{Name: "reboot", Title: "Reboot", Description: "Restarts the operating system.", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(`{"type":"object","required":["server"],"properties":{` + srv + `}}`)},
 			{Name: "snapshot", Title: "Take a snapshot", Description: "Hetzner bills snapshots by size.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["server"],"properties":{` + srv + `,"description":{"type":"string","maxLength":120}}}`)},

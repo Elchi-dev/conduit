@@ -24,6 +24,8 @@ type fakeShelly struct {
 	pos      int
 	state    string
 	writes   []string
+	pulse    map[int]string // switch id → in_mode, with auto_off on
+	noConfig bool           // GetConfig fails
 }
 
 var readOnly = map[string]bool{"Shelly.GetDeviceInfo": true, "Shelly.GetStatus": true, "Shelly.GetConfig": true, "Shelly.CheckForUpdate": true}
@@ -98,7 +100,15 @@ func (f *fakeShelly) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"cover:1":  map[string]any{"id": 1, "state": "closed", "pos_control": false},
 		})
 	case "Shelly.GetConfig":
-		reply(map[string]any{"switch:0": map[string]any{"name": "Lamp"}, "switch:1": map[string]any{"name": "NAS"}, "cover:0": map[string]any{"name": "Blinds"}, "sys": map[string]any{"device": map[string]any{"name": "Rack"}}})
+		if f.noConfig {
+			io.WriteString(w, `{"id":1,"error":{"code":-103,"message":"busy"}}`)
+			return
+		}
+		cfg := map[string]any{"switch:0": map[string]any{"id": 0, "name": "Lamp", "in_mode": "follow", "auto_off": false}, "switch:1": map[string]any{"id": 1, "name": "NAS"}, "cover:0": map[string]any{"name": "Blinds"}, "sys": map[string]any{"device": map[string]any{"name": "Rack"}}}
+		for id, mode := range f.pulse {
+			cfg[fmt.Sprintf("switch:%d", id)] = map[string]any{"id": id, "name": "Garage", "in_mode": mode, "auto_off": true, "auto_off_delay": 1.0}
+		}
+		reply(cfg)
 	case "Shelly.CheckForUpdate":
 		reply(map[string]any{"stable": map[string]string{"version": "1.4.4", "build_id": "x"}})
 	case "Switch.Set":
@@ -136,7 +146,7 @@ func invoke(m *Module, action, in string, dry bool) (sdk.Result, error) {
 
 func TestShellyRead(t *testing.T) {
 	m, _ := setup(t, "secret://pw")
-	if h := m.Health(context.Background(), "s"); h.Status != "ok" || h.Message != "Rack · SNSW-102P16EU 1.3.2 · 2 switch(es) · 2 cover(s)" {
+	if h := m.Health(context.Background(), "s"); h.Status != "degraded" || h.Message != "Rack · SNSW-102P16EU 1.3.2 · 2 switch(es) · 2 cover(s) · password sent without encryption (the device is on http)" {
 		t.Fatalf("%+v", h)
 	}
 	for _, c := range []struct{ action, want string }{
@@ -214,7 +224,7 @@ func TestShellyWrite(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		risks[a.Name] = a.Risk
 	}
-	if risks["reboot"] != sdk.RiskDestructive || risks["switch_off_critical"] != sdk.RiskDestructive || risks["set_switch"] != sdk.RiskWrite || risks["cover"] != sdk.RiskWrite || risks["check_update"] != sdk.RiskRead {
+	if risks["reboot"] != sdk.RiskDestructive || risks["switch_off_critical"] != sdk.RiskDestructive || risks["switch_locked"] != sdk.RiskDestructive || risks["set_switch"] != sdk.RiskWrite || risks["cover"] != sdk.RiskWrite || risks["check_update"] != sdk.RiskRead {
 		t.Fatal(risks)
 	}
 }
@@ -300,5 +310,95 @@ func TestDigestMD5(t *testing.T) {
 	}
 	if _, ok := parseChallenge(`Basic realm="x"`); ok {
 		t.Fatal("parsed a Basic challenge")
+	}
+}
+
+func TestShellyHealthNoPassword(t *testing.T) {
+	f := &fakeShelly{on: map[int]bool{}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	m := New()
+	raw, _ := json.Marshal(Config{URL: srv.URL})
+	if err := m.Configure(context.Background(), fakehost.New(nil), "s", raw); err != nil {
+		t.Fatal(err)
+	}
+	if h := m.Health(context.Background(), "s"); h.Status != "ok" {
+		t.Fatalf("%+v", h)
+	}
+}
+
+// A relay wired to a garage opener, a door strike or a valve: no change at
+// write, listed or detected from its pulse wiring.
+func TestShellyLockedSwitches(t *testing.T) {
+	f := &fakeShelly{password: "s3cret", on: map[int]bool{0: false, 1: true}, state: "stopped"}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	cfg := func(c Config) *Module {
+		c.URL, c.Password = srv.URL, "secret://pw"
+		m := New()
+		raw, _ := json.Marshal(c)
+		if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://pw": "s3cret"}), "s", raw); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	// Listed.
+	m := cfg(Config{LockedSwitches: []int{0}, CriticalSwitches: []int{1}})
+	for _, in := range []string{`{"id":0,"on":true}`, `{"id":0,"on":false}`} {
+		if _, err := invoke(m, "set_switch", in, false); err == nil || !strings.Contains(err.Error(), "switch_locked") {
+			t.Fatalf("%s: %v", in, err)
+		}
+	}
+	if _, err := invoke(m, "switch_locked", `{"id":1,"on":false}`, false); err == nil {
+		t.Fatal("switch_locked took a switch that isn't locked")
+	}
+	if len(f.writes) != 0 {
+		t.Fatal(f.writes)
+	}
+	p, err := invoke(m, "switch_locked", `{"id":0,"on":true}`, true)
+	if err != nil || !strings.Contains(p.Plan.Summary, "locked switch 0 (Lamp)") || !strings.Contains(p.Plan.Summary, "garage opener") || len(f.writes) != 0 {
+		t.Fatalf("%+v %v", p.Plan, err)
+	}
+	r, err := invoke(m, "switch_locked", `{"id":0,"on":true}`, false)
+	if err != nil || !f.on[0] || r.Undo != nil {
+		t.Fatalf("%s %+v %v", r.Output, r.Undo, err)
+	}
+	r, _ = invoke(m, "switches", `{}`, false)
+	if !strings.Contains(string(r.Output), `"id":0,"locked":true`) {
+		t.Fatalf("%s", r.Output)
+	}
+
+	// Detected: auto-off with a momentary or detached input.
+	f.writes, f.on[0] = nil, false
+	for _, mode := range []string{"momentary", "detached"} {
+		f.pulse = map[int]string{0: mode}
+		m = cfg(Config{})
+		if _, err := invoke(m, "set_switch", `{"id":0,"on":true}`, false); err == nil || !strings.Contains(err.Error(), "auto-off") {
+			t.Fatalf("%s: %v", mode, err)
+		}
+	}
+	// A pulse switch on a follow input isn't an opener's wiring.
+	f.pulse = map[int]string{0: "follow"}
+	if _, err := invoke(cfg(Config{}), "set_switch", `{"id":0,"on":true}`, true); err != nil {
+		t.Fatal(err)
+	}
+	// notLocked overrides the detection, not the list.
+	f.pulse = map[int]string{0: "momentary"}
+	if _, err := invoke(cfg(Config{NotLocked: []int{0}}), "set_switch", `{"id":0,"on":true}`, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(cfg(Config{NotLocked: []int{0}, LockedSwitches: []int{0}}), "set_switch", `{"id":0,"on":true}`, true); err == nil {
+		t.Fatal("notLocked unlocked a listed switch")
+	}
+	// The configuration can't be read: refused unless notLocked.
+	f.pulse, f.noConfig = nil, true
+	if _, err := invoke(cfg(Config{}), "set_switch", `{"id":0,"on":true}`, false); err == nil || !strings.Contains(err.Error(), "couldn't be read") {
+		t.Fatal(err)
+	}
+	if _, err := invoke(cfg(Config{NotLocked: []int{0}}), "set_switch", `{"id":0,"on":true}`, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.writes) != 0 {
+		t.Fatal(f.writes)
 	}
 }

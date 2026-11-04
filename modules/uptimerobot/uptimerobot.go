@@ -63,7 +63,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			"apiKey":{"type":"string","x-secret":true,"description":"Main API key (My Settings, API Settings), or the read-only key to only read"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "monitors", Title: "Monitors", Description: "Monitors with type, interval, status (up, down, paused) and uptime over 1, 7 and 30 days.", Risk: sdk.RiskRead,
-				Input: sdk.Schema(`{"type":"object","properties":{"search":{"type":"string","description":"Only names or URLs containing this"},"status":{"type":"string","enum":["up","down","paused"]}}}`)},
+				Input: sdk.Schema(`{"type":"object","properties":{"search":{"type":"string","description":"Only monitors whose name or shown address (scheme, host and first path segment) contains this"},"status":{"type":"string","enum":["up","down","paused"]}}}`)},
 			{Name: "monitor", Title: "Monitor", Description: "One monitor with uptime and its latest events (down, up, paused, started) with reasons.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id + `}}`)},
 			{Name: "recent_downs", Title: "Recent downtime", Description: "The latest down events across monitors (or of one), newest first, with how long they lasted and why.", Risk: sdk.RiskRead,
@@ -253,18 +253,15 @@ func ts(sec int64) string {
 	return time.Unix(sec, 0).UTC().Format(time.RFC3339)
 }
 
-// shownURL is a monitored address without credentials or query string (a
-// token there would end up in the audit log), and nothing for heartbeat
-// monitors, whose URL is the secret push address.
+// shownURL is a monitored address cut to scheme://host and its first path
+// segment (rest.ShortURL: a token in the path, the query or the user part
+// would end up in the audit log), and nothing for heartbeat monitors, whose
+// URL is the secret push address.
 func shownURL(mo monitor) string {
 	if mo.Type == 5 {
 		return ""
 	}
-	s := rest.StripUserinfo(mo.URL)
-	if i := strings.IndexAny(s, "?#"); i >= 0 {
-		s = s[:i] + "?…"
-	}
-	return clip(s, 300)
+	return clip(rest.ShortURL(mo.URL), 300)
 }
 
 func monitorOut(mo monitor) map[string]any {
@@ -388,11 +385,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	switch call.Action {
 	case "monitors":
 		f := url.Values{"custom_uptime_ratios": {"1-7-30"}}
-		if s := strings.TrimSpace(p.Search); s != "" {
-			if !searchRe.MatchString(s) {
-				return sdk.Result{}, errors.New("the search is up to 100 characters")
-			}
-			f.Set("search", s)
+		// The search runs here, on names and the shown address: UptimeRobot's
+		// own search matches the whole URL, which would let a caller guess a
+		// token in it one character at a time.
+		search := strings.ToLower(strings.TrimSpace(p.Search))
+		if search != "" && !searchRe.MatchString(search) {
+			return sdk.Result{}, errors.New("the search is up to 100 characters")
 		}
 		switch p.Status {
 		case "":
@@ -411,7 +409,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		list := []map[string]any{}
 		for _, mo := range ms {
+			if search != "" && !strings.Contains(strings.ToLower(mo.Name), search) && !strings.Contains(strings.ToLower(shownURL(mo)), search) {
+				continue
+			}
 			list = append(list, monitorOut(mo))
+		}
+		if search != "" {
+			total = len(list)
 		}
 		out := map[string]any{"total": total, "monitors": list}
 		if total > len(list) {

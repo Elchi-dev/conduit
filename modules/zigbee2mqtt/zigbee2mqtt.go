@@ -1,8 +1,12 @@
 // Package zigbee2mqtt works with Zigbee2MQTT through its MQTT broker: the
 // bridge's info and devices (from its retained bridge topics), a device's
-// state, setting a device, and permitting new devices to join. Locks,
-// covers, thermostats and sirens are only set through a separate
-// destructive action.
+// state, setting a device, and permitting new devices to join.
+//
+// set_device (write) is default-deny: it sets only lights, fans, plain
+// switches and a few top-level light properties, on devices that aren't
+// critical. Everything else (locks, covers, thermostats, valves, sirens,
+// keypads, garage triggers, PIN codes, relocks, silencing an alarm, devices
+// in criticalDevices) goes through the destructive set_critical.
 package zigbee2mqtt
 
 import (
@@ -54,15 +58,31 @@ type Module struct {
 func New() *Module { return &Module{} }
 
 var (
-	baseRe   = regexp.MustCompile(`^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$`)
-	ieeeRe   = regexp.MustCompile(`^0x[0-9a-fA-F]{16}$`)
-	keyRe    = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
-	critName = regexp.MustCompile(`^(warning|squawk|alarm|siren|alarm_[a-z0-9_]+|.*_alarm|system_mode|child_lock|lock|lock_state|state_lock)$`)
+	baseRe = regexp.MustCompile(`^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$`)
+	ieeeRe = regexp.MustCompile(`^0x[0-9a-fA-F]{16}$`)
+	keyRe  = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
+	// critName matches property names that unlock or open something, add an
+	// access code, arm or disarm, or sound or silence an alarm: as a whole
+	// word between underscores (or digits) anywhere in the name.
+	critName = regexp.MustCompile(`(^|_)(warning|squawk|alarm|siren|lock|unlock|relock|auto_relock|lock_state|state_lock|child_lock|pin_code|user_code|code|trigger|garage|gate|door|valve|silence|mute|self_test|arm_mode|arm|disarm|system_mode|test)(_|$|[0-9])`)
+	// critDevice matches a device's description, model or friendly name
+	// when its switch is wired to something that mustn't be switched with
+	// write: a valve, a garage or gate opener, a door strike or lock.
+	// The word has to start a word ("Outdoor plug" and "Clock" don't match).
+	critDevice = regexp.MustCompile(`(?i)(^|[^a-z])(valve|garage|gate|door|lock|unlock|opener|strike|latch|barrier|irrigat|sprinkler|shut.?off|water|gas|siren|alarm|heater|boiler)`)
 )
 
 // criticalTypes are the specific exposes whose features are destructive to
-// change: unlocking, opening, and turning off heating or cooling.
-var criticalTypes = map[string]bool{"lock": true, "cover": true, "climate": true}
+// change: unlocking, opening, turning off heating or cooling, closing a
+// valve.
+var criticalTypes = map[string]bool{"lock": true, "cover": true, "climate": true, "valve": true}
+
+// writeParents are the exposes whose features set_device may change.
+var writeParents = map[string]bool{"light": true, "switch": true, "fan": true}
+
+// writeTop are the top-level properties set_device may change, on a device
+// that has a light expose.
+var writeTop = map[string]bool{"brightness": true, "color": true, "color_temp": true, "color_xy": true, "color_hs": true, "effect": true}
 
 const (
 	maxPayload = 4 << 10
@@ -85,15 +105,15 @@ func (m *Module) Manifest() sdk.Manifest {
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the broker's certificate (mqtts only)"},
 			"insecureSkipVerify":{"type":"boolean","default":false},
 			"baseTopic":{"type":"string","default":"zigbee2mqtt","description":"Zigbee2MQTT's mqtt.base_topic"},
-			"criticalDevices":{"type":"array","items":{"type":"string"},"description":"Friendly names or IEEE addresses of devices whose changes need set_critical (garage relays, valves, heater plugs)"}}}`),
+			"criticalDevices":{"type":"array","items":{"type":"string"},"description":"Friendly names or IEEE addresses of devices whose every change needs set_critical: relays and plugs wired to a garage door, a gate, a door strike, a valve, a heater or anything else that mustn't be switched with write. Devices whose description, model or name says valve, garage, gate, door, lock or opener are critical without being listed."}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "bridge", Title: "Bridge", Description: "Zigbee2MQTT's version, coordinator, channel, whether joining is permitted and whether it's online.", Risk: sdk.RiskRead},
 			{Name: "devices", Title: "Devices", Description: "Every device with its type, model, vendor, power source, interview state, the properties it can set, and whether it's critical.", Risk: sdk.RiskRead},
 			{Name: "state", Title: "Device state", Description: "A device's last state and availability. When nothing is retained, the module asks the device for its readable properties (a /get request) and waits for the answer.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["device"],"properties":{` + dev + `,"seconds":{"type":"number","minimum":0.5,"maximum":15,"default":3}}}`)},
-			{Name: "set_device", Title: "Set a device", Description: "Sets properties the device exposes as writable (lights, plugs, switches). Locks, covers, thermostats, sirens, child locks and devices in criticalDevices are refused (use set_critical). Undo puts the previous values back when the device's state was known.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "set_device", Title: "Set a device", Description: "Sets lights, fans and plain switches and plugs: only properties under a light, switch or fan expose, plus brightness, color, color_temp and effect on lights. Everything else is refused (use set_critical): locks, covers, thermostats, valves, sirens, keypads, garage triggers, PIN codes, auto-relock, silencing alarms, any device with one of those, switches whose device is a valve, garage or gate opener or lock, and devices in criticalDevices. Undo puts the previous values back when the device's state was known.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["device","payload"],"properties":{` + dev + `,` + pay + `}}`)},
-			{Name: "set_critical", Title: "Set a lock, cover, thermostat or alarm", Description: "Like set_device, for anything it refuses: unlocking, opening a cover or garage, changing a thermostat's mode or setpoint, sounding or silencing an alarm.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+			{Name: "set_critical", Title: "Set a lock, cover, thermostat or alarm", Description: "Like set_device, for anything it refuses: unlocking, opening a cover or garage, closing a valve, adding a PIN code, arming or disarming, changing a thermostat's mode or setpoint, sounding or silencing an alarm, any other property that isn't a light's, fan's or plain switch's.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["device","payload"],"properties":{` + dev + `,` + pay + `}}`)},
 			{Name: "permit_join", Title: "Permit joining", Description: "Lets new Zigbee devices join the network for up to 254 seconds (0 closes it again). Anything in radio range that's pairing can join. Undo closes it.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["seconds"],"properties":{"seconds":{"type":"integer","minimum":0,"maximum":254}}}`)},
@@ -209,14 +229,30 @@ func (d device) props() map[string]prop {
 	var walk func(e expose, parent string)
 	walk = func(e expose, parent string) {
 		switch e.Type {
-		case "light", "switch", "lock", "cover", "climate", "fan":
+		case "light", "switch", "lock", "cover", "climate", "fan", "valve":
 			for _, f := range e.Features {
 				walk(f, e.Type)
 			}
 			return
 		}
 		if e.Property != "" {
-			out[e.Property] = prop{expose: e, parent: parent, critical: criticalTypes[parent] || critName.MatchString(e.Property) || critName.MatchString(e.Name)}
+			p := prop{expose: e, parent: parent, critical: criticalTypes[parent] || critName.MatchString(e.Property) || critName.MatchString(e.Name)}
+			if q, ok := out[e.Property]; ok {
+				// Two exposes with the same property (endpoints, a
+				// converter listing it twice): critical if either is,
+				// and the most permissive access, so nothing writable
+				// hides behind a read-only twin.
+				p.critical = p.critical || q.critical
+				p.Access |= q.Access
+				if q.parent != parent {
+					if criticalTypes[q.parent] {
+						p.parent = q.parent
+					} else if !criticalTypes[parent] {
+						p.parent = "" // differing parents: not a light/switch/fan for sure
+					}
+				}
+			}
+			out[e.Property] = p
 			return
 		}
 		for _, f := range e.Features {
@@ -231,23 +267,81 @@ func (d device) props() map[string]prop {
 	return out
 }
 
+// listed says whether the device is in criticalDevices.
+func (d device) listed(c *conn) bool {
+	return c.critical[strings.ToLower(d.FriendlyName)] || c.critical[strings.ToLower(d.IEEE)]
+}
+
+// critical says whether every change to the device needs set_critical: it's
+// in criticalDevices, it has a writable critical property, or it has a
+// writable switch and its description or model says it's a valve, a garage
+// opener, a lock and the like.
 func (d device) critical(c *conn) bool {
-	if c.critical[strings.ToLower(d.FriendlyName)] || c.critical[strings.ToLower(d.IEEE)] {
+	if d.listed(c) {
 		return true
 	}
-	for _, p := range d.props() {
+	props := d.props()
+	sw := false
+	for _, p := range props {
 		if p.critical && p.Access&accessSet != 0 {
+			return true
+		}
+		if p.parent == "switch" && p.Access&accessSet != 0 {
+			sw = true
+		}
+	}
+	return sw && d.switchCritical()
+}
+
+// switchCritical says whether the device's description, model or friendly
+// name names something a relay mustn't switch with write.
+func (d device) switchCritical() bool {
+	if critDevice.MatchString(d.FriendlyName) {
+		return true
+	}
+	if d.Definition != nil && (critDevice.MatchString(d.Definition.Description) || critDevice.MatchString(d.Definition.Model)) {
+		return true
+	}
+	return false
+}
+
+// hasLight says whether the device has a light expose.
+func (d device) hasLight() bool {
+	if d.Definition == nil {
+		return false
+	}
+	for _, e := range d.Definition.Exposes {
+		if e.Type == "light" {
 			return true
 		}
 	}
 	return false
 }
 
+// writeAllowed says whether set_device may change the property: one under a
+// light, switch or fan expose, or a top-level light property, that isn't
+// critical itself.
+func (d device) writeAllowed(k string, p prop) bool {
+	if p.critical || criticalTypes[p.parent] {
+		return false
+	}
+	if writeParents[p.parent] {
+		return true
+	}
+	return p.parent == "" && writeTop[k] && d.hasLight()
+}
+
 func (c *conn) topic(parts ...string) string { return c.base + "/" + strings.Join(parts, "/") }
 
-// retained reads one retained bridge topic.
+// retained reads one retained bridge topic. bridge/devices lists every
+// device with its exposes and can be several MiB on a large network, so it
+// alone is read with mqttx's larger limit.
 func (c *conn) retained(ctx context.Context, name string) ([]byte, error) {
-	m, err := c.Current(ctx, c.topic("bridge", name))
+	read := c.Current
+	if name == "devices" {
+		read = c.CurrentLarge
+	}
+	m, err := read(ctx, c.topic("bridge", name))
 	if err != nil {
 		return nil, err
 	}
@@ -366,6 +460,7 @@ func (c *conn) read(ctx context.Context, s *mqttx.Session, d device, ch <-chan m
 	defer deadline.Stop()
 	settle := time.NewTimer(c.Settle)
 	defer settle.Stop()
+	settled := false
 	take := func(m mqttx.Message) bool {
 		switch m.Topic {
 		case t + "/availability":
@@ -389,7 +484,7 @@ func (c *conn) read(ctx context.Context, s *mqttx.Session, d device, ch <-chan m
 	for {
 		select {
 		case m := <-ch:
-			if take(m) {
+			if take(m) && (!o.retained || settled) {
 				// Pick up an availability message that came with it.
 				for {
 					select {
@@ -400,7 +495,20 @@ func (c *conn) read(ctx context.Context, s *mqttx.Session, d device, ch <-chan m
 					}
 				}
 			}
+			// A retained state: the retained availability may still be on
+			// its way, so wait out the settle time.
 		case <-settle.C:
+			settled = true
+			if o.state != nil {
+				for {
+					select {
+					case m := <-ch:
+						take(m)
+					default:
+						return o, nil
+					}
+				}
+			}
 			if !ask {
 				return o, nil
 			}
@@ -426,8 +534,10 @@ func (c *conn) read(ctx context.Context, s *mqttx.Session, d device, ch <-chan m
 	}
 }
 
-// checkPayload validates what to set against the device's exposes.
-func checkPayload(d device, payload map[string]any, allowCritical bool, deviceCritical bool) (bool, error) {
+// checkPayload validates what to set against the device's exposes. Without
+// allowCritical (set_device) it's default-deny: the device mustn't be
+// critical, and every property must be one writeAllowed lets through.
+func checkPayload(c *conn, d device, payload map[string]any, allowCritical bool) (bool, error) {
 	if len(payload) == 0 {
 		return false, errors.New("say what to set, e.g. {\"state\":\"ON\"}")
 	}
@@ -438,7 +548,15 @@ func checkPayload(d device, payload map[string]any, allowCritical bool, deviceCr
 		return false, errors.New("the payload is larger than 4 KB")
 	}
 	props := d.props()
+	deviceCritical := d.critical(c)
 	anyCritical := deviceCritical
+	var why string
+	switch {
+	case d.listed(c):
+		why = "it's in criticalDevices"
+	case deviceCritical:
+		why = "it's a lock, cover, thermostat, valve, alarm, keypad or opener, or wired to one"
+	}
 	for k, v := range payload {
 		if !keyRe.MatchString(k) {
 			return false, fmt.Errorf("%q isn't a property name", k)
@@ -454,18 +572,17 @@ func checkPayload(d device, payload map[string]any, allowCritical bool, deviceCr
 			sort.Strings(can)
 			return false, fmt.Errorf("%s has no writable property %q (it has: %s)", d.FriendlyName, k, strings.Join(can, ", "))
 		}
-		if p.critical {
+		if !d.writeAllowed(k, p) {
 			anyCritical = true
+			if why == "" {
+				why = fmt.Sprintf("set_device only changes lights, fans and plain switches, not %s", k)
+			}
 		}
 		if err := checkValue(k, p, v); err != nil {
 			return false, err
 		}
 	}
 	if anyCritical && !allowCritical {
-		why := "it's in criticalDevices"
-		if !deviceCritical {
-			why = "it changes a lock, cover, thermostat, alarm or child lock"
-		}
 		return true, fmt.Errorf("%s: %s; use set_critical", d.FriendlyName, why)
 	}
 	return anyCritical, nil
@@ -661,8 +778,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, fmt.Errorf("%s is disabled in Zigbee2MQTT", d.FriendlyName)
 		}
 		critical := call.Action == "set_critical"
-		devCrit := c.critical[strings.ToLower(d.FriendlyName)] || c.critical[strings.ToLower(d.IEEE)]
-		if _, err := checkPayload(d, p.Payload, critical, devCrit); err != nil {
+		if _, err := checkPayload(c, d, p.Payload, critical); err != nil {
 			return sdk.Result{}, err
 		}
 		s, err := c.Connect(ctx)
@@ -750,7 +866,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			if undo != nil {
 				back := "set_device"
-				if _, err := checkPayload(d, undo, false, devCrit); err != nil {
+				if _, err := checkPayload(c, d, undo, false); err != nil {
 					back = "set_critical"
 				}
 				res.Undo = sdk.UndoWith(back, map[string]any{"device": d.FriendlyName, "payload": undo}, "Put "+d.FriendlyName+" back")

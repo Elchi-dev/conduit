@@ -165,13 +165,13 @@ func TestHealthchecksReads(t *testing.T) {
 	}
 	for _, c := range []struct{ action, in, want string }{
 		{"checks", `{}`, `"byStatus":{"down":1,"up":1}`},
-		{"checks", `{"tags":["db"]}`, `"check":"` + c1 + `"`},
+		{"checks", `{"tags":["db"]}`, `"check":"` + pid(t, m, c1) + `"`},
 		{"check", `{"check":"` + strings.ToUpper(c1) + `"}`, `"integrations":2`},
 		{"check", `{"check":"` + c2 + `"}`, `"schedule":"*/5 * * * *"`},
 		{"flips", `{"check":"` + c1 + `","days":3}`, `"flips":[{"at":"2026-11-01T10:05:00+00:00","to":"up"},{"at":"2026-11-01T10:00:00+00:00","to":"down"}]`},
 	} {
 		r, err := invoke(m, c.action, c.in, false)
-		if err != nil || !strings.Contains(string(r.Output), c.want) || strings.Contains(string(r.Output), "/ping/") {
+		if err != nil || !strings.Contains(string(r.Output), c.want) || strings.Contains(string(r.Output), "/ping/") || anyUUID.Match(r.Output) {
 			t.Fatalf("%s %s: %s %v", c.action, c.in, r.Output, err)
 		}
 	}
@@ -308,5 +308,87 @@ func TestHealthchecksRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "h"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// pid is the id the module shows a check by.
+func pid(t *testing.T, m *Module, uuid string) string {
+	t.Helper()
+	c, err := m.set.Get("h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := c.idKey(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return publicID(k, uuid)
+}
+
+// A check's UUID is its ping address (marking it up hides an outage): no
+// output, preview, undo or error carries one; checks go by an instance-keyed
+// id that actions resolve by listing.
+func TestHealthchecksNoUUIDs(t *testing.T) {
+	m, f := setup(t, "secret://hc")
+	id1, id2 := pid(t, m, c1), pid(t, m, c2)
+	if !idRe.MatchString(id1) || id1 == id2 {
+		t.Fatal(id1, id2)
+	}
+	var outs []string
+	run := func(action, in string, dry bool) sdk.Result {
+		t.Helper()
+		r, err := invoke(m, action, in, dry)
+		if err != nil {
+			t.Fatalf("%s %s: %v", action, in, err)
+		}
+		outs = append(outs, string(r.Output), string(mustJSON(r.Plan)), string(mustJSON(r.Undo)))
+		return r
+	}
+	r := run("checks", `{}`, false)
+	if !strings.Contains(string(r.Output), `"check":"`+id1+`"`) || !strings.Contains(string(r.Output), `"check":"`+id2+`"`) {
+		t.Fatalf("%s", r.Output)
+	}
+	run("check", `{"check":"`+strings.ToUpper(id1)+`"}`, false)
+	run("flips", `{"check":"`+id1+`"}`, false)
+	r = run("pause_check", `{"check":"`+id2+`"}`, false)
+	if f.checks[c2]["status"] != "paused" || string(r.Undo.Input) != `{"check":"`+id2+`"}` {
+		t.Fatalf("%+v", r.Undo)
+	}
+	run(r.Undo.Action, string(r.Undo.Input), false)
+	run("ping_check", `{"check":"`+id2+`","signal":"log"}`, true)
+	run("ping_check", `{"check":"`+id2+`","signal":"log"}`, false)
+	if f.pings[0] != "POST /ping/"+c2+"/log " {
+		t.Fatal(f.pings)
+	}
+	r = run("create_check", `{"name":"New"}`, false)
+	if string(r.Undo.Input) != `{"check":"`+pid(t, m, cn)+`"}` {
+		t.Fatalf("%+v", r.Undo)
+	}
+	run(r.Undo.Action, string(r.Undo.Input), false)
+	run("delete_check", `{"check":"`+id1+`"}`, true)
+	for _, o := range outs {
+		if anyUUID.MatchString(o) {
+			t.Fatalf("a UUID came out: %s", o)
+		}
+	}
+	// An unknown id, and errors that would carry a UUID.
+	if _, err := invoke(m, "check", `{"check":"hc_`+strings.Repeat("0", 32)+`"}`, false); err == nil || anyUUID.MatchString(err.Error()) {
+		t.Fatal(err)
+	}
+	delete(f.checks, c1)
+	if _, err := invoke(m, "check", `{"check":"`+c1+`"}`, false); err == nil || anyUUID.MatchString(err.Error()) {
+		t.Fatal(err)
+	}
+	// Another instance (or API key) names the same check differently.
+	m2 := New()
+	m2.HTTP = m.HTTP
+	raw, _ := json.Marshal(Config{Address: f.url + "/hc", APIKey: "secret://hc"})
+	if err := m2.Configure(context.Background(), fakehost.New(map[string]string{"secret://hc": "hckey"}), "other", raw); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := m2.set.Get("other")
+	k, _ := c.idKey(context.Background())
+	if publicID(k, c2) == id2 {
+		t.Fatal("the id isn't keyed to the instance")
 	}
 }

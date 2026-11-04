@@ -3,6 +3,11 @@
 // few read-only queries and a restart. Commands are built from a fixed
 // list: nothing an agent types is sent as a command, so Reset, Upgrade,
 // Backlog, WifiConfig, rules, templates and passwords can't be reached.
+//
+// Relays wired to a garage opener, a door strike or a valve are locked:
+// listed in lockedRelays, or detected from a nonzero PulseTime (the usual
+// setup of an opener), and any change to them needs the destructive
+// power_locked.
 package tasmota
 
 import (
@@ -32,7 +37,13 @@ type Config struct {
 	Password string `json:"password"` // secret://, the web admin password
 	// CriticalRelays are relay numbers (1–8) that power something that
 	// mustn't go off by accident; turning them off needs power_off_critical.
-	CriticalRelays     []int  `json:"criticalRelays"`
+	CriticalRelays []int `json:"criticalRelays"`
+	// LockedRelays are relays (1–8) wired to a garage opener, a gate, a door
+	// strike or a valve: any change to them needs power_locked.
+	LockedRelays []int `json:"lockedRelays"`
+	// NotLocked are relays with a nonzero PulseTime that aren't wired to
+	// anything that opens.
+	NotLocked          []int  `json:"notLocked"`
 	Fingerprint        string `json:"fingerprint"`
 	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
 }
@@ -44,6 +55,8 @@ type conn struct {
 	user     string
 	pass     string
 	critical map[int]bool
+	locked   map[int]bool
+	unlocked map[int]bool // notLocked
 }
 
 // Module implements sdk.Module.
@@ -68,17 +81,21 @@ func (m *Module) Manifest() sdk.Manifest {
 			"username":{"type":"string","default":"admin"},
 			"password":{"type":"string","x-secret":true,"description":"The web admin password (WebPassword), if set"},
 			"criticalRelays":{"type":"array","items":{"type":"integer","minimum":1,"maximum":8},"description":"Relays that power something that mustn't go off by accident; turning them off needs power_off_critical (destructive)"},
+			"lockedRelays":{"type":"array","items":{"type":"integer","minimum":1,"maximum":8},"description":"Relays wired to a garage door opener, a gate, a door strike or a valve. Any change to them, on, off or toggle, is refused by set_power and needs power_locked (destructive). A relay with a nonzero PulseTime (the usual setup of an opener) is treated as locked even when it isn't listed here."},
+			"notLocked":{"type":"array","items":{"type":"integer","minimum":1,"maximum":8},"description":"Relays with a nonzero PulseTime that aren't wired to anything that opens or unlocks; set_power may change them. A relay in lockedRelays stays locked."},
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the device's certificate, for https builds"},
 			"insecureSkipVerify":{"type":"boolean","default":false}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "status", Title: "Status", Description: "Name, firmware, hardware, uptime, last restart reason, Wi-Fi signal, IP address and each relay's state.", Risk: sdk.RiskRead},
 			{Name: "power", Title: "Relays", Description: "Each relay's state, with its friendly name and whether it's critical.", Risk: sdk.RiskRead},
-			{Name: "set_power", Title: "Switch a relay", Description: "Turns a relay on, off or toggles it. Turning off or toggling a critical relay is refused (use power_off_critical). Undo puts it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "set_power", Title: "Switch a relay", Description: "Turns a relay on, off or toggles it. Turning off or toggling a critical relay is refused (use power_off_critical); any change to a locked relay (garage opener, door strike, valve: lockedRelays, or a nonzero PulseTime) is refused (use power_locked). Undo puts it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["state"],"properties":{` + relay + `,"state":{"type":"string","enum":["on","off","toggle"]}}}`)},
 			{Name: "power_off_critical", Title: "Turn off a critical relay", Description: "Turns off a relay listed in criticalRelays. Undo turns it back on.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["relay"],"properties":{` + relay + `}}`)},
+			{Name: "power_locked", Title: "Switch a locked relay", Description: "Turns a locked relay on or off: one wired to a garage door opener, a gate, a door strike or a valve (lockedRelays, or a nonzero PulseTime). This can open a door or a gate or shut off water. The preview names the relay.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["state"],"properties":{` + relay + `,"state":{"type":"string","enum":["on","off"]}}}`)},
 			{Name: "energy", Title: "Energy", Description: "Power now, voltage, current, power factor and energy today, yesterday and in total, from the device's meter.", Risk: sdk.RiskRead},
-			{Name: "command", Title: "Query", Description: "Runs one read-only query: State, Status 0–12, Power1–8, Dimmer, CT, Color, HSBColor, Timers or Timezone, without arguments. Anything else is refused.", Risk: sdk.RiskRead,
+			{Name: "command", Title: "Query", Description: "Runs one read-only query: State, Status 0–11, Power1–8, Dimmer, CT, Color, HSBColor, Timers or Timezone, without arguments. Anything else is refused.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["command"],"properties":{"command":{"type":"string","maxLength":40,"description":"e.g. Status 8 or Dimmer"}}}`)},
 			{Name: "restart", Title: "Restart", Description: "Restarts the device (Restart 1); relays follow their power-on state while it boots.", Risk: sdk.RiskDestructive, DryRun: true},
 		},
@@ -108,12 +125,27 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if u.Scheme == "http" && (c.Fingerprint != "" || c.InsecureSkipVerify) {
 		return errors.New("the certificate settings need an https address")
 	}
-	crit := map[int]bool{}
-	for _, n := range c.CriticalRelays {
-		if n < 1 || n > maxRelay {
-			return fmt.Errorf("critical relays are numbered 1 to %d", maxRelay)
+	nums := func(list []int, what string) (map[int]bool, error) {
+		out := map[int]bool{}
+		for _, n := range list {
+			if n < 1 || n > maxRelay {
+				return nil, fmt.Errorf("%s are numbered 1 to %d", what, maxRelay)
+			}
+			out[n] = true
 		}
-		crit[n] = true
+		return out, nil
+	}
+	crit, err := nums(c.CriticalRelays, "critical relays")
+	if err != nil {
+		return err
+	}
+	locked, err := nums(c.LockedRelays, "locked relays")
+	if err != nil {
+		return err
+	}
+	unlocked, err := nums(c.NotLocked, "notLocked relays")
+	if err != nil {
+		return err
 	}
 	tc, err := tlspin.Config(c.Fingerprint, c.InsecureSkipVerify)
 	if err != nil {
@@ -121,7 +153,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	}
 	tr := sdk.Transport(h)
 	tr.TLSClientConfig = tc
-	m.set.Put(id, &conn{host: h, base: u.Scheme + "://" + u.Host, user: user, pass: c.Password, critical: crit,
+	m.set.Put(id, &conn{host: h, base: u.Scheme + "://" + u.Host, user: user, pass: c.Password, critical: crit, locked: locked, unlocked: unlocked,
 		http: rest.SameHostOnly(&http.Client{Timeout: 10 * time.Second, Transport: tr})})
 	return nil
 }
@@ -226,14 +258,15 @@ func query(s string) (cmd, error) {
 	}
 	if m := statusRe.FindStringSubmatch(s); m != nil {
 		n, _ := strconv.Atoi(m[1])
-		if n > 12 {
-			return "", errors.New("Status takes 0 to 12")
+		if n > 11 {
+			// Status 12 is the crash dump: memory contents, not status.
+			return "", errors.New("Status takes 0 to 11")
 		}
 		return cmd("Status " + strconv.Itoa(n)), nil
 	}
 	m := queryRe.FindStringSubmatch(s)
 	if m == nil {
-		return "", fmt.Errorf("%q isn't a query: only State, Status 0–12, Power1–8, Dimmer, CT, Color, HSBColor, Timers and Timezone, without arguments", s)
+		return "", fmt.Errorf("%q isn't a query: only State, Status 0–11, Power1–8, Dimmer, CT, Color, HSBColor, Timers and Timezone, without arguments", s)
 	}
 	name, num := strings.ToLower(m[1]), m[2]
 	switch {
@@ -251,7 +284,7 @@ func query(s string) (cmd, error) {
 	case queries[name] != "" && num == "":
 		return cmd(queries[name]), nil
 	}
-	return "", fmt.Errorf("%q isn't a query: only State, Status 0–12, Power1–8, Dimmer, CT, Color, HSBColor, Timers and Timezone, without arguments", s)
+	return "", fmt.Errorf("%q isn't a query: only State, Status 0–11, Power1–8, Dimmer, CT, Color, HSBColor, Timers and Timezone, without arguments", s)
 }
 
 var secretKey = regexp.MustCompile(`(?i)pass|token|secret|key|otaurl`)
@@ -350,6 +383,61 @@ func relayName(s status0, n int) string {
 	return fmt.Sprintf("relay %d", n)
 }
 
+// pulses reads which relays have a nonzero PulseTime: they switch off on
+// their own after a moment, the setup of a garage opener or door strike.
+func (c *conn) pulses(ctx context.Context) (map[int]bool, error) {
+	out, err := c.send(ctx, "PulseTime")
+	if err != nil {
+		return nil, err
+	}
+	on := map[int]bool{}
+	seen := false
+	// Tasmota 8.x and later: {"PulseTime":{"Set":[0,…],"Remaining":[0,…]}}.
+	var all struct {
+		Set []float64 `json:"Set"`
+	}
+	if raw, ok := out["PulseTime"]; ok && json.Unmarshal(raw, &all) == nil && all.Set != nil {
+		seen = true
+		for i, v := range all.Set {
+			if v != 0 {
+				on[i+1] = true
+			}
+		}
+	}
+	// Older: {"PulseTime1":0,…} or {"PulseTime1":{"Set":0,"Remaining":0},…}.
+	for k, raw := range out {
+		n, err := strconv.Atoi(strings.TrimPrefix(k, "PulseTime"))
+		if !strings.HasPrefix(k, "PulseTime") || err != nil {
+			continue
+		}
+		var v float64
+		var o struct {
+			Set *float64 `json:"Set"`
+		}
+		switch {
+		case json.Unmarshal(raw, &v) == nil:
+		case json.Unmarshal(raw, &o) == nil && o.Set != nil:
+			v = *o.Set
+		default:
+			continue
+		}
+		seen = true
+		if v != 0 {
+			on[n] = true
+		}
+	}
+	if !seen {
+		return nil, errors.New("unexpected answer from the device to PulseTime")
+	}
+	return on, nil
+}
+
+// isLocked says whether a relay is locked: listed, or pulsed and not in
+// notLocked.
+func (c *conn) isLocked(n int, pulse map[int]bool) bool {
+	return c.locked[n] || (pulse[n] && !c.unlocked[n])
+}
+
 type input struct {
 	Relay   *int   `json:"relay"`
 	State   string `json:"state"`
@@ -395,6 +483,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		rs := relays(s.StatusSTS)
+		pulse, _ := c.pulses(ctx)
 		ns := make([]int, 0, len(rs))
 		for n := range rs {
 			ns = append(ns, n)
@@ -409,11 +498,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if c.critical[n] {
 				e["critical"] = true
 			}
+			if c.isLocked(n, pulse) {
+				e["locked"] = true
+			}
 			out = append(out, e)
 		}
 		return sdk.JSON(out)
 
-	case "set_power", "power_off_critical":
+	case "set_power", "power_off_critical", "power_locked":
 		n := 1
 		if p.Relay != nil {
 			n = *p.Relay
@@ -422,7 +514,8 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, fmt.Errorf("relays are numbered 1 to %d", maxRelay)
 		}
 		state := "off"
-		if call.Action == "set_power" {
+		switch call.Action {
+		case "set_power":
 			state = strings.ToLower(p.State)
 			if state != "on" && state != "off" && state != "toggle" {
 				return sdk.Result{}, errors.New("state is on, off or toggle")
@@ -430,8 +523,34 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if state != "on" && c.critical[n] {
 				return sdk.Result{}, fmt.Errorf("relay %d is in criticalRelays: turning it off needs power_off_critical", n)
 			}
-		} else if !c.critical[n] {
-			return sdk.Result{}, fmt.Errorf("relay %d isn't in criticalRelays; use set_power", n)
+		case "power_locked":
+			state = strings.ToLower(p.State)
+			if state != "on" && state != "off" {
+				return sdk.Result{}, errors.New("state is on or off")
+			}
+		default:
+			if !c.critical[n] {
+				return sdk.Result{}, fmt.Errorf("relay %d isn't in criticalRelays; use set_power", n)
+			}
+		}
+		// Whether it's locked depends on its PulseTime: when that can't be
+		// read, only a relay listed in notLocked goes ahead.
+		pulse, perr := c.pulses(ctx)
+		locked := c.isLocked(n, pulse) || (perr != nil && !c.unlocked[n])
+		if call.Action == "power_locked" {
+			if !locked {
+				return sdk.Result{}, fmt.Errorf("relay %d isn't locked; use set_power", n)
+			}
+		} else if locked {
+			why := "is in lockedRelays"
+			switch {
+			case c.locked[n]:
+			case perr != nil:
+				why = "may be locked (its PulseTime couldn't be read: " + perr.Error() + ")"
+			default:
+				why = "has a PulseTime, the setup of a garage opener or door strike (list it in notLocked if it isn't one)"
+			}
+			return sdk.Result{}, fmt.Errorf("relay %d %s: any change to it needs power_locked", n, why)
 		}
 		s, err := c.status0(ctx)
 		if err != nil {
@@ -447,6 +566,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		onOff := map[bool]string{true: "on", false: "off"}
 		if call.DryRun {
 			sum := "Turn " + onOff[want] + " " + name
+			if call.Action == "power_locked" {
+				sum = "Turn " + onOff[want] + " locked " + name + ", wired to a garage opener, gate, door strike or valve: this may open or unlock it or shut off a supply"
+			}
 			if want == was {
 				sum = name + " is already " + onOff[was] + "; nothing would change"
 			}
@@ -467,6 +589,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, errors.New("unexpected answer from the device")
 		}
 		res, err := sdk.JSON(map[string]any{"relay": n, "on": now == "ON", "changed": true})
+		if call.Action == "power_locked" {
+			return res, err // a pulsed relay goes back by itself; no undo
+		}
 		back, in := "set_power", map[string]any{"relay": n, "state": onOff[was]}
 		if !was && c.critical[n] {
 			back, in = "power_off_critical", map[string]any{"relay": n}
@@ -558,6 +683,9 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 	msg := s.Status.DeviceName + " · Tasmota " + s.StatusFWR.Version
 	if n := len(relays(s.StatusSTS)); n > 0 {
 		msg += fmt.Sprintf(" · %d relay(s)", n)
+	}
+	if c.pass != "" && strings.HasPrefix(c.base, "http://") {
+		return sdk.Health{Status: "degraded", Message: msg + " · password sent without encryption (the device is on http)"}
 	}
 	return sdk.Health{Status: "ok", Message: msg}
 }

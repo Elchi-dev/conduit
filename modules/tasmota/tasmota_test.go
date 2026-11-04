@@ -19,6 +19,9 @@ type fakeTasmota struct {
 	mu    sync.Mutex
 	power map[int]bool
 	cmds  []string // every command received
+	pulse map[int]int
+	old   bool // answers PulseTime the pre-8.x way
+	noPT  bool // doesn't answer PulseTime
 }
 
 func onOff(b bool) string { return map[bool]string{true: "ON", false: "OFF"}[b] }
@@ -67,6 +70,23 @@ func (f *fakeTasmota) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n := int(c[5] - '0')
 		f.power[n] = strings.HasSuffix(c, "On")
 		out = map[string]string{fmt.Sprintf("POWER%d", n): onOff(f.power[n])}
+	case "PulseTime":
+		set := make([]int, 8)
+		for n, v := range f.pulse {
+			set[n-1] = v
+		}
+		switch {
+		case f.noPT:
+			out = map[string]string{"Command": "Unknown", "Input": c}
+		case f.old:
+			o := map[string]any{}
+			for i, v := range set {
+				o[fmt.Sprintf("PulseTime%d", i+1)] = map[string]int{"Set": v, "Remaining": 0}
+			}
+			out = o
+		default:
+			out = map[string]any{"PulseTime": map[string]any{"Set": set, "Remaining": make([]int, 8)}}
+		}
 	case "Dimmer":
 		out = map[string]any{"Dimmer": 40}
 	case "Restart 1":
@@ -95,7 +115,7 @@ func invoke(m *Module, action, in string, dry bool) (sdk.Result, error) {
 
 func TestTasmotaRead(t *testing.T) {
 	m, _ := setup(t, "secret://pw")
-	if h := m.Health(context.Background(), "t"); h.Status != "ok" || h.Message != "Rack PDU · Tasmota 14.3.0(release-tasmota) · 2 relay(s)" {
+	if h := m.Health(context.Background(), "t"); h.Status != "degraded" || h.Message != "Rack PDU · Tasmota 14.3.0(release-tasmota) · 2 relay(s) · password sent without encryption (the device is on http)" {
 		t.Fatalf("%+v", h)
 	}
 	for _, c := range []struct{ action, in, want string }{
@@ -116,7 +136,7 @@ func TestTasmotaWrite(t *testing.T) {
 	m, f := setup(t, "secret://pw")
 	n := len(f.cmds)
 	p, err := invoke(m, "set_power", `{"relay":2,"state":"toggle"}`, true)
-	if err != nil || p.Plan.Summary != "Turn on relay 2 (Heater)" || f.power[2] || len(f.cmds) != n+1 { // only Status 0
+	if err != nil || p.Plan.Summary != "Turn on relay 2 (Heater)" || f.power[2] || len(f.cmds) != n+2 { // only PulseTime and Status 0
 		t.Fatalf("%+v %v %v", p.Plan, err, f.cmds)
 	}
 	r, err := invoke(m, "set_power", `{"relay":2,"state":"toggle"}`, false)
@@ -150,7 +170,7 @@ func TestTasmotaWrite(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		risks[a.Name] = a.Risk
 	}
-	if risks["restart"] != sdk.RiskDestructive || risks["power_off_critical"] != sdk.RiskDestructive || risks["set_power"] != sdk.RiskWrite || risks["command"] != sdk.RiskRead {
+	if risks["restart"] != sdk.RiskDestructive || risks["power_off_critical"] != sdk.RiskDestructive || risks["power_locked"] != sdk.RiskDestructive || risks["set_power"] != sdk.RiskWrite || risks["command"] != sdk.RiskRead {
 		t.Fatal(risks)
 	}
 }
@@ -183,6 +203,7 @@ func TestTasmotaRefusals(t *testing.T) {
 		{"command", `{"command":"Power9"}`},
 		{"command", `{"command":"Dimmer 100"}`},
 		{"command", `{"command":"Status 99"}`},
+		{"command", `{"command":"Status 12"}`}, // the crash dump
 		{"command", `{"command":"Status 0;Reset 1"}`},
 		{"command", `{"command":"Status\n0"}`},
 		{"command", `{"command":"State%3BReset"}`},
@@ -205,7 +226,7 @@ func TestTasmotaRefusals(t *testing.T) {
 	}
 	// set_power on a relay the device doesn't have reads status first, and
 	// sends nothing else.
-	if _, err := invoke(m, "set_power", `{"relay":5,"state":"on"}`, false); err == nil || len(f.cmds) != 1 || f.cmds[0] != "Status 0" {
+	if _, err := invoke(m, "set_power", `{"relay":5,"state":"on"}`, false); err == nil || len(f.cmds) != 2 || f.cmds[0] != "PulseTime" || f.cmds[1] != "Status 0" {
 		t.Fatal(err, f.cmds)
 	}
 	for _, c := range []Config{
@@ -245,5 +266,89 @@ func TestQuery(t *testing.T) {
 		if got, err := query(in); err != nil || got != want {
 			t.Errorf("%q: %q %v", in, got, err)
 		}
+	}
+}
+
+// A relay wired to a garage opener, a door strike or a valve: no change at
+// write, listed or detected from its PulseTime.
+func TestTasmotaLockedRelays(t *testing.T) {
+	f := &fakeTasmota{power: map[int]bool{1: true, 2: false}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	cfg := func(c Config) *Module {
+		c.URL, c.Password = srv.URL, "secret://pw"
+		m := New()
+		raw, _ := json.Marshal(c)
+		if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://pw": "pw"}), "t", raw); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	writes := func() (n int) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for _, c := range f.cmds {
+			if strings.HasSuffix(c, " On") || strings.HasSuffix(c, " Off") {
+				n++
+			}
+		}
+		return n
+	}
+	m := cfg(Config{LockedRelays: []int{2}})
+	for _, st := range []string{"on", "off", "toggle"} {
+		if _, err := invoke(m, "set_power", `{"relay":2,"state":"`+st+`"}`, false); err == nil || !strings.Contains(err.Error(), "power_locked") {
+			t.Fatalf("%s: %v", st, err)
+		}
+	}
+	if _, err := invoke(m, "power_locked", `{"relay":1,"state":"off"}`, false); err == nil {
+		t.Fatal("power_locked took a relay that isn't locked")
+	}
+	if _, err := invoke(m, "power_locked", `{"relay":2,"state":"toggle"}`, false); err == nil {
+		t.Fatal("power_locked toggled")
+	}
+	if writes() != 0 {
+		t.Fatal(f.cmds)
+	}
+	p, err := invoke(m, "power_locked", `{"relay":2,"state":"on"}`, true)
+	if err != nil || !strings.Contains(p.Plan.Summary, "locked relay 2 (Heater)") || !strings.Contains(p.Plan.Summary, "garage opener") {
+		t.Fatalf("%+v %v", p.Plan, err)
+	}
+	r, err := invoke(m, "power_locked", `{"relay":2,"state":"on"}`, false)
+	if err != nil || !f.power[2] || r.Undo != nil {
+		t.Fatalf("%s %+v %v", r.Output, r.Undo, err)
+	}
+	r, _ = invoke(m, "power", `{}`, false)
+	if !strings.Contains(string(r.Output), `"locked":true,"name":"Heater"`) {
+		t.Fatalf("%s", r.Output)
+	}
+	f.power[2] = false
+
+	// Detected from PulseTime, both answer shapes.
+	for _, old := range []bool{false, true} {
+		f.pulse, f.old = map[int]int{2: 10}, old
+		if _, err := invoke(cfg(Config{}), "set_power", `{"relay":2,"state":"on"}`, false); err == nil || !strings.Contains(err.Error(), "PulseTime") {
+			t.Fatalf("old=%v: %v", old, err)
+		}
+		if _, err := invoke(cfg(Config{}), "set_power", `{"relay":1,"state":"on"}`, true); err != nil {
+			t.Fatalf("old=%v relay 1: %v", old, err)
+		}
+	}
+	// notLocked overrides the detection, not the list.
+	if _, err := invoke(cfg(Config{NotLocked: []int{2}}), "set_power", `{"relay":2,"state":"on"}`, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(cfg(Config{NotLocked: []int{2}, LockedRelays: []int{2}}), "set_power", `{"relay":2,"state":"on"}`, true); err == nil {
+		t.Fatal("notLocked unlocked a listed relay")
+	}
+	// PulseTime can't be read: refused unless notLocked.
+	f.pulse, f.noPT = nil, true
+	if _, err := invoke(cfg(Config{}), "set_power", `{"relay":2,"state":"on"}`, false); err == nil || !strings.Contains(err.Error(), "couldn't be read") {
+		t.Fatal(err)
+	}
+	if _, err := invoke(cfg(Config{NotLocked: []int{2}}), "set_power", `{"relay":2,"state":"on"}`, true); err != nil {
+		t.Fatal(err)
+	}
+	if writes() != 1 {
+		t.Fatal(f.cmds)
 	}
 }

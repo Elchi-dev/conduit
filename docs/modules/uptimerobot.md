@@ -10,7 +10,7 @@ then refused with a clear message.
 
 | Action | Risk | Notes |
 | --- | --- | --- |
-| `monitors` | read | Monitors (up to 500; `search` by name or URL, `status` up, down or paused) with type, interval, status and uptime over 1, 7 and 30 days. |
+| `monitors` | read | Monitors (up to 500; `search` by name or shown address, `status` up, down or paused) with type, interval, status and uptime over 1, 7 and 30 days. The search runs in Conduit: UptimeRobot's own search matches whole URLs, which would let a caller guess a token in one. |
 | `monitor` | read | One monitor `id` with uptime and its latest 10 events (down, up, paused, started) with reason. |
 | `recent_downs` | read | The latest down events across monitors (or of monitor `id`), newest first, with duration, reason and whether the outage is still going on (`limit` up to 100). |
 | `pause_monitor` | write | Pauses **one** monitor `id`: it stops checking and alerting until resumed. The preview shows its status; pausing an already paused monitor does nothing. Pausing every monitor isn't offered. Undo resumes it. |
@@ -21,7 +21,8 @@ then refused with a clear message.
 **Security.** UptimeRobot v2 takes the key only in the form body; the
 client follows redirects only within the same host and never from https to
 http. Its error answers echo the key back, so only the error message is
-passed on, redacted. Monitored URLs are shown without credentials or query
-string, and heartbeat monitors' push URLs (which act as a secret) aren't
-shown. Monitor IDs are integers, and names, URLs, intervals, searches and
+passed on, redacted. Monitored URLs are shown as scheme, host and first path
+segment only (a segment that looks like a token is masked; credentials, the
+rest of the path and the query are left out), and heartbeat monitors' push
+URLs (which act as a secret) aren't shown. Monitor IDs are integers, and names, URLs, intervals, searches and
 limits are checked before they reach a request.

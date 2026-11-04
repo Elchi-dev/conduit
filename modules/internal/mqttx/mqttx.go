@@ -34,6 +34,10 @@ const (
 	MaxCollect    = 1 << 20 // bytes of payload one read collects
 	MaxPacket     = MaxCollect + 64<<10
 	DefaultPrefix = "conduit"
+	// MaxLarge is the most CurrentLarge reads: for one known retained topic
+	// that's legitimately big (Zigbee2MQTT's bridge/devices on a large
+	// network), never for topics a caller names.
+	MaxLarge = 16 << 20
 )
 
 var prefixRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,14}$`)
@@ -226,7 +230,7 @@ type guard struct {
 }
 
 // ErrTooBig ends a connection whose broker sent an oversized packet.
-var ErrTooBig = errors.New("the broker sent a message larger than 1 MiB")
+var ErrTooBig = errors.New("the broker sent a message larger than the limit")
 
 func (g *guard) Read(p []byte) (int, error) {
 	if g.err != nil {
@@ -271,7 +275,7 @@ func (g *guard) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (b *Broker) open(ctx context.Context) (net.Conn, error) {
+func (b *Broker) open(ctx context.Context, max int) (net.Conn, error) {
 	dctx, cancel := context.WithTimeout(ctx, b.Timeout)
 	defer cancel()
 	raw, err := b.Dial(dctx, "tcp", b.Addr)
@@ -287,7 +291,7 @@ func (b *Broker) open(ctx context.Context) (net.Conn, error) {
 		}
 		nc = tc
 	}
-	return &guard{Conn: nc, max: MaxPacket}, nil
+	return &guard{Conn: nc, max: max}, nil
 }
 
 func randomID(prefix string) string {
@@ -318,6 +322,7 @@ func (b *Broker) wait(ctx context.Context, t paho.Token) error {
 // Session is one connection to the broker.
 type Session struct {
 	b    *Broker
+	max  int // the packet guard's limit
 	cl   paho.Client
 	lost chan error
 }
@@ -329,7 +334,12 @@ func (s *Session) Close() { s.cl.Disconnect(100) }
 func (s *Session) Lost() <-chan error { return s.lost }
 
 // Connect opens a connection with a clean session and a random client id.
+// The broker's packets are limited to MaxPacket.
 func (b *Broker) Connect(ctx context.Context) (*Session, error) {
+	return b.connect(ctx, MaxPacket)
+}
+
+func (b *Broker) connect(ctx context.Context, max int) (*Session, error) {
 	pw := ""
 	if b.Pass != "" {
 		var err error
@@ -337,7 +347,7 @@ func (b *Broker) Connect(ctx context.Context) (*Session, error) {
 			return nil, err
 		}
 	}
-	s := &Session{b: b, lost: make(chan error, 1)}
+	s := &Session{b: b, max: max, lost: make(chan error, 1)}
 	o := paho.NewClientOptions()
 	o.AddBroker("tcp://" + b.Addr) // the address the custom dialer below uses
 	o.SetClientID(randomID(b.Prefix))
@@ -355,7 +365,7 @@ func (b *Broker) Connect(ctx context.Context) (*Session, error) {
 		o.SetUsername(b.User)
 		o.SetPassword(pw)
 	}
-	o.SetCustomOpenConnectionFn(func(*url.URL, paho.ClientOptions) (net.Conn, error) { return b.open(ctx) })
+	o.SetCustomOpenConnectionFn(func(*url.URL, paho.ClientOptions) (net.Conn, error) { return b.open(ctx, max) })
 	o.SetConnectionLostHandler(func(_ paho.Client, err error) {
 		select {
 		case s.lost <- err:
@@ -531,7 +541,7 @@ func (s *Session) Collect(ctx context.Context, filters []string, qos byte, k *Co
 			return k.stop, nil
 		case err := <-s.lost:
 			if errors.Is(err, ErrTooBig) {
-				return "a message over 1 MiB", nil
+				return fmt.Sprintf("a message over %d MiB", (s.max-64<<10)>>20), nil
 			}
 			return "", fmt.Errorf("the broker closed the connection: %v", err)
 		case <-ctx.Done():
@@ -556,10 +566,31 @@ func (s *Session) Collect(ctx context.Context, filters []string, qos byte, k *Co
 }
 
 // Current reads the retained message on one topic (nil when there's none).
+// A retained message over 1 MiB is an error.
 func (b *Broker) Current(ctx context.Context, topic string) (*Message, error) {
-	k := &Collector{RetainedOnly: true, MaxN: 1, MaxB: MaxCollect}
-	if _, err := b.Collect(ctx, []string{topic}, 0, k, b.Timeout, true); err != nil {
+	return b.current(ctx, topic, MaxCollect)
+}
+
+// CurrentLarge is Current with a limit of MaxLarge, on a connection of its
+// own whose packet guard allows that much. It's meant for one fixed topic a
+// module knows to be large; everything else keeps the 1 MiB limit.
+func (b *Broker) CurrentLarge(ctx context.Context, topic string) (*Message, error) {
+	return b.current(ctx, topic, MaxLarge)
+}
+
+func (b *Broker) current(ctx context.Context, topic string, max int) (*Message, error) {
+	k := &Collector{RetainedOnly: true, MaxN: 1, MaxB: max}
+	s, err := b.connect(ctx, max+64<<10)
+	if err != nil {
 		return nil, err
+	}
+	defer s.Close()
+	stop, err := s.Collect(ctx, []string{topic}, 0, k, b.Timeout, true, nil)
+	if err != nil {
+		return nil, err
+	}
+	if stop == "maxBytes" || strings.HasPrefix(stop, "a message over") {
+		return nil, fmt.Errorf("the retained message on %s is larger than %d MiB", topic, max>>20)
 	}
 	for _, m := range k.Messages() {
 		if m.Topic == topic {

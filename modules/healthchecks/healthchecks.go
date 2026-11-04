@@ -2,10 +2,20 @@
 // Healthchecks server) through its Management API v3 with a project API
 // key: checks with status and last ping, status changes (flips), pausing and
 // resuming a check, pinging one, creating a check and deleting one.
+//
+// A check's UUID is also its ping address: whoever knows it can mark the
+// check up and hide an outage, which is what the destructive ping_check is
+// for. So the module never outputs UUIDs. Checks are named by an id keyed to
+// the instance (hc_ and 32 hex digits, an HMAC of the UUID under a key
+// derived from the instance's API key), which actions resolve back by
+// listing the project's checks.
 package healthchecks
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,9 +42,12 @@ type Config struct {
 }
 
 type conn struct {
-	api  *rest.Client
-	http *http.Client // for pings, which carry no API key
-	host string
+	api      *rest.Client
+	http     *http.Client // for pings, which carry no API key
+	host     string
+	secrets  sdk.Host
+	keyRef   string // the API key's secret:// reference
+	instance string
 }
 
 // Module implements sdk.Module.
@@ -56,11 +69,12 @@ var (
 	scheduleRe = regexp.MustCompile(`^[0-9A-Za-z*/,@ -]{1,100}$`)
 	tzRe       = regexp.MustCompile(`^(UTC|[A-Za-z][A-Za-z_]+(/[A-Za-z0-9_+-]+){1,2})$`)
 	prefixRe   = regexp.MustCompile(`^(/[A-Za-z0-9._-]+)*$`)
+	idRe       = regexp.MustCompile(`^hc_[0-9a-f]{32}$`)
 )
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
-	check := `"check":{"type":"string","description":"Check UUID (see checks)"}`
+	check := `"check":{"type":"string","description":"The check's id from checks (hc_…)"}`
 	return sdk.Manifest{
 		ID: "healthchecks", Name: "Healthchecks", Version: "0.1.0", Category: "Monitoring", Icon: "pulse",
 		Description: "Healthchecks.io or self-hosted Healthchecks: cron and heartbeat checks with status and last ping, status changes, pause or resume one check, ping, create and delete checks.",
@@ -133,7 +147,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	})
 	// X-Api-Key is a custom header, which Go would forward on a redirect.
 	api.HTTP = client
-	m.set.Put(id, &conn{api: api, http: client, host: u.Host})
+	m.set.Put(id, &conn{api: api, http: client, host: u.Host, secrets: h, keyRef: ref, instance: id})
 	return nil
 }
 
@@ -190,10 +204,29 @@ func clip(s string, n int) string {
 	return string(r)
 }
 
-func checkOut(c check) map[string]any {
+// idKey is the key check ids are made with: derived from the instance and
+// its API key, so it's stable across restarts, differs between instances,
+// and can't be worked out without the API key.
+func (c *conn) idKey(ctx context.Context) ([]byte, error) {
+	k, err := c.secrets.Secret(ctx, c.keyRef)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256([]byte("conduit healthchecks check id\x00" + c.instance + "\x00" + strings.TrimSpace(k)))
+	return sum[:], nil
+}
+
+// publicID is the id a check is shown by in place of its UUID.
+func publicID(key []byte, uuid string) string {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(strings.ToLower(uuid)))
+	return "hc_" + hex.EncodeToString(m.Sum(nil))[:32]
+}
+
+func checkOut(c check, key []byte) map[string]any {
 	out := map[string]any{"name": clip(c.Name, 200), "status": c.Status, "graceSeconds": c.Grace, "pings": c.NPings}
 	if uuidRe.MatchString(c.UUID) {
-		out["check"] = c.UUID
+		out["check"] = publicID(key, c.UUID)
 	} else if c.UniqueKey != "" {
 		out["key"] = clip(c.UniqueKey, 64)
 	}
@@ -223,22 +256,41 @@ func checkOut(c check) map[string]any {
 	return out
 }
 
-func checkID(s string) (string, error) {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if !uuidRe.MatchString(s) {
-		return "", errors.New("the check is its UUID (see checks)")
+// resolve turns a check's id (or its UUID, when the caller has it) into
+// its UUID, by listing the project's checks.
+func (c *conn) resolve(ctx context.Context, raw string, key []byte) (string, error) {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if uuidRe.MatchString(s) {
+		return s, nil
 	}
-	return s, nil
+	if !idRe.MatchString(s) {
+		return "", errors.New("the check is its id from checks (hc_…)")
+	}
+	var a struct {
+		Checks []check `json:"checks"`
+	}
+	if _, err := c.api.Do(ctx, http.MethodGet, "/checks/", nil, nil, &a); err != nil {
+		return "", friendly(err, "checks")
+	}
+	for _, ch := range a.Checks {
+		if uuidRe.MatchString(ch.UUID) && hmac.Equal([]byte(publicID(key, ch.UUID)), []byte(s)) {
+			return ch.UUID, nil
+		}
+	}
+	if len(a.Checks) > 0 && a.Checks[0].UUID == "" {
+		return "", errors.New("Healthchecks answered without the checks' UUIDs: actions on a check need the full API key, not the read-only one")
+	}
+	return "", fmt.Errorf("there's no check %s in this project (see checks)", s)
 }
 
-func (c *conn) get(ctx context.Context, raw string) (check, error) {
-	id, err := checkID(raw)
+func (c *conn) get(ctx context.Context, raw string, key []byte) (check, error) {
+	id, err := c.resolve(ctx, raw, key)
 	if err != nil {
 		return check{}, err
 	}
 	var ch check
 	if _, err := c.api.Do(ctx, http.MethodGet, "/checks/"+id, nil, nil, &ch); err != nil {
-		return check{}, friendly(err, "check "+id)
+		return check{}, friendly(err, "such check")
 	}
 	if ch.UUID != id {
 		return check{}, errors.New("Healthchecks answered without the check's UUID: actions on a check need the full API key, not the read-only one")
@@ -309,14 +361,29 @@ func tags(in []string) ([]string, error) {
 	return out, nil
 }
 
+// anyUUID finds UUIDs in error messages (a transport error carries the URL).
+var anyUUID = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+
 // Invoke implements sdk.Module.
 func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) {
+	res, err := m.invoke(ctx, call)
+	if err != nil && anyUUID.MatchString(err.Error()) {
+		err = errors.New(anyUUID.ReplaceAllString(err.Error(), "[check]"))
+	}
+	return res, err
+}
+
+func (m *Module) invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) {
 	c, err := m.set.Get(call.Instance)
 	if err != nil {
 		return sdk.Result{}, err
 	}
 	var p input
 	if err := sdk.Decode(call, &p); err != nil {
+		return sdk.Result{}, err
+	}
+	key, err := c.idKey(ctx)
+	if err != nil {
 		return sdk.Result{}, err
 	}
 	switch call.Action {
@@ -336,7 +403,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		for i, ch := range a.Checks {
 			by[ch.Status]++
 			if i < 500 {
-				list = append(list, checkOut(ch))
+				list = append(list, checkOut(ch, key))
 			}
 		}
 		out := map[string]any{"checks": list, "byStatus": by}
@@ -349,11 +416,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(out)
 
 	case "check":
-		ch, err := c.get(ctx, p.Check)
+		ch, err := c.get(ctx, p.Check, key)
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		out := checkOut(ch)
+		out := checkOut(ch, key)
 		if d := clip(ch.Desc, 1000); d != "" {
 			out["description"] = d
 		}
@@ -365,10 +432,6 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(out)
 
 	case "flips":
-		id, err := checkID(p.Check)
-		if err != nil {
-			return sdk.Result{}, err
-		}
 		days := p.Days
 		if days == 0 {
 			days = 7
@@ -376,12 +439,16 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if days < 1 || days > 90 {
 			return sdk.Result{}, errors.New("days is between 1 and 90")
 		}
+		id, err := c.resolve(ctx, p.Check, key)
+		if err != nil {
+			return sdk.Result{}, err
+		}
 		var fl []struct {
 			Timestamp string `json:"timestamp"`
 			Up        int    `json:"up"`
 		}
 		if _, err := c.api.Do(ctx, http.MethodGet, "/checks/"+id+"/flips/", url.Values{"seconds": {strconv.Itoa(days * 86400)}}, nil, &fl); err != nil {
-			return sdk.Result{}, friendly(err, "check "+id)
+			return sdk.Result{}, friendly(err, "such check")
 		}
 		list := []map[string]any{}
 		// The API lists them oldest first.
@@ -392,14 +459,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			list = append(list, map[string]any{"at": clip(fl[i].Timestamp, 40), "to": st})
 		}
-		return sdk.JSON(map[string]any{"check": id, "days": days, "flips": list})
+		return sdk.JSON(map[string]any{"check": publicID(key, id), "days": days, "flips": list})
 
 	case "pause_check", "resume_check":
 		pausing := call.Action == "pause_check"
-		ch, err := c.get(ctx, p.Check)
+		ch, err := c.get(ctx, p.Check, key)
 		if err != nil {
 			return sdk.Result{}, err
 		}
+		pub := publicID(key, ch.UUID)
 		paused := ch.Status == "paused"
 		label := clip(ch.Name, 100)
 		if paused == pausing {
@@ -407,7 +475,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if paused {
 				state = "is already paused"
 			}
-			return sdk.JSON(map[string]any{"check": ch.UUID, "name": label, "note": "the check " + state})
+			return sdk.JSON(map[string]any{"check": pub, "name": label, "note": "the check " + state})
 		}
 		verb, back, backDesc := "Pause", "resume_check", "Resume check %s"
 		if !pausing {
@@ -431,10 +499,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if !pausing && rest.IsStatus(err, http.StatusConflict) {
 				return sdk.Result{}, errors.New("Healthchecks refused: the check isn't paused")
 			}
-			return sdk.Result{}, friendly(err, "check "+ch.UUID)
+			return sdk.Result{}, friendly(err, "such check")
 		}
-		res, err := sdk.JSON(map[string]any{"check": ch.UUID, "name": label, "status": after.Status})
-		res.Undo = sdk.UndoWith(back, map[string]any{"check": ch.UUID}, fmt.Sprintf(backDesc, label))
+		res, err := sdk.JSON(map[string]any{"check": pub, "name": label, "status": after.Status})
+		res.Undo = sdk.UndoWith(back, map[string]any{"check": pub}, fmt.Sprintf(backDesc, label))
 		return res, err
 
 	case "ping_check":
@@ -451,7 +519,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if len(msg) > 1000 {
 			return sdk.Result{}, errors.New("the message is at most 1000 characters")
 		}
-		ch, err := c.get(ctx, p.Check)
+		ch, err := c.get(ctx, p.Check, key)
 		if err != nil {
 			return sdk.Result{}, err
 		}
@@ -474,14 +542,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		ping.HTTP = c.http
 		res, err := ping.Send(ctx, http.MethodPost, sfx, nil, strings.NewReader(msg), http.Header{"Content-Type": {"text/plain; charset=utf-8"}})
 		if err != nil {
-			return sdk.Result{}, fmt.Errorf("the ping failed: %w", err)
+			return sdk.Result{}, fmt.Errorf("the ping failed: %w", err) // Invoke takes the UUID out
 		}
 		io.Copy(io.Discard, io.LimitReader(res.Body, 4096))
 		res.Body.Close()
 		if res.StatusCode >= 300 {
 			return sdk.Result{}, fmt.Errorf("the ping failed: %s", res.Status)
 		}
-		return sdk.JSON(map[string]any{"check": ch.UUID, "name": label, "signal": sig, "before": ch.Status})
+		return sdk.JSON(map[string]any{"check": publicID(key, ch.UUID), "name": label, "signal": sig, "before": ch.Status})
 
 	case "create_check":
 		nm := strings.TrimSpace(p.Name)
@@ -554,23 +622,23 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if !uuidRe.MatchString(ch.UUID) {
 			return sdk.Result{}, errors.New("unexpected answer from Healthchecks: no check UUID")
 		}
-		res, err := sdk.JSON(checkOut(ch))
-		res.Undo = sdk.UndoWith("delete_check", map[string]any{"check": ch.UUID}, "Delete check "+clip(nm, 100))
+		res, err := sdk.JSON(checkOut(ch, key))
+		res.Undo = sdk.UndoWith("delete_check", map[string]any{"check": publicID(key, ch.UUID)}, "Delete check "+clip(nm, 100))
 		return res, err
 
 	case "delete_check":
-		ch, err := c.get(ctx, p.Check)
+		ch, err := c.get(ctx, p.Check, key)
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		before := checkOut(ch)
+		before := checkOut(ch, key)
 		label := clip(ch.Name, 100)
 		if call.DryRun {
 			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Delete check %s (%s, %d pings recorded) for good; its job's pings will be refused", label, ch.Status, ch.NPings),
 				Changes: []sdk.Change{{Target: "check " + label, Op: "delete", Before: mustJSON(before)}}}}, nil
 		}
 		if _, err := c.api.Do(ctx, http.MethodDelete, "/checks/"+ch.UUID, nil, nil, nil); err != nil {
-			return sdk.Result{}, friendly(err, "check "+ch.UUID)
+			return sdk.Result{}, friendly(err, "such check")
 		}
 		return sdk.JSON(map[string]any{"deleted": before})
 	}

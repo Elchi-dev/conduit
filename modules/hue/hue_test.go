@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"math/big"
 	"net"
@@ -188,6 +189,42 @@ func cert(t *testing.T, cn string) (tls.Certificate, string) {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, hex.EncodeToString(sum[:])
 }
 
+// testCA stands in for the Hue bridge root CA: it's added to bridgeRoots,
+// next to the real roots, so caServer can play a genuine bridge.
+var testCA, testCAKey = func() (*x509.Certificate, *ecdsa.PrivateKey) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(7), Subject: pkix.Name{CommonName: "test root-bridge", Organization: []string{"Philips Hue"}},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	if err != nil {
+		panic(err)
+	}
+	c, _ := x509.ParseCertificate(der)
+	bridgeRoots.AddCert(c)
+	return c, key
+}()
+
+// caServer is a bridge whose certificate (CN = cn) the test CA signed, like
+// a real bridge's.
+func caServer(t *testing.T, h http.Handler, cn string) *httptest.Server {
+	t.Helper()
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: cn, Organization: []string{"Philips Hue"}},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, testCA, &key.PublicKey, testCAKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(h)
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// tlsServer is a server with a self-signed certificate (CN = cn): an old
+// bridge, or someone on the network playing one.
 func tlsServer(t *testing.T, h http.Handler, cn string) (*httptest.Server, string) {
 	c, fp := cert(t, cn)
 	srv := httptest.NewUnstartedServer(h)
@@ -205,12 +242,15 @@ func configure(t *testing.T, c Config) (*Module, error) {
 	return m, m.Configure(context.Background(), fakehost.New(secrets), "h", raw)
 }
 
+// critical is what setup puts in criticalLights (nothing unless a test sets it).
+var critical []string
+
 func setup(t *testing.T) (*Module, *fakeBridge) {
 	t.Helper()
 	pace = 0
 	f := newBridge()
-	srv, _ := tlsServer(t, f, bid)
-	m, err := configure(t, Config{URL: srv.URL, ApplicationKey: "secret://hue", BridgeID: strings.ToUpper(bid)})
+	srv := caServer(t, f, bid)
+	m, err := configure(t, Config{URL: srv.URL, ApplicationKey: "secret://hue", BridgeID: strings.ToUpper(bid), CriticalLights: critical})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,6 +358,12 @@ func TestHueWrite(t *testing.T) {
 	}
 	for _, a := range m.Manifest().Actions {
 		write := strings.HasPrefix(a.Name, "set_") || a.Name == "activate_scene" || a.Name == "restore_lights"
+		if a.Name == "light_off_critical" {
+			if a.Risk != sdk.RiskDestructive || !a.DryRun || !a.Reversible {
+				t.Fatalf("%s: %+v", a.Name, a)
+			}
+			continue
+		}
 		if write && (a.Risk != sdk.RiskWrite || !a.DryRun || !a.Reversible) || !write && a.Risk != sdk.RiskRead {
 			t.Fatalf("%s: %+v", a.Name, a)
 		}
@@ -363,7 +409,7 @@ func TestHueRefusals(t *testing.T) {
 	}
 
 	srv, fp := tlsServer(t, newBridge(), bid)
-	bad, err := configure(t, Config{URL: srv.URL, ApplicationKey: "secret://bad", BridgeID: bid})
+	bad, err := configure(t, Config{URL: caServer(t, newBridge(), bid).URL, ApplicationKey: "secret://bad", BridgeID: bid})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +451,7 @@ func TestHueRefusals(t *testing.T) {
 	var leaked string
 	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked = r.Header.Get("hue-application-key") }))
 	defer evil.Close()
-	rd, _ := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	rd := caServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, evil.URL+r.URL.Path, http.StatusTemporaryRedirect)
 	}), bid)
 	rm, err := configure(t, Config{URL: rd.URL, ApplicationKey: "secret://hue", BridgeID: bid})
@@ -422,5 +468,151 @@ func TestRGBToXY(t *testing.T) {
 		if got, err := rgbToXY(in); err != nil || got != want {
 			t.Errorf("%s: %+v %v", in, got, err)
 		}
+	}
+}
+
+// The bridge id isn't a secret (the bridge announces it), so with the id
+// alone the certificate must chain to the Hue root CA: a self-signed one
+// carrying the id gets nothing, least of all the application key.
+func TestHueBridgeIDNeedsRootCA(t *testing.T) {
+	var mu sync.Mutex
+	var got string
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got += r.Header.Get("hue-application-key")
+		mu.Unlock()
+		w.Write([]byte(`{"errors":[],"data":[{"id":"x","bridge_id":"` + bid + `"}]}`))
+	})
+	srv, fp := tlsServer(t, h, bid)
+	m, err := configure(t, Config{URL: srv.URL, ApplicationKey: "secret://hue", BridgeID: bid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hl := m.Health(context.Background(), "h"); hl.Status != "down" || !strings.Contains(hl.Message, "root CA") {
+		t.Fatalf("%+v", hl)
+	}
+	mu.Lock()
+	if got != "" {
+		t.Fatalf("the key went to a self-signed server: %q", got)
+	}
+	mu.Unlock()
+	// With the fingerprint pinned, the same self-signed bridge is fine.
+	if m, _ = configure(t, Config{URL: srv.URL, ApplicationKey: "secret://hue", BridgeID: bid, Fingerprint: fp}); m.Health(context.Background(), "h").Status == "down" {
+		t.Fatal("refused the pinned fingerprint")
+	}
+	mu.Lock()
+	if !strings.HasPrefix(got, appKy) {
+		t.Fatalf("the pinned bridge got no key: %q", got)
+	}
+	mu.Unlock()
+	// Signed by the CA, but for another bridge.
+	other := caServer(t, newBridge(), "001788fffe000000")
+	if m, _ = configure(t, Config{URL: other.URL, ApplicationKey: "secret://hue", BridgeID: bid}); m.Health(context.Background(), "h").Status != "down" {
+		t.Fatal("took another bridge's certificate")
+	}
+	// The embedded roots are the two Hue roots.
+	n := 0
+	for rest := []byte(hueRoots); ; {
+		var b *pem.Block
+		if b, rest = pem.Decode(rest); b == nil {
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil || !c.IsCA || c.CheckSignatureFrom(c) != nil {
+			t.Fatalf("%v %+v", err, c.Subject)
+		}
+		n++
+	}
+	if n != 2 {
+		t.Fatal(n)
+	}
+}
+
+func TestHueCriticalLights(t *testing.T) {
+	critical = []string{"ceiling"} // by name, any case
+	defer func() { critical = nil }()
+	m, f := setup(t)
+	for _, c := range []struct{ action, in string }{
+		{"set_light", `{"light":"Ceiling","on":false}`},
+		{"set_light", `{"light":"` + l2 + `","on":false}`},
+		{"restore_lights", `{"lights":[{"id":"` + l2 + `","on":false}]}`},
+		{"restore_lights", `{"lights":[{"id":"` + l1 + `","on":false},{"id":"` + l2 + `","on":false}]}`},
+		{"light_off_critical", `{"light":"Sofa lamp"}`}, // not critical
+		{"light_off_critical", `{"light":"Ceiling","lights":[{"id":"` + l2 + `","on":false}]}`},
+	} {
+		if _, err := invoke(m, c.action, c.in, false); err == nil {
+			t.Fatalf("%s accepted %s", c.action, c.in)
+		}
+	}
+	if len(f.writes) != 0 {
+		t.Fatal(f.writes)
+	}
+	// Turning a critical light on is fine; undo turns it off again, so it's
+	// light_off_critical.
+	r, err := invoke(m, "set_light", `{"light":"Ceiling","on":true}`, false)
+	if err != nil || !f.lamps[l2].On || r.Undo == nil || r.Undo.Action != "light_off_critical" {
+		t.Fatalf("%+v %v", r.Undo, err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.lamps[l2].On {
+		t.Fatal(err)
+	}
+	f.lamps[l2].On = true
+
+	// A room off: the others light by light, the critical one stays on.
+	f.writes = nil
+	p, err := invoke(m, "set_group", `{"group":"Living room","on":false}`, true)
+	if err != nil || len(p.Plan.Changes) != 1 || !strings.Contains(p.Plan.Summary, "leaving Ceiling on") || len(f.writes) != 0 {
+		t.Fatalf("%+v %v", p.Plan, err)
+	}
+	r, err = invoke(m, "set_group", `{"group":"Living room","on":false}`, false)
+	if err != nil || f.lamps[l1].On || !f.lamps[l2].On || len(f.writes) != 1 || !strings.HasPrefix(f.writes[0], "light/"+l1+" ") {
+		t.Fatalf("%v %q", err, f.writes)
+	}
+	if !strings.Contains(string(r.Output), `"skippedCritical":["Ceiling"]`) || r.Undo.Action != "restore_lights" {
+		t.Fatalf("%s %+v", r.Output, r.Undo)
+	}
+	// Turning a room on still goes to the grouped light.
+	f.writes = nil
+	if _, err := invoke(m, "set_group", `{"group":"Living room","on":true}`, false); err != nil || len(f.writes) != 1 || !strings.HasPrefix(f.writes[0], "grouped_light/") {
+		t.Fatalf("%v %q", err, f.writes)
+	}
+
+	// The destructive action does turn it off, and undo turns it back on.
+	f.writes = nil
+	p, err = invoke(m, "light_off_critical", `{"light":"Ceiling"}`, true)
+	if err != nil || !strings.HasPrefix(p.Plan.Summary, "Turn off critical Ceiling") || len(f.writes) != 0 {
+		t.Fatalf("%+v %v", p.Plan, err)
+	}
+	r, err = invoke(m, "light_off_critical", `{"light":"Ceiling"}`, false)
+	if err != nil || f.lamps[l2].On || r.Undo == nil || r.Undo.Action != "restore_lights" {
+		t.Fatalf("%+v %v", r.Undo, err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || !f.lamps[l2].On {
+		t.Fatal(err)
+	}
+}
+
+// A scene whose action turns a critical light off is refused.
+func TestHueCriticalScene(t *testing.T) {
+	critical = []string{l1}
+	defer func() { critical = nil }()
+	m, f := setup(t)
+	srv := caServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resource/scene") {
+			w.Write([]byte(`{"errors":[],"data":[{"id":"` + scn + `","metadata":{"name":"Night"},"group":{"rid":"` + room + `","rtype":"room"},"status":{"active":"inactive"},` +
+				`"actions":[{"target":{"rid":"` + l1 + `","rtype":"light"},"action":{"on":{"on":false}}},{"target":{"rid":"` + l2 + `","rtype":"light"},"action":{"on":{"on":true}}}]}]}`))
+			return
+		}
+		f.ServeHTTP(w, r)
+	}), bid)
+	m, err := configure(t, Config{URL: srv.URL, ApplicationKey: "secret://hue", BridgeID: bid, CriticalLights: critical})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "activate_scene", `{"scene":"Night"}`, false); err == nil || !strings.Contains(err.Error(), "Sofa lamp") {
+		t.Fatal(err)
+	}
+	if len(f.writes) != 0 {
+		t.Fatal(f.writes)
 	}
 }

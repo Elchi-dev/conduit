@@ -44,7 +44,10 @@ move physical things out of `publishTopics` anyway.
 **Security.** The password is sent only in the CONNECT packet; use `mqtts://`
 when the broker isn't on the same machine or network. Connections go through
 the instance's network, if it has one. The client fails the connection
-before reading a packet larger than 1 MiB instead of allocating it. MQTT
+before reading a packet larger than 1 MiB instead of allocating it; a
+retained message over 1 MiB on the topic a retained `publish` or
+`clear_retained` would replace is an error, so its undo is never built from
+a message that wasn't read. MQTT
 3.1.1 brokers drop publishes their access rules refuse without telling the
 client, so a publish that succeeded here was accepted on the wire, not
 necessarily delivered.

@@ -2,7 +2,9 @@
 // web_server component: the entities (found through the /events stream or
 // listed in the settings) with their states, switches, lights and buttons.
 // Restart, factory-reset, shutdown, safe-mode and firmware buttons and
-// switches are kept apart behind a destructive action.
+// switches, and those that open, unlock or sound something (garage, gate,
+// door, lock, valve, siren, alarm), are kept apart behind a destructive
+// action.
 package esphome
 
 import (
@@ -47,6 +49,7 @@ type Config struct {
 
 type conn struct {
 	api      *rest.Client
+	plain    bool // a password goes over http
 	entities []entityRef
 	critical map[entityRef]bool
 	// discover bounds the /events read.
@@ -64,8 +67,10 @@ func New() *Module { return &Module{} }
 var (
 	objectRe = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 	// criticalName matches what restarts, resets, shuts down or reflashes
-	// a device, as a whole word of the object id.
-	criticalName = regexp.MustCompile(`(^|[_-])(restart|reboot|reset|factory|factory_reset|shutdown|safe_mode|safemode|firmware|ota|update|flash)([_-]|$)`)
+	// a device, or opens, unlocks, sounds or silences something, anywhere
+	// in the object id (restart2, esp_reboot, factoryreset, garage_door):
+	// a false match only means the destructive action.
+	criticalName = regexp.MustCompile(`restart|reboot|reset|factory|shutdown|safe[_-]?mode|firmware|ota|update|flash|garage|gate|door|lock|valve|siren|alarm|silence`)
 	domains      = map[string]bool{"sensor": true, "binary_sensor": true, "text_sensor": true, "switch": true, "light": true, "fan": true, "cover": true,
 		"number": true, "select": true, "button": true, "lock": true, "climate": true, "valve": true, "text": true, "date": true, "time": true, "datetime": true,
 		"event": true, "update": true, "alarm_control_panel": true, "media_player": true}
@@ -104,7 +109,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			"username":{"type":"string","description":"web_server auth username, if set"},
 			"password":{"type":"string","x-secret":true,"description":"web_server auth password"},
 			"entities":{"type":"array","items":{"type":"string"},"description":"The entities as domain.object_id (sensor.temperature, switch.relay); leave empty to find them through the device's event stream"},
-			"criticalEntities":{"type":"array","items":{"type":"string"},"description":"Switches and buttons (domain.object_id) that need press_critical, like a server's power or a gate"},
+			"criticalEntities":{"type":"array","items":{"type":"string"},"description":"Switches and buttons (domain.object_id) that need press_critical, like a server's power. Those whose object id contains restart, reboot, reset, factory, shutdown, safe_mode, firmware, ota, update, flash, garage, gate, door, lock, valve, siren, alarm or silence are critical without being listed."},
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the device's certificate, for https"},
 			"insecureSkipVerify":{"type":"boolean","default":false}}}`),
 		Actions: []sdk.ActionSpec{
@@ -112,13 +117,13 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"domain":{"type":"string","description":"Only this domain, e.g. sensor"}}}`)},
 			{Name: "state", Title: "Entity state", Description: "One entity's current state and value.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{"entity":{"type":"string","description":"domain.object_id, e.g. sensor.temperature"}}}`)},
-			{Name: "set_switch", Title: "Turn a switch on or off", Description: "Turns a switch on or off. Critical switches (restart, factory reset, shutdown, safe mode, or listed in criticalEntities) are refused. Undo puts it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "set_switch", Title: "Turn a switch on or off", Description: "Turns a switch on or off. Critical switches (restart, reset, shutdown, safe mode, firmware, garage, gate, door, lock, valve, siren, alarm, or listed in criticalEntities) are refused. Undo puts it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["id","on"],"properties":{` + ent("switch") + `,"on":{"type":"boolean"}}}`)},
 			{Name: "set_light", Title: "Set a light", Description: "Turns a light on or off, with brightness (percent), an RGB colour and a transition. Undo puts it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + ent("light") + `,"on":{"type":"boolean","default":true},"brightness":{"type":"number","minimum":0,"maximum":100},"color":{"type":"string","description":"#rrggbb"},"transition":{"type":"number","minimum":0,"maximum":60,"description":"Seconds"}}}`)},
-			{Name: "press_button", Title: "Press a button", Description: "Presses a button entity. Restart, reset, shutdown, safe-mode and firmware buttons, and those in criticalEntities, are refused (use press_critical). There's no undo.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "press_button", Title: "Press a button", Description: "Presses a button entity. Restart, reset, shutdown, safe-mode and firmware buttons, those that open, unlock or sound something (garage, gate, door, lock, valve, siren, alarm, silence), and those in criticalEntities, are refused (use press_critical). There's no undo.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + ent("button") + `}}`)},
-			{Name: "press_critical", Title: "Press a critical button", Description: "Presses a critical button, or turns on a critical switch (restart, factory reset, shutdown, safe mode, firmware, or in criticalEntities). The device may restart or lose its configuration.", Risk: sdk.RiskDestructive, DryRun: true,
+			{Name: "press_critical", Title: "Press a critical button", Description: "Presses a critical button, or turns on a critical switch (restart, factory reset, shutdown, safe mode, firmware, garage, gate, door, lock, valve, siren, alarm, or in criticalEntities). The device may restart or lose its configuration, or open, unlock or sound what it drives.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + ent("button") + `,"domain":{"type":"string","enum":["button","switch"],"default":"button"}}}`)},
 		},
 	}
@@ -186,6 +191,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	// No client timeout: the event stream is bounded by its context; the
 	// other requests get one each.
 	cn.api.HTTP = rest.SameHostOnly(&http.Client{Transport: tr})
+	cn.plain = ref != "" && u.Scheme == "http"
 	m.set.Put(id, cn)
 	return nil
 }
@@ -599,7 +605,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		crit := c.isCritical(r)
 		if call.Action == "press_button" && crit {
-			return sdk.Result{}, fmt.Errorf("%s is critical (it restarts, resets, shuts down or reflashes the device, or is in criticalEntities); use press_critical", r)
+			return sdk.Result{}, fmt.Errorf("%s is critical (it restarts, resets, shuts down or reflashes the device, opens, unlocks or sounds something, or is in criticalEntities); use press_critical", r)
 		}
 		if call.Action == "press_critical" && !crit {
 			return sdk.Result{}, fmt.Errorf("%s isn't critical; use press_button or set_switch", r)
@@ -622,7 +628,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				sum = "Turn on " + name
 			}
 			if crit {
-				sum += "; the device may restart, shut down or lose its settings"
+				sum += "; the device may restart, shut down or lose its settings, or open, unlock or sound what it drives"
 			}
 			return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: name, Op: verb}}}}, nil
 		}
@@ -647,6 +653,9 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 	msg := fmt.Sprintf("%d entities", len(found))
 	if title != "" {
 		msg = title + " · " + msg
+	}
+	if c.plain {
+		return sdk.Health{Status: "degraded", Message: msg + " · password sent without encryption (the device is on http)"}
 	}
 	return sdk.Health{Status: "ok", Message: msg}
 }

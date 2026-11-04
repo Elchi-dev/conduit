@@ -1,7 +1,9 @@
 // Package hue works with a Philips Hue bridge through its local CLIP v2 API:
 // lights (on/off, brightness, colour and colour temperature), rooms and
 // zones, scenes, sensors and batteries. Every change can be previewed, and
-// undo puts back the lights it touched as they were.
+// undo puts back the lights it touched as they were. Lights listed in
+// criticalLights (smart plugs feeding a fridge, a pump, a server) are only
+// turned off with the destructive light_off_critical.
 package hue
 
 import (
@@ -33,11 +35,15 @@ type Config struct {
 	ApplicationKey string `json:"applicationKey"` // secret://
 	BridgeID       string `json:"bridgeId"`       // 16 hex digits, the certificate's common name
 	Fingerprint    string `json:"fingerprint"`    // SHA-256 of the bridge's certificate
+	// CriticalLights are light ids or names (often smart plugs) that power
+	// something that mustn't go off by accident.
+	CriticalLights []string `json:"criticalLights"`
 }
 
 type conn struct {
 	api      *rest.Client
-	bridgeID string // lowercase, "" when only the fingerprint is pinned
+	bridgeID string          // lowercase, "" when only the fingerprint is pinned
+	critical map[string]bool // light ids, and lowercased names
 }
 
 // Module implements sdk.Module.
@@ -81,8 +87,9 @@ func (m *Module) Manifest() sdk.Manifest {
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","applicationKey"],"properties":{
 			"url":{"type":"string","description":"The bridge, e.g. https://192.168.1.20"},
 			"applicationKey":{"type":"string","x-secret":true,"description":"The application key (hue-application-key) made by pressing the bridge's link button; see the docs"},
-			"bridgeId":{"type":"string","description":"The bridge id (16 hex digits, like 001788fffe123456): the bridge's certificate must carry it"},
-			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the bridge's certificate (stronger than the bridge id alone)"}}}`),
+			"bridgeId":{"type":"string","description":"The bridge id (16 hex digits, like 001788fffe123456): the bridge's certificate must carry it and, when no fingerprint is set, be signed by the Hue bridge root CA (bridges with current firmware are; an older self-signed bridge needs the fingerprint)"},
+			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the bridge's certificate (needed for a bridge whose certificate is self-signed)"},
+			"criticalLights":{"type":"array","maxItems":200,"items":{"type":"string","maxLength":200},"description":"Light ids or names (often smart plugs) that power something that mustn't go off by accident. set_light, set_group, activate_scene and restore_lights never turn them off (a room or zone is turned off light by light, skipping them); light_off_critical (destructive) does."}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "lights", Title: "Lights", Description: "Every light with its room, on/off, brightness, colour or colour temperature and whether the bridge can reach it.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + room + `}}`)},
@@ -91,14 +98,16 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + room + `}}`)},
 			{Name: "sensors", Title: "Sensors", Description: "Motion, temperature, light level, contact and battery of each sensor device.", Risk: sdk.RiskRead},
 			{Name: "batteries", Title: "Batteries", Description: "Battery-powered devices by charge, lowest first, with the bridge's low/critical state.", Risk: sdk.RiskRead},
-			{Name: "set_light", Title: "Set a light", Description: "Turns one light on or off and/or sets brightness, an RGB colour, xy or a colour temperature (changing the look turns it on unless on is false). Undo puts the light back as it was.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "set_light", Title: "Set a light", Description: "Turns one light on or off and/or sets brightness, an RGB colour, xy or a colour temperature (changing the look turns it on unless on is false). Turning off a light in criticalLights is refused (use light_off_critical). Undo puts the light back as it was.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["light"],"properties":{"light":` + ref("light") + `,` + look + colour + `}}`)},
-			{Name: "set_group", Title: "Set a room or zone", Description: "Turns all lights of a room or zone on or off and/or sets their brightness. Undo puts each light back as it was.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "set_group", Title: "Set a room or zone", Description: "Turns all lights of a room or zone on or off and/or sets their brightness. Turning off a room or zone with a light in criticalLights turns its other lights off one by one and leaves the critical ones on (the preview says which). Undo puts each light back as it was.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["group"],"properties":{"group":` + ref("room or zone") + `,` + look + `}}`)},
-			{Name: "activate_scene", Title: "Activate a scene", Description: "Recalls a scene. The preview lists each light's change; undo puts every light of the scene back as it was.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "activate_scene", Title: "Activate a scene", Description: "Recalls a scene. A scene that turns off a light in criticalLights is refused. The preview lists each light's change; undo puts every light of the scene back as it was.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["scene"],"properties":{"scene":` + ref("scene") + `,` + room + `}}`)},
-			{Name: "restore_lights", Title: "Restore lights", Description: "Sets lights to given states (what undo of the other actions sends). Undo restores what they were before.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "restore_lights", Title: "Restore lights", Description: "Sets lights to given states (what undo of the other actions sends). Turning off a light in criticalLights is refused (use light_off_critical). Undo restores what they were before.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["lights"],"properties":{"lights":{"type":"array","minItems":1,"maxItems":100,"items":` + state + `}}}`)},
+			{Name: "light_off_critical", Title: "Turn off a critical light", Description: "Turns off a light listed in criticalLights (often a plug feeding something that mustn't lose power), or sets lights to given states including turning critical ones off (what undo sends). Undo puts them back.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","properties":{"light":` + ref("light") + `,"lights":{"type":"array","minItems":1,"maxItems":100,"items":` + state + `}}}`)},
 		},
 	}
 }
@@ -129,8 +138,19 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if bid == "" && fp == "" {
 		return errors.New("enter the bridge id or the certificate's fingerprint: the bridge's certificate isn't signed by a public authority, so Conduit checks it against one of them")
 	}
+	if len(c.CriticalLights) > 200 {
+		return errors.New("list at most 200 critical lights")
+	}
+	crit := map[string]bool{}
+	for _, l := range c.CriticalLights {
+		l = strings.TrimSpace(l)
+		if l == "" || len(l) > 200 {
+			return errors.New("a critical light is its id or its name (up to 200 characters)")
+		}
+		crit[strings.ToLower(l)] = true
+	}
 	tr := sdk.Transport(h)
-	tr.TLSClientConfig = pinned(fp, bid)
+	tr.TLSClientConfig = pinned(fp, bid, bridgeRoots)
 	ref := c.ApplicationKey
 	api := rest.New(u.Scheme+"://"+u.Host+"/clip/v2", func(ctx context.Context, r *http.Request) error {
 		key, err := h.Secret(ctx, ref)
@@ -142,13 +162,16 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	})
 	// The key travels in its own header, which Go forwards on redirects.
 	api.HTTP = rest.SameHostOnly(&http.Client{Timeout: 15 * time.Second, Transport: tr})
-	m.set.Put(id, &conn{api: api, bridgeID: bid})
+	m.set.Put(id, &conn{api: api, bridgeID: bid, critical: crit})
 	return nil
 }
 
 // pinned checks the bridge's certificate: its SHA-256 fingerprint when one
-// is set, and its common name against the bridge id when that is set.
-func pinned(fp, bid string) *tls.Config {
+// is set, and its common name against the bridge id when that is set. With
+// the bridge id alone, the certificate must also chain to the Hue bridge
+// root CA: the bridge id isn't a secret (the bridge announces it), so a
+// self-signed certificate carrying it proves nothing.
+func pinned(fp, bid string, roots *x509.CertPool) *tls.Config {
 	return &tls.Config{
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: true, //nolint:gosec // replaced by the checks below
@@ -169,6 +192,19 @@ func pinned(fp, bid string) *tls.Config {
 				}
 				if !strings.EqualFold(cert.Subject.CommonName, bid) {
 					return fmt.Errorf("the certificate is for %q, not bridge %s", cert.Subject.CommonName, bid)
+				}
+				if fp == "" {
+					inter := x509.NewCertPool()
+					for _, raw := range certs[1:] {
+						if c, err := x509.ParseCertificate(raw); err == nil {
+							inter.AddCert(c)
+						}
+					}
+					// No host name check: the bridge is reached by its IP
+					// address, and the name that matters is the bridge id.
+					if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+						return errors.New("the bridge's certificate isn't signed by the Hue bridge root CA (a bridge with old firmware has a self-signed one: pin its fingerprint instead)")
+					}
 				}
 			}
 			return nil
@@ -397,6 +433,48 @@ func (h *home) lightsOf(g group) []string {
 		}
 	}
 	return ids
+}
+
+// isCritical says whether a light is in criticalLights, by id, its name or
+// its device's name.
+func (c *conn) isCritical(h *home, l light) bool {
+	if len(c.critical) == 0 {
+		return false
+	}
+	if c.critical[l.ID] || c.critical[strings.ToLower(l.Metadata.Name)] {
+		return true
+	}
+	if d, ok := h.devices[l.Owner.RID]; ok && d.Metadata.Name != "" && c.critical[strings.ToLower(d.Metadata.Name)] {
+		return true
+	}
+	return false
+}
+
+// offCritical returns the names of the critical lights among sts that the
+// states turn off.
+func (c *conn) offCritical(h *home, sts []state) []string {
+	var names []string
+	for _, s := range sts {
+		if s.On == nil || *s.On {
+			continue
+		}
+		if l := h.light(s.ID); l != nil && c.isCritical(h, *l) {
+			names = append(names, l.Metadata.Name)
+		}
+	}
+	return names
+}
+
+// undo puts lights back as they were: restore_lights, or light_off_critical
+// when that turns a critical light off again.
+func (c *conn) undo(h *home, before []state, what string) *sdk.Undo {
+	if len(before) == 0 {
+		return nil
+	}
+	if len(c.offCritical(h, before)) > 0 {
+		return sdk.UndoWith("light_off_critical", map[string]any{"lights": before}, what)
+	}
+	return sdk.UndoWith("restore_lights", map[string]any{"lights": before}, what)
 }
 
 func (h *home) light(id string) *light {
@@ -692,6 +770,11 @@ func mustJSON(v any) json.RawMessage {
 
 // restore sets lights to states, pausing between commands.
 func (c *conn) restore(ctx context.Context, sts []state) error {
+	return c.restoreWith(ctx, sts, nil)
+}
+
+// restoreWith is restore with a transition.
+func (c *conn) restoreWith(ctx context.Context, sts []state, transition *int) error {
 	for i, s := range sts {
 		if i > 0 && pace > 0 {
 			select {
@@ -700,18 +783,11 @@ func (c *conn) restore(ctx context.Context, sts []state) error {
 			case <-time.After(pace):
 			}
 		}
-		if err := c.put(ctx, "light", s.ID, s.body(nil)); err != nil {
+		if err := c.put(ctx, "light", s.ID, s.body(transition)); err != nil {
 			return fmt.Errorf("light %s: %w", s.ID, err)
 		}
 	}
 	return nil
-}
-
-func undoTo(before []state, what string) *sdk.Undo {
-	if len(before) == 0 {
-		return nil
-	}
-	return sdk.UndoWith("restore_lights", map[string]any{"lights": before}, what)
 }
 
 func lightOut(h *home, l light) map[string]any {
@@ -872,6 +948,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err := n.check(l); err != nil {
 			return sdk.Result{}, err
 		}
+		if n.On != nil && !*n.On && c.isCritical(h, l) {
+			return sdk.Result{}, fmt.Errorf("%s is in criticalLights: turning it off needs light_off_critical", l.Metadata.Name)
+		}
 		before := snapshot(l)
 		after := before.apply(n)
 		n.ID = l.ID
@@ -883,7 +962,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"light": l.Metadata.Name, "id": l.ID, "now": after.view()})
-		res.Undo = undoTo([]state{before}, "Put "+l.Metadata.Name+" back")
+		res.Undo = c.undo(h, []state{before}, "Put "+l.Metadata.Name+" back")
 		return res, err
 
 	case "set_group":
@@ -908,11 +987,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if glID == "" {
 			return sdk.Result{}, fmt.Errorf("%s has no lights to control", g.Metadata.Name)
 		}
-		var before []state
+		var before, each []state
 		var changes []sdk.Change
+		var skipped []string
+		off := n.On != nil && !*n.On
 		for _, id := range h.lightsOf(g) {
 			l := h.light(id)
 			if l == nil {
+				continue
+			}
+			if off && c.isCritical(h, *l) {
+				skipped = append(skipped, l.Metadata.Name)
 				continue
 			}
 			b := snapshot(*l)
@@ -920,20 +1005,36 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if l.Dimming == nil {
 				nb.Brightness = nil // the bridge leaves on/off-only lights' brightness alone
 			}
-			before = append(before, b)
+			nb.ID = l.ID
+			before, each = append(before, b), append(each, nb)
 			changes = append(changes, sdk.Change{Target: "light " + l.Metadata.Name, Op: "update", Before: mustJSON(b.view()), After: mustJSON(b.apply(nb).view())})
 		}
-		if len(before) > maxLights {
+		if len(before)+len(skipped) > maxLights {
 			return sdk.Result{}, fmt.Errorf("%s has more than %d lights", g.Metadata.Name, maxLights)
 		}
-		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: describe(g.Metadata.Name, n), Changes: changes}}, nil
+		sum := describe(g.Metadata.Name, n)
+		if len(skipped) > 0 {
+			sort.Strings(skipped)
+			sum += fmt.Sprintf(", light by light, leaving %s on (in criticalLights; use light_off_critical)", strings.Join(skipped, ", "))
 		}
-		if err := c.put(ctx, "grouped_light", glID, n.body(p.TransitionMs)); err != nil {
+		if call.DryRun {
+			return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: changes}}, nil
+		}
+		if len(skipped) > 0 {
+			// The room's grouped light would turn the critical lights off
+			// too: send each of the others its own change instead.
+			if err := c.restoreWith(ctx, each, p.TransitionMs); err != nil {
+				return sdk.Result{}, err
+			}
+		} else if err := c.put(ctx, "grouped_light", glID, n.body(p.TransitionMs)); err != nil {
 			return sdk.Result{}, err
 		}
-		res, err := sdk.JSON(map[string]any{"group": g.Metadata.Name, "id": g.ID, "lights": len(before), "now": n.view()})
-		res.Undo = undoTo(before, fmt.Sprintf("Put the %d lights of %s back", len(before), g.Metadata.Name))
+		out := map[string]any{"group": g.Metadata.Name, "id": g.ID, "lights": len(before), "now": n.view()}
+		if len(skipped) > 0 {
+			out["skippedCritical"] = skipped
+		}
+		res, err := sdk.JSON(out)
+		res.Undo = c.undo(h, before, fmt.Sprintf("Put the %d lights of %s back", len(before), g.Metadata.Name))
 		return res, err
 
 	case "activate_scene":
@@ -964,10 +1065,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		var before []state
 		var changes []sdk.Change
+		var offCrit []string
 		for _, a := range s.Actions {
 			l := h.light(a.Target.RID)
 			if a.Target.RType != "light" || l == nil {
 				continue
+			}
+			if a.Action.On != nil && !a.Action.On.On && c.isCritical(h, *l) {
+				offCrit = append(offCrit, l.Metadata.Name)
 			}
 			b := snapshot(*l)
 			before = append(before, b)
@@ -976,6 +1081,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if len(before) > maxLights {
 			return sdk.Result{}, fmt.Errorf("the scene has more than %d lights", maxLights)
 		}
+		if len(offCrit) > 0 {
+			sort.Strings(offCrit)
+			return sdk.Result{}, fmt.Errorf("the scene %s turns off %s, in criticalLights: turn those off with light_off_critical, or change the scene", s.Metadata.Name, strings.Join(offCrit, ", "))
+		}
 		if call.DryRun {
 			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Activate the scene %s (%d lights)", s.Metadata.Name, len(before)), Changes: changes}}, nil
 		}
@@ -983,16 +1092,29 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"scene": s.Metadata.Name, "id": s.ID, "lights": len(before)})
-		res.Undo = undoTo(before, "Put the lights back as they were before "+s.Metadata.Name)
+		res.Undo = c.undo(h, before, "Put the lights back as they were before "+s.Metadata.Name)
 		return res, err
 
-	case "restore_lights":
-		if len(p.Lights) == 0 || len(p.Lights) > maxLights {
-			return sdk.Result{}, fmt.Errorf("give between 1 and %d lights", maxLights)
-		}
+	case "restore_lights", "light_off_critical":
 		h, err := c.home(ctx, false)
 		if err != nil {
 			return sdk.Result{}, err
+		}
+		if call.Action == "light_off_critical" {
+			switch {
+			case p.Light != "" && len(p.Lights) > 0:
+				return sdk.Result{}, errors.New("give light or lights, not both")
+			case p.Light != "":
+				l, err := resolve(h.lights, p.Light, "light", lightID, lightName)
+				if err != nil {
+					return sdk.Result{}, err
+				}
+				off := false
+				p.Lights = []state{{ID: l.ID, On: &off}}
+			}
+		}
+		if len(p.Lights) == 0 || len(p.Lights) > maxLights {
+			return sdk.Result{}, fmt.Errorf("give between 1 and %d lights", maxLights)
 		}
 		var before []state
 		var changes []sdk.Change
@@ -1019,14 +1141,28 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			before = append(before, b)
 			changes = append(changes, sdk.Change{Target: "light " + l.Metadata.Name, Op: "update", Before: mustJSON(b.view()), After: mustJSON(b.apply(s).view())})
 		}
+		crit := c.offCritical(h, p.Lights)
+		if call.Action == "restore_lights" && len(crit) > 0 {
+			return sdk.Result{}, fmt.Errorf("%s is in criticalLights: turning it off needs light_off_critical", strings.Join(crit, ", "))
+		}
+		if call.Action == "light_off_critical" && len(crit) == 0 {
+			return sdk.Result{}, errors.New("that turns off no light in criticalLights; use set_light or restore_lights")
+		}
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Set %d light(s) back", len(p.Lights)), Changes: changes}}, nil
+			sum := fmt.Sprintf("Set %d light(s) back", len(p.Lights))
+			if call.Action == "light_off_critical" {
+				sum = "Turn off critical " + strings.Join(crit, ", ") + ", cutting what it powers"
+				if len(p.Lights) > len(crit) {
+					sum += fmt.Sprintf(", and set %d other light(s)", len(p.Lights)-len(crit))
+				}
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: changes}}, nil
 		}
 		if err := c.restore(ctx, p.Lights); err != nil {
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"restored": len(p.Lights)})
-		res.Undo = undoTo(before, fmt.Sprintf("Put the %d light(s) back again", len(before)))
+		res.Undo = c.undo(h, before, fmt.Sprintf("Put the %d light(s) back again", len(before)))
 		return res, err
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)

@@ -157,7 +157,8 @@ func invoke(m *Module, action, in string, dry bool) (sdk.Result, error) {
 func TestESPHomeRead(t *testing.T) {
 	m, _ := setup(t, Config{})
 	start := time.Now()
-	if h := m.Health(context.Background(), "e"); h.Status != "ok" || h.Message != "Living room · 8 entities" || time.Since(start) > 2*time.Second {
+	// A password over http: working, but degraded.
+	if h := m.Health(context.Background(), "e"); h.Status != "degraded" || h.Message != "Living room · 8 entities · password sent without encryption (the device is on http)" || time.Since(start) > 2*time.Second {
 		t.Fatalf("%+v %s", h, time.Since(start))
 	}
 	r, err := invoke(m, "entities", `{}`, false)
@@ -188,7 +189,7 @@ func TestESPHomeRead(t *testing.T) {
 	}
 	// With a list in the settings, no stream is read.
 	lm, _ := setup(t, Config{Entities: []string{"sensor.temperature", "switch.relay"}})
-	if h := lm.Health(context.Background(), "e"); h.Status != "ok" || h.Message != "2 entities" {
+	if h := lm.Health(context.Background(), "e"); h.Status != "degraded" || !strings.HasPrefix(h.Message, "2 entities · ") {
 		t.Fatalf("%+v", h)
 	}
 }
@@ -313,5 +314,23 @@ func TestESPHomeRefusals(t *testing.T) {
 	}
 	if h := rm.Health(context.Background(), "e"); h.Status != "down" || !strings.Contains(h.Message, "another host") || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// Critical words match anywhere in the object id, for switches and buttons.
+func TestESPHomeCriticalNames(t *testing.T) {
+	c := &conn{critical: map[entityRef]bool{}}
+	for _, id := range []string{"restart", "restart2", "esp_reboot", "reboot1", "rebootdevice", "factoryreset", "factory_reset", "restart_safe_mode", "safe_mode_boot",
+		"safemode", "shutdown", "firmware_update", "ota", "flash", "garage_door", "gate_open", "frontdoor", "door_lock", "unlock", "water_valve", "siren", "alarm_silence", "silence"} {
+		for _, d := range []string{"button", "switch"} {
+			if !c.isCritical(entityRef{d, id}) {
+				t.Errorf("%s.%s isn't critical", d, id)
+			}
+		}
+	}
+	for _, r := range []entityRef{{"button", "identify"}, {"switch", "relay"}, {"switch", "led"}, {"light", "garage_light"}, {"sensor", "door"}} {
+		if c.isCritical(r) {
+			t.Errorf("%s is critical", r)
+		}
 	}
 }

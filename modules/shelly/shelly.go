@@ -3,6 +3,11 @@
 // when the device has a password: device info, switches with power
 // metering, covers (blinds and shutters), the firmware update check, and a
 // reboot.
+//
+// Switches wired to a garage opener, a door strike or a valve are locked:
+// they're listed in lockedSwitches, or detected (auto-off with a momentary
+// or detached input, the usual pulse wiring of an opener), and any change to
+// them needs the destructive switch_locked.
 package shelly
 
 import (
@@ -43,7 +48,13 @@ type Config struct {
 	CriticalSwitches []int `json:"criticalSwitches"`
 	// GarageCovers are cover ids that drive a garage door or gate rather
 	// than blinds; Conduit won't move them.
-	GarageCovers       []int  `json:"garageCovers"`
+	GarageCovers []int `json:"garageCovers"`
+	// LockedSwitches are switch ids wired to a garage opener, a door strike,
+	// a gate or a valve: any change to them (on or off) needs switch_locked.
+	LockedSwitches []int `json:"lockedSwitches"`
+	// NotLocked are switch ids that look locked (auto-off with a momentary
+	// or detached input) but aren't wired to anything that opens.
+	NotLocked          []int  `json:"notLocked"`
 	Fingerprint        string `json:"fingerprint"`
 	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
 }
@@ -55,6 +66,8 @@ type conn struct {
 	pass     string
 	critical map[int]bool
 	garage   map[int]bool
+	locked   map[int]bool
+	unlocked map[int]bool // notLocked
 	id       atomic.Int64
 }
 
@@ -82,15 +95,19 @@ func (m *Module) Manifest() sdk.Manifest {
 			"password":{"type":"string","x-secret":true,"description":"The device password, when authentication is on (the user is always admin)"},
 			"criticalSwitches":{"type":"array","items":{"type":"integer","minimum":0,"maximum":99},"description":"Switch ids that power something that mustn't go off by accident; turning them off needs switch_off_critical (destructive)"},
 			"garageCovers":{"type":"array","items":{"type":"integer","minimum":0,"maximum":99},"description":"Cover ids that drive a garage door or gate; Conduit won't move them"},
+			"lockedSwitches":{"type":"array","items":{"type":"integer","minimum":0,"maximum":99},"description":"Switch ids wired to a garage door opener, a gate, a door strike or a valve. Any change to them, on or off, is refused by set_switch and needs switch_locked (destructive). A switch with auto-off and a momentary or detached input (the usual pulse wiring of an opener) is treated as locked even when it isn't listed here."},
+			"notLocked":{"type":"array","items":{"type":"integer","minimum":0,"maximum":99},"description":"Switch ids that look locked (auto-off with a momentary or detached input) but aren't wired to anything that opens or unlocks; set_switch may change them. A switch in lockedSwitches stays locked."},
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the device's certificate, for https"},
 			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "device", Title: "Device", Description: "Model, name, firmware, uptime, Wi-Fi signal, whether a restart is pending and the updates the device knows of.", Risk: sdk.RiskRead},
 			{Name: "switches", Title: "Switches", Description: "Each switch with its name, on/off, power, voltage, current, energy and temperature, and whether it's critical.", Risk: sdk.RiskRead},
-			{Name: "set_switch", Title: "Turn a switch on or off", Description: "Turns a switch on or off. Turning off a critical switch is refused (use switch_off_critical). Undo puts it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
+			{Name: "set_switch", Title: "Turn a switch on or off", Description: "Turns a switch on or off. Turning off a critical switch is refused (use switch_off_critical); any change to a locked switch (garage opener, door strike, valve: lockedSwitches, or auto-off with a momentary or detached input) is refused (use switch_locked). Undo puts it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["id","on"],"properties":{` + id("switch") + `,"on":{"type":"boolean"}}}`)},
 			{Name: "switch_off_critical", Title: "Turn off a critical switch", Description: "Turns off a switch listed in criticalSwitches, cutting power to what it feeds. Undo turns it back on.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id("switch") + `}}`)},
+			{Name: "switch_locked", Title: "Switch a locked switch", Description: "Turns a locked switch on or off: one wired to a garage door opener, a gate, a door strike or a valve (lockedSwitches, or auto-off with a momentary or detached input). This can open a door or a gate or shut off water. The preview names the switch.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["id","on"],"properties":{` + id("switch") + `,"on":{"type":"boolean"}}}`)},
 			{Name: "power", Title: "Power", Description: "What each metering channel (switches, PM and EM meters) draws now and has used, and the total.", Risk: sdk.RiskRead},
 			{Name: "covers", Title: "Covers", Description: "Each cover (blinds, shutters) with its state, position and power; garage covers are marked.", Risk: sdk.RiskRead},
 			{Name: "cover", Title: "Move a cover", Description: "Opens, closes, stops or moves a cover to a position (0 closed – 100 open). Covers listed in garageCovers are refused. Undo moves it back.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true,
@@ -135,13 +152,21 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if err != nil {
 		return err
 	}
+	locked, err := ids(c.LockedSwitches, "locked switch")
+	if err != nil {
+		return err
+	}
+	unlocked, err := ids(c.NotLocked, "notLocked switch")
+	if err != nil {
+		return err
+	}
 	tc, err := tlspin.Config(c.Fingerprint, c.InsecureSkipVerify)
 	if err != nil {
 		return err
 	}
 	tr := sdk.Transport(h)
 	tr.TLSClientConfig = tc
-	m.set.Put(id, &conn{host: h, base: u.Scheme + "://" + u.Host, pass: c.Password, critical: crit, garage: garage,
+	m.set.Put(id, &conn{host: h, base: u.Scheme + "://" + u.Host, pass: c.Password, critical: crit, garage: garage, locked: locked, unlocked: unlocked,
 		http: rest.SameHostOnly(&http.Client{Timeout: 10 * time.Second, Transport: tr})})
 	return nil
 }
@@ -373,20 +398,43 @@ func (c *conn) status(ctx context.Context) (*status, error) {
 
 // names reads the components' names from the configuration.
 func (c *conn) names(ctx context.Context) map[string]string {
+	out, _, _ := c.config(ctx)
+	return out
+}
+
+// config reads the components' names, and the switches whose wiring looks
+// like an opener's: auto-off with a momentary or detached input.
+func (c *conn) config(ctx context.Context) (map[string]string, map[int]bool, error) {
 	var raw map[string]json.RawMessage
-	out := map[string]string{}
-	if c.rpc(ctx, "Shelly.GetConfig", nil, &raw) != nil {
-		return out
+	out, pulse := map[string]string{}, map[int]bool{}
+	if err := c.rpc(ctx, "Shelly.GetConfig", nil, &raw); err != nil {
+		return out, pulse, err
 	}
 	for k, v := range raw {
 		var n struct {
-			Name *string `json:"name"`
+			Name    *string `json:"name"`
+			AutoOff bool    `json:"auto_off"`
+			InMode  string  `json:"in_mode"`
 		}
-		if json.Unmarshal(v, &n) == nil && n.Name != nil && *n.Name != "" {
+		if json.Unmarshal(v, &n) != nil {
+			continue
+		}
+		if n.Name != nil && *n.Name != "" {
 			out[k] = *n.Name
 		}
+		if strings.HasPrefix(k, "switch:") && n.AutoOff && (n.InMode == "momentary" || n.InMode == "detached") {
+			if id, err := strconv.Atoi(strings.TrimPrefix(k, "switch:")); err == nil {
+				pulse[id] = true
+			}
+		}
 	}
-	return out
+	return out, pulse, nil
+}
+
+// isLocked says whether a switch is locked: listed, or wired like an opener
+// and not in notLocked.
+func (c *conn) isLocked(id int, pulse map[int]bool) bool {
+	return c.locked[id] || (pulse[id] && !c.unlocked[id])
 }
 
 func r2(p *float64, div float64) any {
@@ -402,13 +450,16 @@ func put(e map[string]any, k string, v any) {
 	}
 }
 
-func switchOut(s switchStatus, name string, critical bool) map[string]any {
+func switchOut(s switchStatus, name string, critical, locked bool) map[string]any {
 	e := map[string]any{"id": s.ID, "on": s.Output}
 	if name != "" {
 		e["name"] = name
 	}
 	if critical {
 		e["critical"] = true
+	}
+	if locked {
+		e["locked"] = true
 	}
 	put(e, "powerW", r2(s.APower, 1))
 	put(e, "voltage", r2(s.Voltage, 1))
@@ -532,29 +583,49 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		names := c.names(ctx)
+		names, pulse, _ := c.config(ctx)
 		out := []map[string]any{}
 		for _, id := range sortedKeys(st.switches) {
-			out = append(out, switchOut(st.switches[id], names[fmt.Sprintf("switch:%d", id)], c.critical[id]))
+			out = append(out, switchOut(st.switches[id], names[fmt.Sprintf("switch:%d", id)], c.critical[id], c.isLocked(id, pulse)))
 		}
 		return sdk.JSON(out)
 
-	case "set_switch", "switch_off_critical":
+	case "set_switch", "switch_off_critical", "switch_locked":
 		id, err := p.id("switch")
 		if err != nil {
 			return sdk.Result{}, err
 		}
 		want := false
-		if call.Action == "set_switch" {
+		if call.Action != "switch_off_critical" {
 			if p.On == nil {
 				return sdk.Result{}, errors.New("say on: true or false")
 			}
 			want = *p.On
-			if !want && c.critical[id] {
-				return sdk.Result{}, fmt.Errorf("switch %d is in criticalSwitches: turning it off needs switch_off_critical", id)
-			}
-		} else if !c.critical[id] {
+		}
+		if call.Action == "set_switch" && !want && c.critical[id] {
+			return sdk.Result{}, fmt.Errorf("switch %d is in criticalSwitches: turning it off needs switch_off_critical", id)
+		}
+		if call.Action == "switch_off_critical" && !c.critical[id] {
 			return sdk.Result{}, fmt.Errorf("switch %d isn't in criticalSwitches; use set_switch", id)
+		}
+		// Whether it's locked depends on its configuration: when that
+		// can't be read, only a switch listed in notLocked goes ahead.
+		names, pulse, cfgErr := c.config(ctx)
+		locked := c.isLocked(id, pulse) || (cfgErr != nil && !c.unlocked[id])
+		if call.Action == "switch_locked" {
+			if !locked {
+				return sdk.Result{}, fmt.Errorf("switch %d isn't locked; use set_switch", id)
+			}
+		} else if locked {
+			why := "is in lockedSwitches"
+			switch {
+			case c.locked[id]:
+			case cfgErr != nil:
+				why = "may be locked (its configuration couldn't be read: " + cfgErr.Error() + ")"
+			default:
+				why = "has auto-off with a momentary or detached input, the wiring of a garage opener or door strike (list it in notLocked if it isn't one)"
+			}
+			return sdk.Result{}, fmt.Errorf("switch %d %s: any change to it needs switch_locked", id, why)
 		}
 		st, err := c.status(ctx)
 		if err != nil {
@@ -564,10 +635,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if !ok {
 			return sdk.Result{}, fmt.Errorf("the device has no switch %d (see switches)", id)
 		}
-		names := c.names(ctx)
 		name := label("switch", id, names)
 		if call.DryRun {
 			sum := "Turn " + onOff(want) + " " + name
+			if call.Action == "switch_locked" {
+				sum = "Turn " + onOff(want) + " locked " + name + ", wired to a garage opener, gate, door strike or valve: this may open or unlock it or shut off a supply"
+			}
 			if cur.Output == want {
 				sum = name + " is already " + onOff(want) + "; nothing would change"
 			} else if !want && cur.APower != nil && *cur.APower > 0 {
@@ -586,7 +659,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"id": id, "on": want, "changed": r.WasOn != want})
-		if r.WasOn != want {
+		if r.WasOn != want && call.Action != "switch_locked" {
 			back := "set_switch"
 			if !r.WasOn && c.critical[id] {
 				back = "switch_off_critical" // turning a critical one back off is destructive
@@ -812,6 +885,9 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 	}
 	if n := len(st.covers); n > 0 {
 		msg += " · " + strconv.Itoa(n) + " cover(s)"
+	}
+	if c.pass != "" && strings.HasPrefix(c.base, "http://") {
+		return sdk.Health{Status: "degraded", Message: msg + " · password sent without encryption (the device is on http)"}
 	}
 	return sdk.Health{Status: "ok", Message: msg}
 }

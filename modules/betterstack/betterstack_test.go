@@ -161,7 +161,8 @@ func TestBetterStackIncidents(t *testing.T) {
 	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "Acknowledge incident API down") || len(f.acked) != 0 {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if _, err := invoke(m, "acknowledge_incident", `{"incident":"7","by":"ops@example.com"}`, false); err != nil || f.acked["7"] != "ops@example.com" {
+	// Always recorded as Conduit, never as a person.
+	if _, err := invoke(m, "acknowledge_incident", `{"incident":"7","by":"ops@example.com"}`, false); err != nil || f.acked["7"] != "Conduit (for ops@example.com)" {
 		t.Fatalf("%v %v", err, f.acked)
 	}
 	if r, err := invoke(m, "acknowledge_incident", `{"incident":"7"}`, false); err != nil || !strings.Contains(string(r.Output), "already acknowledged") {
@@ -184,7 +185,7 @@ func TestBetterStackIncidents(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		risks[a.Name] = a.Risk
 	}
-	if risks["resolve_incident"] != sdk.RiskDestructive || risks["acknowledge_incident"] != sdk.RiskWrite {
+	if risks["resolve_incident"] != sdk.RiskDestructive || risks["acknowledge_incident"] != sdk.RiskDestructive {
 		t.Fatalf("%v", risks)
 	}
 }
@@ -246,5 +247,19 @@ func TestBetterStackRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "b"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// Monitor addresses come out as scheme://host and the first path segment,
+// with a token-like segment masked.
+func TestBetterStackShownURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://hooks.example.com/AbC123def456ghi789/x": "https://hooks.example.com/…/…",
+		"https://api.example.com/health/deep?key=s3cr3t": "https://api.example.com/health/…?…",
+		"https://u:p@shop.example.com/":                  "https://shop.example.com",
+	} {
+		if got := shownURL(in); got != want {
+			t.Errorf("%s: %s", in, got)
+		}
 	}
 }

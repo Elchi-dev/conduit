@@ -53,10 +53,10 @@ var (
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
-	incident := `"incident":{"type":"string","description":"Incident ID (see incidents)"},"by":{"type":"string","maxLength":100,"description":"Who to record, e.g. an email (default Conduit)"}`
+	incident := `"incident":{"type":"string","description":"Incident ID (see incidents)"},"by":{"type":"string","maxLength":80,"description":"Who asked, recorded after Conduit, e.g. \"Conduit (for ops@example.com)\"; it's always recorded as Conduit"}`
 	return sdk.Manifest{
 		ID: "betterstack", Name: "Better Stack Uptime", Version: "0.1.0", Category: "Monitoring", Icon: "pulse",
-		Description: "Better Stack Uptime: monitors and their status, incidents (acknowledge; resolving is destructive), who's on call, status pages.",
+		Description: "Better Stack Uptime: monitors and their status, incidents (acknowledging and resolving are destructive), who's on call, status pages.",
 		Presets:     []string{"developer", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["token"],"properties":{
 			"token":{"type":"string","x-secret":true,"description":"An Uptime API token (Settings, API tokens; a team token)"}}}`),
@@ -65,7 +65,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"status":{"type":"string","enum":["up","down","paused","pending","maintenance","validating"],"description":"Only monitors in this status"}}}`)},
 			{Name: "incidents", Title: "Incidents", Description: "Incidents over the last days, newest first: name, cause, when it started, whether acknowledged and resolved. Unresolved only unless includeResolved.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"days":{"type":"integer","minimum":1,"maximum":90,"default":7},"includeResolved":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}`)},
-			{Name: "acknowledge_incident", Title: "Acknowledge an incident", Description: "Acknowledges an ongoing incident, which stops its escalation to further people. It can't be un-acknowledged.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "acknowledge_incident", Title: "Acknowledge an incident", Description: "Acknowledges an ongoing incident, which stops its escalation to further people (destructive: nobody else gets paged). It's recorded as acknowledged by Conduit. It can't be un-acknowledged.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["incident"],"properties":{` + incident + `}}`)},
 			{Name: "resolve_incident", Title: "Resolve an incident", Description: "Resolves an incident: alerting and escalation for it stop even if the monitor is still failing (destructive). It can't be reopened.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["incident"],"properties":{` + incident + `}}`)},
@@ -196,14 +196,11 @@ func clip(s string, n int) string {
 	return string(r)
 }
 
-// shownURL is an address without credentials or query string (a token
-// there would end up in the audit log).
+// shownURL is an address cut to scheme://host and its first path segment
+// (rest.ShortURL): a token in the path, the query or the user part would
+// end up in the audit log.
 func shownURL(s string) string {
-	s = rest.StripUserinfo(s)
-	if i := strings.IndexAny(s, "?#"); i >= 0 {
-		s = s[:i] + "?…"
-	}
-	return clip(s, 300)
+	return clip(rest.ShortURL(s), 300)
 }
 
 func incidentOut(r resource[incidentAttrs]) map[string]any {
@@ -314,7 +311,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			by[a.Status]++
 			name := a.Name
 			if name == "" {
-				name = a.URL
+				name = shownURL(a.URL)
 			}
 			e := map[string]any{"id": r.ID, "name": clip(name, 200), "type": a.Type, "status": a.Status, "checkEverySeconds": a.CheckFreq}
 			if u := shownURL(a.URL); u != "" && a.Type != "heartbeat" {
@@ -369,12 +366,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 
 	case "acknowledge_incident", "resolve_incident":
 		ack := call.Action == "acknowledge_incident"
-		by := strings.TrimSpace(p.By)
-		if by == "" {
-			by = "Conduit"
-		}
-		if !byRe.MatchString(by) {
-			return sdk.Result{}, errors.New("by is up to 100 characters")
+		// Always recorded as Conduit: an agent mustn't put an incident's
+		// acknowledgement on a person's name. who's asking goes after it.
+		by := "Conduit"
+		if who := strings.TrimSpace(p.By); who != "" {
+			if !byRe.MatchString(who) || len([]rune(who)) > 80 {
+				return sdk.Result{}, errors.New("by is up to 80 characters")
+			}
+			by = "Conduit (for " + who + ")"
 		}
 		r, err := c.incident(ctx, p.Incident)
 		if err != nil {

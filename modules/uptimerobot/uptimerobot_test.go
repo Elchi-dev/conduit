@@ -278,3 +278,35 @@ func TestUptimeRobotRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v", h)
 	}
 }
+
+// Addresses come out cut to scheme://host and the first path segment, and
+// the search never reaches UptimeRobot (whose search matches whole URLs, an
+// oracle for a token in one).
+func TestUptimeRobotShownURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://hooks.example.com/AbC123def456ghi789/x":    "https://hooks.example.com/…/…",
+		"https://user:pw@blog.example.com/health?token=abc": "https://blog.example.com/health?…",
+	} {
+		if got := shownURL(monitor{URL: in, Type: 1}); got != want {
+			t.Errorf("%s: %s", in, got)
+		}
+	}
+	if shownURL(monitor{URL: "https://heartbeat.uptimerobot.com/m1-x", Type: 5}) != "" {
+		t.Error("a heartbeat's push address came out")
+	}
+	m, f := setup(t, "secret://ur")
+	for search, want := range map[string]string{"blog": "Blog", "token=a": "", "secretpush": "", "api.example": "API"} {
+		r, err := invoke(m, "monitors", `{"search":"`+search+`"}`, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want == "" && strings.Contains(string(r.Output), `"name"`) || want != "" && !strings.Contains(string(r.Output), `"name":"`+want+`"`) {
+			t.Errorf("%s: %s", search, r.Output)
+		}
+	}
+	for _, s := range f.seen {
+		if strings.Contains(s, "search") {
+			t.Fatalf("the search went to UptimeRobot: %s", s)
+		}
+	}
+}

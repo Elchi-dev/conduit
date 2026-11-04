@@ -23,7 +23,8 @@ into `acme.okta.com`).
 
 All three changes refuse the token's own user, and users that hold any admin
 role unless `allowAdmins` is on. When the token may not read a user's roles,
-the change is refused rather than guessed. A user who is already in the
+the change is refused rather than guessed, as it is when the token's own
+user can't be read. A user who is already in the
 requested state is reported as "nothing to change".
 
 **Security.** The organization address must be a single name under an Okta

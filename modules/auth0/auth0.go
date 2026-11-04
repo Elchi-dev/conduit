@@ -477,6 +477,9 @@ func (c *conn) target(ctx context.Context, p input) (user, error) {
 			return u, fmt.Errorf("there's no user with the email %s", email)
 		case 1:
 			u = us[0]
+			if !strings.EqualFold(strings.TrimSpace(u.Email), email) {
+				return u, errors.New("Auth0 answered with a user of another email; give the user id")
+			}
 		default:
 			return u, fmt.Errorf("%d users have this email (one per connection); give the user id", len(us))
 		}
@@ -487,15 +490,25 @@ func (c *conn) target(ctx context.Context, p input) (user, error) {
 		return u, errors.New("Auth0 answered with an unusable user id")
 	}
 	if !c.allowAdmins {
-		var roles []struct {
-			Name string `json:"name"`
-		}
-		if err := c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(u.UserID)+"/roles", url.Values{"per_page": {"100"}}, nil, &roles); err != nil {
-			return u, fmt.Errorf("couldn't check whether %s is an admin (%v); refused", u.label(), err)
-		}
-		for _, r := range roles {
-			if adminRole.MatchString(r.Name) {
-				return u, fmt.Errorf("%s has the role %q; turn on allowAdmins in the settings to act on admins", u.label(), r.Name)
+		// Every page of roles is read: an admin role past the first 100
+		// must still refuse.
+		for pg := 0; ; pg++ {
+			if pg == 10 {
+				return u, fmt.Errorf("%s has more than 1000 roles; refused", u.label())
+			}
+			var roles []struct {
+				Name string `json:"name"`
+			}
+			if err := c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(u.UserID)+"/roles", url.Values{"per_page": {"100"}, "page": {strconv.Itoa(pg)}}, nil, &roles); err != nil {
+				return u, fmt.Errorf("couldn't check whether %s is an admin (%v); refused", u.label(), err)
+			}
+			for _, r := range roles {
+				if adminRole.MatchString(r.Name) {
+					return u, fmt.Errorf("%s has the role %q; turn on allowAdmins in the settings to act on admins", u.label(), r.Name)
+				}
+			}
+			if len(roles) < 100 {
+				break
 			}
 		}
 	}

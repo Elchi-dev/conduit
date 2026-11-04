@@ -56,6 +56,11 @@ var (
 	adminGroups = map[string]bool{"idm_high_privilege": true, "idm_admins": true, "system_admins": true, "domain_admins": true}
 )
 
+// adminGroup reports whether a group grants administrative rights: the
+// built-in ones above and any *_admins group (idm_people_admins,
+// idm_oauth2_admins, idm_access_control_admins, ...).
+func adminGroup(name string) bool { return adminGroups[name] || strings.HasSuffix(name, "_admins") }
+
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	who := `{"type":"object","required":["account"],"properties":{"account":{"type":"string","description":"Account name, SPN or UUID (from persons or account_status)"}}}`
@@ -319,7 +324,7 @@ func (c *conn) groups(ctx context.Context, p input) (sdk.Result, error) {
 		if s != "" && !strings.Contains(e.name(), s) {
 			continue
 		}
-		row := map[string]any{"name": e.name(), "uuid": e.attr("uuid"), "members": len(e.Attrs["member"]), "admin": adminGroups[e.name()]}
+		row := map[string]any{"name": e.name(), "uuid": e.attr("uuid"), "members": len(e.Attrs["member"]), "admin": adminGroup(e.name())}
 		if d := e.attr("description"); d != "" {
 			row["description"] = d
 		}
@@ -401,15 +406,23 @@ func (c *conn) setLocked(ctx context.Context, call sdk.Call, p input) (sdk.Resul
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	if (me.attr("uuid") != "" && me.attr("uuid") == e.attr("uuid")) || me.name() == name {
+	if me.attr("uuid") == "" && me.name() == "" {
+		return sdk.Result{}, errors.New("couldn't tell which account the token belongs to; refused")
+	}
+	if (me.attr("uuid") != "" && me.attr("uuid") == e.attr("uuid")) || (me.name() != "" && me.name() == name) {
 		return sdk.Result{}, errors.New("that's the token's own service account; locking it would lock Conduit out")
 	}
 	if !c.allowAdmins {
 		if adminNames[name] {
 			return sdk.Result{}, fmt.Errorf("%s is a built-in admin account; turn on allowAdmins in the settings to act on admins", name)
 		}
+		// Every account is in idm_all_accounts (memberof is transitive), so
+		// no groups at all means the token can't read them.
+		if len(e.Attrs["memberof"]) == 0 {
+			return sdk.Result{}, fmt.Errorf("couldn't read %s's groups to check whether it's an admin; refused", name)
+		}
 		for _, g := range e.groups() {
-			if adminGroups[g] {
+			if adminGroup(g) {
 				return sdk.Result{}, fmt.Errorf("%s is in %s; turn on allowAdmins in the settings to act on admins", name, g)
 			}
 		}

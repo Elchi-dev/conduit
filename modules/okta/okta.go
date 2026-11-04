@@ -448,6 +448,9 @@ func (c *conn) target(ctx context.Context, p input) (user, error) {
 	if err != nil {
 		return user{}, err
 	}
+	if !idRe.MatchString(me.ID) {
+		return user{}, errors.New("couldn't tell which user the API token belongs to; refused")
+	}
 	if me.ID == u.ID {
 		return user{}, errors.New("that's the API token's own user; acting on it would lock Conduit out")
 	}

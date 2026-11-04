@@ -205,6 +205,12 @@ func TestOktaValidation(t *testing.T) {
 		{OrgURL: "https://acme.okta.com/#frag", Token: "secret://o"},
 		{OrgURL: "https://acme.okta.com/path", Token: "secret://o"},
 		{OrgURL: "", Token: "secret://o"},
+		{OrgURL: "https://acme.okta.com.", Token: "secret://o"},
+		{OrgURL: "https://acme.\u043ekta.com", Token: "secret://o"},
+		{OrgURL: "https://evil.test#.okta.com", Token: "secret://o"},
+		{OrgURL: "evil.test\\.okta.com", Token: "secret://o"},
+		{OrgURL: "https://evil.test%2f.okta.com", Token: "secret://o"},
+		{OrgURL: "https://login.acme.test", Token: "secret://o"},
 	} {
 		raw, _ := json.Marshal(c)
 		if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err == nil {

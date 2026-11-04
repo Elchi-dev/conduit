@@ -42,7 +42,7 @@ func (f *fakeLLDAP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/auth/simple/login" {
 		var b struct{ Username, Password string }
 		json.Unmarshal(body, &b)
-		if b.Username != "conduit" || b.Password != "lpass" {
+		if (b.Username != "conduit" && !strings.EqualFold(b.Username, "conduit@example.com")) || b.Password != "lpass" {
 			w.WriteHeader(401)
 			io.WriteString(w, "Invalid username or password lpass")
 			return
@@ -98,11 +98,15 @@ func (f *fakeLLDAP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func setup(t *testing.T, pw string, allowAdmins bool) (*Module, *fakeLLDAP) {
+	return setupAs(t, "conduit", pw, allowAdmins)
+}
+
+func setupAs(t *testing.T, username, pw string, allowAdmins bool) (*Module, *fakeLLDAP) {
 	f := &fakeLLDAP{members: map[int][]string{1: {"conduit", "root"}, 3: {"alice", "bob"}}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	m := New()
-	raw, _ := json.Marshal(Config{URL: srv.URL + "/", Username: "conduit", Password: pw, AllowAdmins: allowAdmins})
+	raw, _ := json.Marshal(Config{URL: srv.URL + "/", Username: username, Password: pw, AllowAdmins: allowAdmins})
 	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://l": "lpass", "secret://bad": "nope"}), "a", raw); err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +193,19 @@ func TestLLDAP(t *testing.T) {
 	}
 	if _, err := invoke(allow, "remove_from_group", `{"user":"conduit","group":1}`, false); err == nil {
 		t.Fatal("changed its own groups")
+	}
+}
+
+// Signed in by email, Conduit's own user is still refused by its id.
+func TestLLDAPSelfByEmail(t *testing.T) {
+	m, f := setupAs(t, "Conduit@example.com", "secret://l", true)
+	for _, g := range []string{"1", "3"} {
+		if _, err := invoke(m, "remove_from_group", `{"user":"conduit","group":`+g+`}`, false); err == nil || !strings.Contains(err.Error(), "signs in as") {
+			t.Fatalf("group %s: %v", g, err)
+		}
+	}
+	if _, err := invoke(m, "add_to_group", `{"user":"conduit","group":4}`, false); err == nil || slices.Contains(f.members[4], "conduit") {
+		t.Fatalf("changed its own groups: %v", err)
 	}
 }
 

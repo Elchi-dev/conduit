@@ -28,6 +28,8 @@ var persons = map[string]string{
 	"alice": `"memberof":["idm_all_persons@idm.test","family@idm.test"]`,
 	"bob":   `"memberof":["idm_all_persons@idm.test"]`,
 	"root":  `"memberof":["idm_admins@idm.test"]`,
+	"carol": `"memberof":["idm_all_persons@idm.test","idm_oauth2_admins@idm.test"]`,
+	"dave":  `"memberof":[]`,
 }
 
 func (f *fakeKanidm) entry(name, extra string) string {
@@ -162,6 +164,8 @@ func TestKanidm(t *testing.T) {
 	for _, c := range []struct{ action, in, want string }{
 		{"lock_account", `{"account":"conduit"}`, "own service account"},
 		{"lock_account", `{"account":"root"}`, "idm_admins"},
+		{"lock_account", `{"account":"carol"}`, "idm_oauth2_admins"},
+		{"lock_account", `{"account":"dave"}`, "couldn't read dave's groups"},
 		{"lock_account", `{"account":"mallory"}`, "no account"},
 	} {
 		if _, err := invoke(m, c.action, c.in, false); err == nil || !strings.Contains(err.Error(), c.want) {

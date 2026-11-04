@@ -17,7 +17,8 @@ and keeps the session token in memory. For a self-signed certificate, set
 | `add_to_group` | destructive | A user (id) and a group (id or exact name). Gives the user the group and whatever it grants in the apps that use LLDAP. The preview shows the groups before and after. Undo removes it. |
 | `remove_from_group` | destructive | Takes the group away from the user. Undo adds it back. |
 
-Both changes refuse the user Conduit signs in as. Changing the built-in
+Both changes refuse the user Conduit signs in as (matched by id, and by
+email when the configured user name is an email). Changing the built-in
 groups (`lldap_admin`, `lldap_password_manager`, `lldap_strict_readonly`)
 or the groups of their members needs `allowAdmins`. A user already in (or
 out of) the group is reported as "nothing to change".

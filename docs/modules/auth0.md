@@ -20,7 +20,9 @@ these credentials and keeps it in memory until shortly before it expires.
 | `unblock_user` | destructive | Lets a blocked user sign in again (it grants access, hence destructive). Undo blocks them again. |
 
 Users with a role whose name says admin, owner or super are refused unless
-`allowAdmins` is on; when the roles can't be read, the change is refused.
+`allowAdmins` is on (every page of the user's roles is checked); when the
+roles can't be read, the change is refused. An email lookup must return
+one user with that email, or the change is refused.
 Conduit signs in as an application, never as a user, so it can't block
 itself. A user already blocked (or unblocked) is reported as "nothing to
 change".

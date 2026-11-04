@@ -23,7 +23,7 @@ type fakeAuth0 struct {
 	blocked map[string]bool
 }
 
-var users = map[string]string{"auth0|alice": "Alice", "auth0|bob": "Bob", "auth0|root": "Root"}
+var users = map[string]string{"auth0|alice": "Alice", "auth0|bob": "Bob", "auth0|root": "Root", "auth0|many": "Many"}
 
 func (f *fakeAuth0) user(id string) string {
 	return fmt.Sprintf(`{"user_id":%q,"name":%q,"nickname":"n","email":"%s@acme.test","blocked":%t,"logins_count":3,"identities":[{"provider":"auth0","connection":"Username-Password-Authentication","access_token":"LEAKME"}],"app_metadata":{"k":"LEAKME"}}`,
@@ -75,6 +75,18 @@ func (f *fakeAuth0) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/logs":
 		io.WriteString(w, `[{"date":"2026-11-04T10:00:00Z","type":"f","description":"Wrong email or password.","client_name":"Web","user_name":"alice@acme.test","ip":"203.0.113.9","details":{"request":{"body":{"password":"LEAKME"}}}}]`)
 	case strings.HasSuffix(path, "/roles"):
+		if strings.Contains(r.URL.EscapedPath(), "auth0%7Cmany") {
+			if q.Get("page") == "1" {
+				io.WriteString(w, `[{"id":"rol_x","name":"Super User"}]`)
+				return
+			}
+			roles := make([]string, 100)
+			for i := range roles {
+				roles[i] = fmt.Sprintf(`{"id":"rol_v%d","name":"Viewer %d"}`, i, i)
+			}
+			io.WriteString(w, "["+strings.Join(roles, ",")+"]")
+			return
+		}
 		if strings.Contains(r.URL.EscapedPath(), "auth0%7Croot") {
 			io.WriteString(w, `[{"id":"rol_1","name":"Tenant Admin"}]`)
 			return
@@ -172,6 +184,7 @@ func TestAuth0(t *testing.T) {
 	}
 	for _, c := range []struct{ in, want string }{
 		{`{"user":"auth0|root"}`, "Tenant Admin"},
+		{`{"user":"auth0|many"}`, "Super User"},
 		{`{"user":"auth0|mallory"}`, "no user"},
 		{`{"email":"nobody@acme.test"}`, "no user"},
 	} {
@@ -217,6 +230,10 @@ func TestAuth0Validation(t *testing.T) {
 		{Domain: "https://acme.auth0.com:444", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
 		{Domain: "https://acme.auth0.com/?a=b", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
 		{Domain: "https://acme.auth0.com/x", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
+		{Domain: "acme.auth0.com.", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
+		{Domain: "acme.\u0430uth0.com", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
+		{Domain: "evil.test#.auth0.com", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
+		{Domain: "evil.test\\.auth0.com", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
 		{Domain: "login.acme.test", ClientID: "AbCdEfGh1234", ClientSecret: "secret://c"},
 		{Domain: "acme.auth0.com", ClientID: "bad id!", ClientSecret: "secret://c"},
 	} {

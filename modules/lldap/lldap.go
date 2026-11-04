@@ -393,7 +393,7 @@ func (c *conn) membership(ctx context.Context, call sdk.Call, p input) (sdk.Resu
 	var res struct {
 		User *user `json:"user"`
 	}
-	if err := c.gql(ctx, `query($id: String!) { user(userId: $id) { id displayName groups { id displayName } } }`, map[string]any{"id": uid}, &res); err != nil {
+	if err := c.gql(ctx, `query($id: String!) { user(userId: $id) { id email displayName groups { id displayName } } }`, map[string]any{"id": uid}, &res); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return sdk.Result{}, fmt.Errorf("there's no user %q", uid)
 		}
@@ -403,7 +403,9 @@ func (c *conn) membership(ctx context.Context, call sdk.Call, p input) (sdk.Resu
 		return sdk.Result{}, fmt.Errorf("there's no user %q", uid)
 	}
 	u := *res.User
-	if strings.EqualFold(u.ID, c.username) {
+	// LLDAP also signs users in by email, so the configured name may be
+	// the user's email rather than its id.
+	if strings.EqualFold(u.ID, c.username) || (u.Email != "" && strings.EqualFold(strings.TrimSpace(u.Email), c.username)) {
 		return sdk.Result{}, errors.New("that's the user Conduit signs in as; changing its groups could lock Conduit out")
 	}
 	if !c.allowAdmins {

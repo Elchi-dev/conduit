@@ -25,8 +25,11 @@ such as `https://idm.example.com`. For a self-signed certificate, set
 | `unlock_account` | destructive | Clears an expiry that has passed, so the account can sign in again. Undo locks it again. |
 
 Both changes refuse the token's own service account, and `admin`,
-`idm_admin` and members of `idm_admins`, `system_admins`, `domain_admins`
-or `idm_high_privilege` unless `allowAdmins` is on. An account already in
+`idm_admin` and members (direct or nested) of `system_admins`,
+`domain_admins`, `idm_high_privilege` or any `*_admins` group (such as
+`idm_admins`, `idm_people_admins` or `idm_oauth2_admins`) unless
+`allowAdmins` is on. An account whose groups the token can't read is
+refused too, as is any change when the token's own account can't be told. An account already in
 the requested state is reported as "nothing to change".
 
 **Security.** The address can't carry credentials, a query or a fragment.

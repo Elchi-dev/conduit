@@ -161,6 +161,8 @@ func TestInstatusValidation(t *testing.T) {
 		{"create_incident", `{"page":"pg1","name":"x","message":"y"}`},
 		{"create_incident", `{"page":"pg1","name":"<img src=x>","message":"y","components":{"api1":"MAJOROUTAGE"}}`},
 		{"create_incident", `{"page":"pg1","name":"x","message":"y","components":{"api1":"down"}}`},
+		{"create_incident", `{"page":"pg1","name":"x","message":"fine\u202enwod","components":{"api1":"MAJOROUTAGE"}}`},
+		{"update_incident", `{"page":"pg1","incident":"inc1","message":"x\u2066y"}`},
 		{"create_incident", `{"page":"pg1","name":"x","message":"y","status":"open","components":{"api1":"MAJOROUTAGE"}}`},
 		{"update_incident", `{"page":"pg1","incident":"inc1"}`},
 		{"update_incident", `{"page":"pg1","incident":"a/b","message":"x"}`},

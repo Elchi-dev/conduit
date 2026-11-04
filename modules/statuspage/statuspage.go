@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -206,8 +207,14 @@ func publicText(s string, max int, multiline bool, what string) (string, error) 
 		if r == '<' || r == '>' {
 			return "", fmt.Errorf("%s is plain text: no < or > (Statuspage may show it as HTML)", what)
 		}
-		if (r < 0x20 && !(multiline && (r == '\n' || r == '\t'))) || r == 0x7f {
+		if unicode.IsControl(r) && !(multiline && (r == '\n' || r == '\t')) {
 			return "", fmt.Errorf("%s has a control character", what)
+		}
+		// Invisible format characters (direction overrides, zero-width
+		// spaces) would make the posted text read differently from the
+		// preview; the zero-width joiner of emoji sequences is harmless.
+		if unicode.Is(unicode.Cf, r) && r != '\u200d' {
+			return "", fmt.Errorf("%s has an invisible formatting character", what)
 		}
 	}
 	return s, nil
@@ -397,7 +404,7 @@ func (c *conn) components(ctx context.Context, pg string) ([]component, error) {
 }
 
 // componentChanges resolves the asked statuses against the page's
-// components: names for the preview, and only those that differ.
+// components: those that differ, and a preview line for each asked one.
 func (c *conn) componentChanges(ctx context.Context, pg string, want map[string]string) (map[string]string, []string, error) {
 	if len(want) == 0 {
 		return map[string]string{}, nil, nil
@@ -423,6 +430,9 @@ func (c *conn) componentChanges(ctx context.Context, pg string, want map[string]
 		if x.Status != st {
 			changed[id] = st
 			lines = append(lines, fmt.Sprintf("%s: %s → %s", clip(x.Name, 100), x.Status, st))
+		} else {
+			// Still listed as affected on the incident, so still previewed.
+			lines = append(lines, fmt.Sprintf("%s: %s (unchanged)", clip(x.Name, 100), st))
 		}
 	}
 	sort.Strings(lines)
@@ -540,9 +550,24 @@ func (c *conn) updateIncident(ctx context.Context, call sdk.Call, pg string, p i
 	if err != nil {
 		return sdk.Result{}, err
 	}
+
+	// component_ids replaces the incident's affected components, so the
+	// ones it has stay in the list next to the asked ones.
+	affected := map[string]bool{}
+	for _, x := range cur.Components {
+		if idRe.MatchString(x.ID) {
+			affected[x.ID] = true
+		}
+	}
+	added := false
+	for id := range want {
+		if !affected[id] {
+			affected[id], added = true, true
+		}
+	}
 	newStatus := p.Status != "" && p.Status != cur.Status
 	newImpact := p.Impact != "" && p.Impact != cur.Impact
-	if !newStatus && !newImpact && body == "" && len(changed) == 0 {
+	if !newStatus && !newImpact && body == "" && len(changed) == 0 && !added {
 		return sdk.JSON(map[string]any{"id": cur.ID, "name": clip(cur.Name, 255), "status": cur.Status, "note": "nothing to change"})
 	}
 	inc := map[string]any{"deliver_notifications": p.Notify}
@@ -555,13 +580,13 @@ func (c *conn) updateIncident(ctx context.Context, call sdk.Call, pg string, p i
 	if body != "" {
 		inc["body"] = body
 	}
-	if len(changed) > 0 {
+	if len(want) > 0 {
 		ids := []string{}
-		for id := range changed {
+		for id := range affected {
 			ids = append(ids, id)
 		}
 		sort.Strings(ids)
-		inc["component_ids"], inc["components"] = ids, changed
+		inc["component_ids"], inc["components"] = ids, want
 	}
 	if call.DryRun {
 		pgx, err := c.page(ctx, pg)

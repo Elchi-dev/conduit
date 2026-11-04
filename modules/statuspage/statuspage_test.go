@@ -157,6 +157,18 @@ func TestStatuspageChanges(t *testing.T) {
 		}
 	}
 
+	// An update naming another component keeps the incident's affected
+	// ones (component_ids replaces the list), and the preview lists every
+	// named component, changed or not.
+	r, err = invoke(m, "update_incident", `{"page":"pg1","incident":"inc1","components":{"web1":"partial_outage","api1":"operational"}}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(string(r.Plan.Changes[0].After), "API: operational (unchanged)") || !strings.Contains(string(r.Plan.Changes[0].After), "Website: operational → partial_outage") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "update_incident", `{"page":"pg1","incident":"inc1","components":{"web1":"partial_outage"}}`, false); err != nil || fmt.Sprint(f.lastBody["component_ids"]) != "[api1 web1]" || f.lastBody["deliver_notifications"] != false {
+		t.Fatalf("%v %v", f.lastBody, err)
+	}
+	f.comp["web1"] = "operational"
+
 	// Component status: preview, change, undo, no-op.
 	r, err = invoke(m, "set_component_status", `{"page":"pg1","component":"web1","status":"major_outage"}`, true)
 	if err != nil || r.Plan == nil || f.comp["web1"] != "operational" {
@@ -192,6 +204,9 @@ func TestStatuspageValidation(t *testing.T) {
 		{"create_incident", `{"page":"pg1","name":"<script>x</script>"}`},
 		{"create_incident", `{"page":"pg1","name":"ok","body":"a <b>bold</b> claim"}`},
 		{"create_incident", `{"page":"pg1","name":"line\u0000break"}`},
+		{"create_incident", `{"page":"pg1","name":"All fine \u202eSOON DOWN"}`},
+		{"create_incident", `{"page":"pg1","name":"ok","body":"zero\u200bwidth"}`},
+		{"create_incident", `{"page":"pg1","name":"c1\u0085control"}`},
 		{"create_incident", `{"page":"pg1","name":"ok","status":"fixed"}`},
 		{"create_incident", `{"page":"pg1","name":"ok","impact":"huge"}`},
 		{"create_incident", `{"page":"pg1","name":"ok","components":{"api1":"broken"}}`},

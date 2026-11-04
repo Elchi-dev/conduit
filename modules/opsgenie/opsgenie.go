@@ -27,8 +27,9 @@ type Config struct {
 	Region string `json:"region"` // us (default) or eu
 }
 
-// Hosts are Opsgenie's API hosts by region.
-var Hosts = map[string]string{
+// hosts are Opsgenie's API hosts by region (unexported, so nothing can
+// point a region at another host).
+var hosts = map[string]string{
 	"us": "https://api.opsgenie.com",
 	"eu": "https://api.eu.opsgenie.com",
 }
@@ -99,7 +100,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if region == "" {
 		region = "us"
 	}
-	base, ok := Hosts[region]
+	base, ok := hosts[region]
 	if !ok {
 		return errors.New("the region is us or eu")
 	}

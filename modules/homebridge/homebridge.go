@@ -274,6 +274,7 @@ type char struct {
 
 type service struct {
 	UniqueID    string `json:"uniqueId"`
+	Aid         int64  `json:"aid"`
 	Type        string `json:"type"`
 	HumanType   string `json:"humanType"`
 	ServiceName string `json:"serviceName"`
@@ -285,7 +286,8 @@ type service struct {
 		// The serial number isn't decoded.
 	} `json:"accessoryInformation"`
 	Instance struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Username string `json:"username"` // the bridge's id; never shown
 	} `json:"instance"`
 }
 
@@ -328,6 +330,28 @@ func (c *conn) criticalWhy(s service) string {
 	return ""
 }
 
+// accessoryWhy says why a service is critical, counting the other services
+// of its accessory (same bridge, same aid): a camera's or a lock's extra
+// switch (motion detection, recording, privacy, an unlock button) is as
+// critical as the camera or lock itself.
+func (c *conn) accessoryWhy(s service, all []service) string {
+	if why := c.criticalWhy(s); why != "" {
+		return why
+	}
+	if s.Aid == 0 {
+		return ""
+	}
+	for _, o := range all {
+		if o.UniqueID == s.UniqueID || o.Aid != s.Aid || o.Instance.Username != s.Instance.Username || o.Instance.Name != s.Instance.Name {
+			continue
+		}
+		if why := c.criticalWhy(o); why != "" {
+			return "part of the same accessory as " + o.name() + ", " + why
+		}
+	}
+	return ""
+}
+
 func human(s service) string {
 	if s.HumanType != "" {
 		return clip(s.HumanType, 60)
@@ -349,7 +373,7 @@ func value(v any) any {
 	return "(not shown)"
 }
 
-func (c *conn) row(s service) map[string]any {
+func (c *conn) row(s service, all []service) map[string]any {
 	vals := map[string]any{}
 	for _, ch := range s.Chars {
 		if ch.CanRead == nil || *ch.CanRead {
@@ -369,7 +393,7 @@ func (c *conn) row(s service) map[string]any {
 	if s.Instance.Name != "" {
 		row["bridge"] = clip(s.Instance.Name, 100)
 	}
-	if why := c.criticalWhy(s); why != "" {
+	if why := c.accessoryWhy(s, all); why != "" {
 		row["critical"] = true
 	}
 	return row
@@ -434,7 +458,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if q != "" && !strings.Contains(strings.ToLower(s.ServiceName+" "+s.Info.Name+" "+s.HumanType), q) {
 				continue
 			}
-			out = append(out, c.row(s))
+			out = append(out, c.row(s, ss))
 		}
 		sort.SliceStable(out, func(i, j int) bool { return out[i]["name"].(string) < out[j]["name"].(string) })
 		return sdk.JSON(out)
@@ -443,9 +467,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		row := c.row(s)
+		var all []service
+		if s.Aid != 0 && c.criticalWhy(s) == "" {
+			// For the other services of its accessory; without them only the
+			// set actions (which require the list) can tell.
+			_ = c.do(ctx, http.MethodGet, "/accessories", nil, &all)
+		}
+		row := c.row(s, all)
 		delete(row, "values")
-		if why := c.criticalWhy(s); why != "" {
+		if why := c.accessoryWhy(s, all); why != "" {
 			row["criticalBecause"] = why
 		}
 		chars := []map[string]any{}
@@ -555,8 +585,12 @@ func coerce(ch char, raw json.RawMessage) (any, error) {
 		if json.Unmarshal(raw, &n) != nil || math.IsNaN(n) || math.IsInf(n, 0) {
 			return nil, fmt.Errorf("%s is a number", ch.Type)
 		}
-		lo, hi := -math.MaxFloat64, math.MaxFloat64
+		// HAP's int is 32 bits; a float or uint64 stays where a float64 is
+		// exact, so the value sent is the value checked.
+		lo, hi := -float64(1<<53), float64(1<<53)
 		switch ch.Format {
+		case "int":
+			lo, hi = math.MinInt32, math.MaxInt32
 		case "uint8":
 			lo, hi = 0, 255
 		case "uint16":
@@ -565,6 +599,9 @@ func coerce(ch char, raw json.RawMessage) (any, error) {
 			lo, hi = 0, 4294967295
 		case "uint64":
 			lo = 0
+		}
+		if ch.Format == "float" {
+			lo, hi = -math.MaxFloat64, math.MaxFloat64
 		}
 		if ch.MinValue != nil {
 			lo = math.Max(lo, *ch.MinValue)
@@ -678,6 +715,15 @@ func (c *conn) set(ctx context.Context, call sdk.Call, id, t string, raw json.Ra
 	}
 	t = ch.Type
 	why := c.criticalWhy(s)
+	if why == "" && s.Aid != 0 {
+		// The accessory's other services decide too; without them the
+		// change can't be judged, so it isn't made.
+		var all []service
+		if err := c.do(ctx, http.MethodGet, "/accessories", nil, &all); err != nil {
+			return sdk.Result{}, accErr(err)
+		}
+		why = c.accessoryWhy(s, all)
+	}
 	if why == "" && criticalChars[t] {
 		why = "it's " + t
 	}

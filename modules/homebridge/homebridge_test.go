@@ -21,6 +21,8 @@ const (
 	gateID   = "c1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 	plugID   = "d1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 	otherID  = "e1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+	camID    = "91b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+	motionID = "92b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 	strangeR = "f1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 )
 
@@ -33,6 +35,7 @@ type fakeBridge struct {
 	lock      float64 // LockTargetState: 1 secured
 	gate      bool
 	plug      bool
+	motion    bool
 	restarted bool
 }
 
@@ -54,6 +57,14 @@ func (f *fakeBridge) svc(id string) string {
 	case plugID:
 		return fmt.Sprintf(`{"uniqueId":%q,"type":"Outlet","humanType":"Outlet","serviceName":"Rack","serviceCharacteristics":[
 			{"type":"On","format":"bool","value":%t,"canRead":true,"canWrite":true}],`+info+`}`, id, f.plug, "Rack")
+	case camID, motionID: // one camera accessory (aid 7) with a motion switch
+		cam := `"accessoryInformation":{"Name":"Driveway"},"instance":{"name":"Homebridge 1A2B","username":"0E:LEAKME"}`
+		if id == camID {
+			return fmt.Sprintf(`{"uniqueId":%q,"aid":7,"iid":10,"type":"CameraRTPStreamManagement","humanType":"Camera Rtp Stream Management","serviceName":"Driveway","serviceCharacteristics":[
+				{"type":"Active","format":"uint8","value":1,"canRead":true,"canWrite":true}],`+cam+`}`, id)
+		}
+		return fmt.Sprintf(`{"uniqueId":%q,"aid":7,"iid":20,"type":"Switch","humanType":"Switch","serviceName":"Driveway Motion","serviceCharacteristics":[
+			{"type":"On","format":"bool","value":%t,"canRead":true,"canWrite":true}],`+cam+`}`, id, f.motion)
 	case strangeR: // answers with another accessory
 		return f.svc(lampID)
 	}
@@ -85,7 +96,7 @@ func (f *fakeBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && r.URL.Path == "/api/status/homebridge":
 		io.WriteString(w, `{"status":"up"}`)
 	case r.Method == "GET" && r.URL.Path == "/api/accessories":
-		fmt.Fprintf(w, `[%s,%s,%s,%s,{"uniqueId":%q,"type":"AccessoryInformation","serviceName":"x","serviceCharacteristics":[]}]`, f.svc(lampID), f.svc(lockID), f.svc(gateID), f.svc(plugID), otherID)
+		fmt.Fprintf(w, `[%s,%s,%s,%s,%s,%s,{"uniqueId":%q,"type":"AccessoryInformation","serviceName":"x","serviceCharacteristics":[]}]`, f.svc(lampID), f.svc(lockID), f.svc(gateID), f.svc(plugID), f.svc(camID), f.svc(motionID), otherID)
 	case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/accessories/"):
 		s := f.svc(strings.TrimPrefix(r.URL.Path, "/api/accessories/"))
 		if s == "" {
@@ -112,6 +123,8 @@ func (f *fakeBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.gate = b.Value == true
 		case plugID + "/On":
 			f.plug = b.Value == true
+		case motionID + "/On":
+			f.motion = b.Value == true
 		default:
 			w.WriteHeader(400)
 			return
@@ -225,6 +238,30 @@ func TestHomebridge(t *testing.T) {
 		if (a.Name == "restart_bridge" || a.Name == "set_critical_characteristic") && a.Risk != sdk.RiskDestructive {
 			t.Fatal(a.Name)
 		}
+	}
+}
+
+// A plain switch on a camera's (or lock's) accessory is as critical as the
+// camera: turning off its motion detection mustn't be a plain write.
+func TestHomebridgeCriticalSiblings(t *testing.T) {
+	m, f := setup(t, "secret://hb")
+	if _, err := invoke(m, "set_characteristic", set(motionID, "On", "true"), false); err == nil || !strings.Contains(err.Error(), "set_critical_characteristic") || f.motion {
+		t.Fatalf("a camera's switch was set as a plain write: %v", err)
+	}
+	r, err := invoke(m, "accessory", `{"accessory":"`+motionID+`"}`, false)
+	if err != nil || !strings.Contains(string(r.Output), `"criticalBecause":"part of the same accessory as Driveway`) {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	r, err = invoke(m, "accessories", `{"search":"motion"}`, false)
+	if err != nil || !strings.Contains(string(r.Output), `"critical":true`) || strings.Contains(string(r.Output), "LEAKME") {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	if r, err := invoke(m, "set_critical_characteristic", set(motionID, "On", "true"), false); err != nil || !f.motion || r.Undo == nil || r.Undo.Action != "set_critical_characteristic" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// Integers stay within HAP's 32 bits.
+	if _, err := coerce(char{Type: "X", Format: "int"}, json.RawMessage(`1e300`)); err == nil {
+		t.Fatal("accepted 1e300 for an int")
 	}
 }
 

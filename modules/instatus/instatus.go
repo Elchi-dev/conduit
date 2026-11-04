@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -209,8 +210,14 @@ func publicText(s string, max int, multiline bool, what string) (string, error) 
 		if r == '<' || r == '>' {
 			return "", fmt.Errorf("%s is plain text: no < or >", what)
 		}
-		if (r < 0x20 && !(multiline && (r == '\n' || r == '\t'))) || r == 0x7f {
+		if unicode.IsControl(r) && !(multiline && (r == '\n' || r == '\t')) {
 			return "", fmt.Errorf("%s has a control character", what)
+		}
+		// Invisible format characters (direction overrides, zero-width
+		// spaces) would make the posted text read differently from the
+		// preview; the zero-width joiner of emoji sequences is harmless.
+		if unicode.Is(unicode.Cf, r) && r != '\u200d' {
+			return "", fmt.Errorf("%s has an invisible formatting character", what)
 		}
 	}
 	return s, nil

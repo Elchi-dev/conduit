@@ -24,15 +24,17 @@ something important or open something behind a plain switch in
 systems, valves, faucets, irrigation, cameras and doorbells; any service
 with a lock, door, alarm or camera characteristic; anything whose name
 contains garage, gate, door, lock, valve, siren, alarm, security, camera,
-sprinkler or irrigation; and what's listed in `criticalAccessories`. A false
-match only means the destructive action. Setting a value a characteristic
+sprinkler or irrigation; what's listed in `criticalAccessories`; and every
+other service of such an accessory (same bridge and accessory id), such as a
+camera's motion or privacy switch or a lock's extra button. A false match
+only means the destructive action. Setting a value a characteristic
 already has reports "nothing to change".
 
 **Security.** The password goes only to the sign-in, the token only to
 Homebridge, and the client won't follow a redirect to another host or from
 https to http. Accessory ids and characteristic types are checked and
 escaped before any request, and values never reach Homebridge outside the
-characteristic's range. Serial numbers and the bridge's pairing details
+characteristic's range (32-bit for integers). Serial numbers and the bridge's pairing details
 aren't returned.
 
 **Notes.** A UI user with two-factor sign-in can't be used. Child bridges

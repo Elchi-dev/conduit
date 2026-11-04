@@ -27,5 +27,7 @@ anything is sent.
 
 ## Notes
 
-- Names and messages are plain text: `<` and `>` are refused.
+- Names and messages are plain text: `<` and `>`, control characters and
+  invisible formatting characters (direction overrides, zero-width spaces)
+  are refused.
 - Instatus posts every update with a message, so a status change needs one.

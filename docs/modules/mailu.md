@@ -19,9 +19,12 @@ address, such as `https://mail.example.com`; a path ending in `/admin` or
 
 Both user changes preview the user, answer "nothing to change" when it's
 already as asked, and read the user back afterwards to confirm. Global
-administrators and role accounts (`postmaster@`, `abuse@`, `admin@`,
-`administrator@`, `root@`, `hostmaster@`, `webmaster@`) are refused unless
-`allowAdminAccounts` is on.
+administrators, role accounts (`postmaster@`, `abuse@`, `admin@`,
+`administrator@`, `root@`, `hostmaster@`, `webmaster@`, also with a `+tag`)
+and users an alias of a role account delivers to are refused unless
+`allowAdminAccounts` is on. If Mailu's answer doesn't say whether the user
+is enabled or a global administrator, or the aliases can't be read, nothing
+is changed.
 
 **Security.** The token goes in the `Authorization` header, and the client
 won't follow a redirect to another host or from https to http. Addresses and

@@ -20,6 +20,9 @@ type fakeMailu struct {
 	seen    []string
 	enabled map[string]bool
 	admins  map[string]bool
+	// noAdminField leaves global_admin out of a user.
+	noAdminField bool
+	aliasFail    bool
 }
 
 func (f *fakeMailu) user(addr string) string {
@@ -58,7 +61,11 @@ func (f *fakeMailu) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, `{"code":404,"message":"User %s cannot be found"}`, addr)
 			return
 		}
-		io.WriteString(w, f.user(addr))
+		u := f.user(addr)
+		if f.noAdminField {
+			u = strings.Replace(u, `"global_admin":`, `"x":`, 1)
+		}
+		io.WriteString(w, u)
 	case strings.HasPrefix(p, "PATCH /api/v1/user/"):
 		addr := strings.TrimPrefix(r.URL.Path, "/api/v1/user/")
 		var b struct {
@@ -69,8 +76,11 @@ func (f *fakeMailu) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.enabled[addr] = *b.Enabled
 		}
 		fmt.Fprintf(w, `{"code":200,"message":"User %s has been updated"}`, addr)
+	case p == "GET /api/v1/alias" && f.aliasFail:
+		w.WriteHeader(500)
 	case p == "GET /api/v1/alias":
-		io.WriteString(w, `[{"email":"info@example.com","destination":["jane@example.com"],"wildcard":false,"disabled":false,"comment":"front desk"},{"email":"x%@other.org","destination":["bob@other.org"],"wildcard":true}]`)
+		io.WriteString(w, `[{"email":"info@example.com","destination":["jane@example.com"],"wildcard":false,"disabled":false,"comment":"front desk"},{"email":"x%@other.org","destination":["bob@other.org"],"wildcard":true},
+			{"email":"Postmaster@example.net","destination":["Carol@example.com"]}]`)
 	default:
 		w.WriteHeader(404)
 		io.WriteString(w, `{"message":"Not Found"}`)
@@ -147,6 +157,27 @@ func TestMailu(t *testing.T) {
 	}
 	if _, err := invoke(m, "disable_user", `{"email":"boss@example.com"}`, false); err == nil || !strings.Contains(err.Error(), "global administrator") || !f.enabled["boss@example.com"] {
 		t.Fatalf("admin: %v", err)
+	}
+	// A +tag, a user a role alias delivers to, a user whose admin flag
+	// can't be read, and an alias list that can't be read are refused.
+	f.enabled["carol@example.com"] = true
+	if _, err := invoke(m, "disable_user", `{"email":"ABUSE+x@example.com"}`, false); err == nil || !strings.Contains(err.Error(), "role account") {
+		t.Fatalf("+tag: %v", err)
+	}
+	if _, err := invoke(m, "disable_user", `{"email":"carol@example.com"}`, false); err == nil || !strings.Contains(err.Error(), "postmaster@example.net") {
+		t.Fatalf("role alias: %v", err)
+	}
+	f.noAdminField = true
+	if _, err := invoke(m, "disable_user", `{"email":"jane@example.com"}`, false); err == nil || !strings.Contains(err.Error(), "global administrator") {
+		t.Fatalf("no admin field: %v", err)
+	}
+	f.noAdminField, f.aliasFail = false, true
+	if _, err := invoke(m, "disable_user", `{"email":"jane@example.com"}`, false); err == nil || !strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatalf("alias failure: %v", err)
+	}
+	f.aliasFail = false
+	if !f.enabled["carol@example.com"] || !f.enabled["jane@example.com"] {
+		t.Fatalf("changed: %v", f.enabled)
 	}
 	adm, af := setup(t, "secret://mu", true)
 	if _, err := invoke(adm, "disable_user", `{"email":"boss@example.com"}`, false); err != nil || af.enabled["boss@example.com"] {

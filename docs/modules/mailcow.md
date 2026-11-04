@@ -20,14 +20,16 @@ For a self-signed certificate, set `fingerprint`.
 | `quarantine` | read, sensitive | How many messages are held and how many for a virus, counts by sender and recipient domain, and up to 100 items with id, time, spam score and the two domains. |
 | `queue` | read, sensitive | How many messages wait, by Postfix queue (`deferred`, `active`, `hold` …), their total size and the oldest, and counts by sender and recipient domain. |
 | `flush_queue` | write | Asks Postfix to try delivering queued mail now (`postqueue -f`); reports the queue size before and after. With nothing waiting outside `hold`, nothing is sent. |
-| `disable_mailbox` | destructive | By `mailbox` address. Sets the mailbox inactive: it can't sign in and mailcow stops accepting its mail; stored mail stays. Undo enables it. |
-| `enable_mailbox` | destructive | Sets the mailbox active again (it grants access, hence destructive). Undo disables it. |
+| `disable_mailbox` | destructive | By `mailbox` address. Sets the mailbox inactive: it can't sign in and mailcow stops accepting its mail; stored mail stays. Undo puts back the state it had (active, or receiving mail without sign-in). |
+| `enable_mailbox` | destructive | Sets the mailbox active (it grants access, hence destructive); with `signIn` false, it receives mail but can't sign in (mailcow's `active` 2). Undo puts back the state it had. |
 
 Both mailbox changes preview the mailbox and its state, answer "nothing to
 change" when it's already as asked, and read the mailbox back afterwards to
 confirm. Role accounts (`postmaster@`, `abuse@`, `admin@`, `administrator@`,
-`root@`, `hostmaster@`, `webmaster@`) are refused unless
-`allowAdminAccounts` is on.
+`root@`, `hostmaster@`, `webmaster@`, also with a `+tag`) and mailboxes an
+alias of one delivers to are refused unless `allowAdminAccounts` is on; if
+the aliases can't be read, or mailcow doesn't say which state a mailbox is
+in, nothing is changed.
 
 **Security.** The key goes in the `X-API-Key` header, and the client won't
 follow a redirect to another host or from https to http. Addresses and
@@ -45,6 +47,10 @@ shortened.
   releasing or deleting quarantined items, and deleting anything else
   aren't offered.
 - A mailbox in mailcow's "sign-in disallowed" state (`active` 2) shows as
-  such; disabling it and undoing that leaves it fully active.
+  such, and undo returns it to that state. `active_int` is read when
+  mailcow sends it.
+- Flushing sends `{"items":[],"attr":{"action":"flush"}}`: mailcow reads an
+  edit's fields from `attr`, so the bare `{"action":"flush"}` its API page
+  shows reaches the queue code without an action.
 - mailcow's administrator and domain-administrator logins are separate from
   mailboxes and aren't listed or changed.

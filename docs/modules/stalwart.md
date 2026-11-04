@@ -23,7 +23,8 @@ The health check signs in, reads the JMAP session, and counts domains.
 **Security.** The key goes in the `Authorization` header as a bearer token
 (or the name and password as basic authentication), and the client won't
 follow a redirect to another host or from https to http. Calls go to the
-configured address only, never to an address the session names. Each call
+configured address only, never to an address the session names, and only
+for the session's primary account when its id is a plain JMAP id. Each call
 asks for the properties it shows and decodes them field by field:
 credentials (password hashes, app passwords, API keys, TOTP), DKIM keys,
 zone files, message content, the submitting IP and full queued addresses

@@ -60,6 +60,7 @@ var (
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	box := `{"type":"object","required":["mailbox"],"properties":{"mailbox":{"type":"string","description":"The mailbox address, e.g. jane@example.com"}}}`
+	enable := `{"type":"object","required":["mailbox"],"properties":{"mailbox":{"type":"string","description":"The mailbox address, e.g. jane@example.com"},"signIn":{"type":"boolean","default":true,"description":"Let it sign in (false: it receives mail but can't sign in)"}}}`
 	dom := `{"type":"object","properties":{"domain":{"type":"string","description":"Only this domain"}}}`
 	return sdk.Manifest{
 		ID: "mailcow", Name: "mailcow", Version: "0.1.0", Category: "Communication", Icon: "mail",
@@ -80,8 +81,8 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "quarantine", Title: "Quarantine", Description: "How many messages are held, how many for viruses, and counts by sender and recipient domain, with each item's id, time, spam score and domains. Never subjects, addresses or content.", Risk: sdk.RiskRead, Sensitive: true},
 			{Name: "queue", Title: "Mail queue", Description: "How many messages wait in the Postfix queue, by queue, their total size and the oldest, and counts by sender and recipient domain. Never addresses or content.", Risk: sdk.RiskRead, Sensitive: true},
 			{Name: "flush_queue", Title: "Flush the queue", Description: "Asks Postfix to try delivering every deferred message now (postqueue -f). Nothing is deleted; held messages stay held.", Risk: sdk.RiskWrite, DryRun: true},
-			{Name: "disable_mailbox", Title: "Disable a mailbox", Description: "Sets a mailbox inactive: it can't sign in and mailcow stops accepting its mail. Mail already stored stays. Undo enables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(box)},
-			{Name: "enable_mailbox", Title: "Enable a mailbox", Description: "Sets a disabled mailbox active again, so it can sign in and receive mail. Undo disables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(box)},
+			{Name: "disable_mailbox", Title: "Disable a mailbox", Description: "Sets a mailbox inactive: it can't sign in and mailcow stops accepting its mail. Mail already stored stays. Refused for a mailbox a role address (postmaster@ and the like) delivers to, unless allowed. Undo puts back the state it had.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(box)},
+			{Name: "enable_mailbox", Title: "Enable a mailbox", Description: "Sets a mailbox active, so it can sign in and receive mail (with signIn false: receive only). Undo puts back the state it had.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(enable)},
 		},
 	}
 }
@@ -271,6 +272,7 @@ type input struct {
 	Domain  string `json:"domain"`
 	Active  *bool  `json:"active"`
 	Mailbox string `json:"mailbox"`
+	SignIn  *bool  `json:"signIn"`
 }
 
 func cleanDomain(s string) (string, error) {
@@ -340,7 +342,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		return c.setActive(ctx, call, local, dom)
+		return c.setActive(ctx, call, p, local, dom)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
@@ -415,6 +417,7 @@ type mailbox struct {
 	Domain    string `json:"domain"`
 	LocalPart string `json:"local_part"`
 	Active    flex   `json:"active"`
+	ActiveInt flex   `json:"active_int"`
 	Quota     flex   `json:"quota"`
 	QuotaUsed flex   `json:"quota_used"`
 	Percent   flex   `json:"percent_in_use"`
@@ -423,15 +426,36 @@ type mailbox struct {
 	// decoded.
 }
 
-func (b mailbox) state() string {
-	switch b.Active {
+// level is the mailbox's active value: "0" disabled, "1" active, "2"
+// receives mail but can't sign in. active_int is preferred, since some
+// mailcow versions send "active" as display text.
+func (b mailbox) level() string {
+	v := b.ActiveInt
+	if v == "" {
+		v = b.Active
+	}
+	switch v {
+	case "0", "1", "2":
+		return string(v)
+	}
+	return ""
+}
+
+func stateOf(level string) string {
+	switch level {
 	case "0":
 		return "disabled"
 	case "1":
 		return "active"
+	case "2":
+		return "active, sign-in disallowed"
 	}
-	return "active, sign-in disallowed"
+	return "unknown"
 }
+
+func (b mailbox) state() string { return stateOf(b.level()) }
+
+func (b mailbox) on() bool { l := b.level(); return l == "1" || l == "2" }
 
 func (c *conn) mailboxes(ctx context.Context, p input) (sdk.Result, error) {
 	path := "/get/mailbox/all"
@@ -447,10 +471,10 @@ func (c *conn) mailboxes(ctx context.Context, p input) (sdk.Result, error) {
 		if p.Domain != "" && !strings.EqualFold(b.Domain, p.Domain) {
 			continue
 		}
-		if p.Active != nil && b.Active.on() != *p.Active {
+		if p.Active != nil && b.on() != *p.Active {
 			continue
 		}
-		row := map[string]any{"address": b.Username, "name": b.Name, "domain": b.Domain, "active": b.Active.on(), "state": b.state(),
+		row := map[string]any{"address": b.Username, "name": b.Name, "domain": b.Domain, "active": b.on(), "state": b.state(),
 			"quotaBytes": b.Quota.int(), "usedBytes": b.QuotaUsed.int(), "percentUsed": b.Percent.int(), "messages": b.Messages.int()}
 		out = append(out, row)
 	}
@@ -619,6 +643,11 @@ func result(raw json.RawMessage) error {
 	return nil
 }
 
+// flushBody is what /edit/mailq reads: mailcow's API takes an edit's
+// fields from "attr" (a bare {"action":"flush"}, as its API page shows,
+// reaches the queue code without an action and flushes nothing).
+var flushBody = map[string]any{"items": []string{}, "attr": map[string]string{"action": "flush"}}
+
 func (c *conn) flush(ctx context.Context, call sdk.Call) (sdk.Result, error) {
 	qs, err := c.readQueue(ctx)
 	if err != nil {
@@ -639,7 +668,7 @@ func (c *conn) flush(ctx context.Context, call sdk.Call) (sdk.Result, error) {
 			Changes: []sdk.Change{{Target: "Postfix queue", Op: "flush", Before: b}}}}, nil
 	}
 	var raw json.RawMessage
-	if _, err := c.api.Do(ctx, http.MethodPost, "/edit/mailq", nil, map[string]string{"action": "flush"}, &raw); err != nil {
+	if _, err := c.api.Do(ctx, http.MethodPost, "/edit/mailq", nil, flushBody, &raw); err != nil {
 		return sdk.Result{}, friendly(err)
 	}
 	if err := result(raw); err != nil {
@@ -654,7 +683,9 @@ func (c *conn) flush(ctx context.Context, call sdk.Call) (sdk.Result, error) {
 
 func (c *conn) getMailbox(ctx context.Context, addr string) (mailbox, error) {
 	var bs []mailbox
-	if err := c.list(ctx, "/get/mailbox/"+url.PathEscape(addr), &bs); err != nil {
+	// "+" is escaped too: mailcow hands the path to PHP as a query
+	// parameter, where a bare "+" would read as a space.
+	if err := c.list(ctx, "/get/mailbox/"+strings.ReplaceAll(url.PathEscape(addr), "+", "%2B"), &bs); err != nil {
 		return mailbox{}, err
 	}
 	for _, b := range bs {
@@ -665,26 +696,80 @@ func (c *conn) getMailbox(ctx context.Context, addr string) (mailbox, error) {
 	return mailbox{}, fmt.Errorf("there's no mailbox %s", addr)
 }
 
-func (c *conn) setActive(ctx context.Context, call sdk.Call, local, dom string) (sdk.Result, error) {
+// roleLocal reports whether a local part is a role account, also with a
+// +tag (postmaster+x@ reaches postmaster@).
+func roleLocal(local string) bool {
+	base, _, _ := strings.Cut(local, "+")
+	return protected[local] || protected[base]
+}
+
+// roleAliasTo returns a role address (postmaster@ and the like) that
+// delivers to addr, or "".
+func (c *conn) roleAliasTo(ctx context.Context, addr string) (string, error) {
+	var as []struct {
+		Address string `json:"address"`
+		Goto    string `json:"goto"`
+	}
+	if err := c.list(ctx, "/get/alias/all", &as); err != nil {
+		return "", err
+	}
+	for _, a := range as {
+		local, _, ok := strings.Cut(strings.ToLower(strings.TrimSpace(a.Address)), "@")
+		if !ok || !roleLocal(local) {
+			continue
+		}
+		for _, g := range strings.Split(a.Goto, ",") {
+			if strings.EqualFold(strings.TrimSpace(g), addr) {
+				return strings.ToLower(strings.TrimSpace(a.Address)), nil
+			}
+		}
+	}
+	return "", nil
+}
+
+func (c *conn) setActive(ctx context.Context, call sdk.Call, p input, local, dom string) (sdk.Result, error) {
 	enabling := call.Action == "enable_mailbox"
 	addr := local + "@" + dom
-	if protected[local] && !c.allowAdmin {
+	if roleLocal(local) && !c.allowAdmin {
 		return sdk.Result{}, fmt.Errorf("%s is a role account; turn on allowAdminAccounts in the settings to change it", addr)
+	}
+	want := "0"
+	if enabling {
+		want = "1"
+		if p.SignIn != nil && !*p.SignIn {
+			want = "2"
+		}
+	} else if p.SignIn != nil {
+		return sdk.Result{}, errors.New("signIn is only for enable_mailbox")
 	}
 	b, err := c.getMailbox(ctx, addr)
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	if (enabling && b.Active == "1") || (!enabling && b.Active == "0") {
+	before := b.level()
+	if before == "" {
+		// Without the exact state, undo couldn't put it back.
+		return sdk.Result{}, fmt.Errorf("mailcow didn't say whether %s is active; nothing was changed", addr)
+	}
+	if before == want {
 		return sdk.JSON(map[string]any{"mailbox": addr, "state": b.state(), "note": "nothing to change"})
 	}
-	verb, back, want := "Disable", "enable_mailbox", "0"
+	if !c.allowAdmin {
+		role, err := c.roleAliasTo(ctx, addr)
+		if err != nil {
+			return sdk.Result{}, fmt.Errorf("couldn't check whether a role address delivers to %s, so nothing was changed: %w", addr, err)
+		}
+		if role != "" {
+			return sdk.Result{}, fmt.Errorf("%s receives the mail of %s, a role account; turn on allowAdminAccounts in the settings to change it", addr, role)
+		}
+	}
+	verb := "Disable"
 	if enabling {
-		verb, back, want = "Enable", "disable_mailbox", "1"
+		verb = "Enable"
 	}
 	if call.DryRun {
-		bf, _ := json.Marshal(map[string]string{"state": b.state()})
-		af, _ := json.Marshal(map[string]string{"state": mailbox{Active: flex(want)}.state()})
+		bf, _ := json.Marshal(map[string]string{"state": stateOf(before)})
+		af, _ := json.Marshal(map[string]string{"state": stateOf(want)})
 		return sdk.Result{Plan: &sdk.Plan{Summary: verb + " " + addr, Changes: []sdk.Change{{Target: "mailbox " + addr, Op: strings.ToLower(verb), Before: bf, After: af}}}}, nil
 	}
 	var raw json.RawMessage
@@ -699,14 +784,18 @@ func (c *conn) setActive(ctx context.Context, call sdk.Call, local, dom string) 
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	if after.Active != flex(want) {
+	if after.level() != want {
 		return sdk.Result{}, fmt.Errorf("mailcow answered, but %s is still %s", addr, after.state())
 	}
-	res, err := sdk.JSON(map[string]any{"mailbox": addr, "active": enabling, "state": after.state()})
-	undo := "Enable " + addr + " again"
-	if enabling {
-		undo = "Disable " + addr + " again"
+	res, err := sdk.JSON(map[string]any{"mailbox": addr, "active": after.on(), "state": after.state()})
+	// Undo puts back exactly the state it had.
+	switch before {
+	case "0":
+		res.Undo = sdk.UndoWith("disable_mailbox", map[string]string{"mailbox": addr}, "Disable "+addr+" again")
+	case "1":
+		res.Undo = sdk.UndoWith("enable_mailbox", map[string]string{"mailbox": addr}, "Enable "+addr+" again")
+	default:
+		res.Undo = sdk.UndoWith("enable_mailbox", map[string]any{"mailbox": addr, "signIn": false}, "Set "+addr+" back to receiving mail without sign-in")
 	}
-	res.Undo = sdk.UndoWith(back, map[string]string{"mailbox": addr}, undo)
 	return res, err
 }

@@ -16,8 +16,10 @@ import (
 )
 
 type fakeStalwart struct {
-	old    bool // a server before 0.16: no management capability
-	forbid string
+	old bool // a server before 0.16: no management capability
+	// account is the session's primary account id ("b" when empty).
+	account string
+	forbid  string
 
 	mu    sync.Mutex
 	seen  []string
@@ -61,7 +63,11 @@ func (f *fakeStalwart) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.old {
 			caps = `"urn:ietf:params:jmap:core":{}`
 		}
-		fmt.Fprintf(w, `{"capabilities":{%s},"username":"admin","primaryAccounts":{"urn:ietf:params:jmap:core":"b","urn:stalwart:jmap":"b"},"apiUrl":"https://evil.example/jmap/"}`, caps)
+		acct := f.account
+		if acct == "" {
+			acct = "b"
+		}
+		fmt.Fprintf(w, `{"capabilities":{%s},"username":"admin","primaryAccounts":{"urn:ietf:params:jmap:core":%q,"urn:stalwart:jmap":%q},"apiUrl":"https://evil.example/jmap/"}`, caps, acct, acct)
 	case "POST /jmap/":
 		var req struct {
 			Using       []string            `json:"using"`
@@ -240,5 +246,19 @@ func TestStalwartRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "s"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// An account id that isn't a plain JMAP id is never sent.
+func TestStalwartBadAccountID(t *testing.T) {
+	f := &fakeStalwart{account: "../b"}
+	m := setup(t, Config{Token: "secret://key"}, f)
+	if _, err := invoke(m, "domains", `{}`); err == nil || !strings.Contains(err.Error(), "no account") {
+		t.Fatal(err)
+	}
+	for _, s := range f.seen {
+		if strings.HasPrefix(s, "POST") {
+			t.Fatalf("called with a bad account: %s", s)
+		}
 	}
 }

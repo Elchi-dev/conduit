@@ -185,6 +185,9 @@ func (c *conn) session(ctx context.Context) (session, error) {
 	if _, ok := s.Capabilities[capManage]; !ok {
 		return s, errors.New("this server has no Stalwart management over JMAP (it came with Stalwart 0.16)")
 	}
+	if s.account() == "" {
+		return s, errors.New("Stalwart's session names no account to manage")
+	}
 	return s, nil
 }
 
@@ -206,9 +209,7 @@ type jmap struct {
 
 // call makes one JMAP method call and decodes its arguments into out.
 func (j jmap) call(ctx context.Context, method string, args map[string]any, out any) error {
-	if j.account != "" {
-		args["accountId"] = j.account
-	}
+	args["accountId"] = j.account
 	body := map[string]any{
 		"using":       []string{"urn:ietf:params:jmap:core", capManage},
 		"methodCalls": []any{[]any{method, args, "c0"}},

@@ -73,7 +73,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"domain":{"type":"string","description":"Only this domain"},"enabled":{"type":"boolean","description":"Only enabled (true) or disabled (false) users"}}}`)},
 			{Name: "aliases", Title: "Aliases", Description: "Aliases with their destinations, wildcard and disabled. Kept out of logs.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"domain":{"type":"string","description":"Only this domain"}}}`)},
-			{Name: "disable_user", Title: "Disable a user", Description: "Stops a user signing in to webmail, the admin interface, IMAP and POP3, and sending mail. The mailbox and its mail stay. Undo enables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(who)},
+			{Name: "disable_user", Title: "Disable a user", Description: "Stops a user signing in to webmail, the admin interface, IMAP and POP3, and sending mail. The mailbox and its mail stay. Refused for global administrators and for a user a role address (postmaster@ and the like) delivers to, unless allowed. Undo enables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(who)},
 			{Name: "enable_user", Title: "Enable a user", Description: "Lets a disabled user sign in and send mail again. Undo disables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(who)},
 		},
 	}
@@ -273,7 +273,7 @@ type user struct {
 	Email          string `json:"email"`
 	DisplayedName  string `json:"displayed_name"`
 	Enabled        *bool  `json:"enabled"`
-	GlobalAdmin    bool   `json:"global_admin"`
+	GlobalAdmin    *bool  `json:"global_admin"`
 	QuotaBytes     int64  `json:"quota_bytes"`
 	QuotaBytesUsed int64  `json:"quota_bytes_used"`
 	EnableIMAP     bool   `json:"enable_imap"`
@@ -284,6 +284,8 @@ type user struct {
 }
 
 func (u user) enabled() bool { return u.Enabled == nil || *u.Enabled }
+
+func (u user) admin() bool { return u.GlobalAdmin != nil && *u.GlobalAdmin }
 
 func (c *conn) users(ctx context.Context, p input) (sdk.Result, error) {
 	var us []user
@@ -298,7 +300,7 @@ func (c *conn) users(ctx context.Context, p input) (sdk.Result, error) {
 		if p.Enabled != nil && u.enabled() != *p.Enabled {
 			continue
 		}
-		row := map[string]any{"email": u.Email, "name": u.DisplayedName, "enabled": u.enabled(), "globalAdmin": u.GlobalAdmin,
+		row := map[string]any{"email": u.Email, "name": u.DisplayedName, "enabled": u.enabled(), "globalAdmin": u.admin(),
 			"quotaBytes": u.QuotaBytes, "usedBytes": u.QuotaBytesUsed, "imap": u.EnableIMAP, "pop3": u.EnablePOP,
 			"forwarding": u.Forward, "autoReply": u.Reply, "spamFilter": u.Spam}
 		if u.QuotaBytes > 0 {
@@ -348,21 +350,71 @@ func (c *conn) getUser(ctx context.Context, addr string) (user, error) {
 	return u, nil
 }
 
+// roleLocal reports whether a local part is a role account, also with a
+// +tag (postmaster+x@ reaches postmaster@).
+func roleLocal(local string) bool {
+	base, _, _ := strings.Cut(local, "+")
+	return protected[local] || protected[base]
+}
+
+// roleAliasTo returns a role address (postmaster@ and the like) whose alias
+// delivers to addr, or "".
+func (c *conn) roleAliasTo(ctx context.Context, addr string) (string, error) {
+	var as []struct {
+		Email       string   `json:"email"`
+		Destination []string `json:"destination"`
+	}
+	if err := c.get(ctx, "/alias", &as); err != nil {
+		return "", err
+	}
+	for _, a := range as {
+		email := strings.ToLower(strings.TrimSpace(a.Email))
+		local, _, ok := strings.Cut(email, "@")
+		if !ok || !roleLocal(local) {
+			continue
+		}
+		for _, d := range a.Destination {
+			if strings.EqualFold(strings.TrimSpace(d), addr) {
+				return email, nil
+			}
+		}
+	}
+	return "", nil
+}
+
 func (c *conn) setEnabled(ctx context.Context, call sdk.Call, local, dom string) (sdk.Result, error) {
 	enabling := call.Action == "enable_user"
 	addr := local + "@" + dom
-	if protected[local] && !c.allowAdmin {
+	if roleLocal(local) && !c.allowAdmin {
 		return sdk.Result{}, fmt.Errorf("%s is a role account; turn on allowAdminAccounts in the settings to change it", addr)
 	}
 	u, err := c.getUser(ctx, addr)
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	if u.GlobalAdmin && !c.allowAdmin {
-		return sdk.Result{}, fmt.Errorf("%s is a global administrator; turn on allowAdminAccounts in the settings to change it", addr)
+	if u.Enabled == nil {
+		// Without the state, neither the read-back nor undo can be trusted.
+		return sdk.Result{}, fmt.Errorf("Mailu didn't say whether %s is enabled; nothing was changed", addr)
+	}
+	if !c.allowAdmin {
+		if u.GlobalAdmin == nil {
+			return sdk.Result{}, fmt.Errorf("Mailu didn't say whether %s is a global administrator, so nothing was changed", addr)
+		}
+		if *u.GlobalAdmin {
+			return sdk.Result{}, fmt.Errorf("%s is a global administrator; turn on allowAdminAccounts in the settings to change it", addr)
+		}
 	}
 	if u.enabled() == enabling {
 		return sdk.JSON(map[string]any{"email": addr, "enabled": enabling, "note": "nothing to change"})
+	}
+	if !c.allowAdmin {
+		role, err := c.roleAliasTo(ctx, addr)
+		if err != nil {
+			return sdk.Result{}, fmt.Errorf("couldn't check whether a role address delivers to %s, so nothing was changed: %w", addr, err)
+		}
+		if role != "" {
+			return sdk.Result{}, fmt.Errorf("%s receives the mail of %s, a role account; turn on allowAdminAccounts in the settings to change it", addr, role)
+		}
 	}
 	verb, back := "Disable", "enable_user"
 	if enabling {
@@ -370,7 +422,7 @@ func (c *conn) setEnabled(ctx context.Context, call sdk.Call, local, dom string)
 	}
 	if call.DryRun {
 		target := "user " + addr
-		if u.GlobalAdmin {
+		if u.admin() {
 			target += ", a global administrator"
 		}
 		b, _ := json.Marshal(map[string]bool{"enabled": u.enabled()})
@@ -384,7 +436,7 @@ func (c *conn) setEnabled(ctx context.Context, call sdk.Call, local, dom string)
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	if after.enabled() != enabling {
+	if after.Enabled == nil || *after.Enabled != enabling {
 		return sdk.Result{}, fmt.Errorf("Mailu answered, but %s is still %s", addr, map[bool]string{true: "enabled", false: "disabled"}[after.enabled()])
 	}
 	res, err := sdk.JSON(map[string]any{"email": addr, "enabled": enabling})

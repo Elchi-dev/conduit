@@ -173,7 +173,10 @@ func (a *ambientModule) Current(ctx context.Context) Ambient {
 }
 
 // push sends a state everywhere configured. Errors are logged, not fatal.
-func (a *ambientModule) push(ctx context.Context, st Ambient) []string {
+// The light and Discord are changed through their modules as actor: Conduit
+// itself when the state changes on its own, and the caller for the push
+// action, so a caller can't reach those modules beyond its own rules.
+func (a *ambientModule) push(ctx context.Context, st Ambient, actor core.Actor) []string {
 	a.mu.Lock()
 	cfg, h, client := a.cfg, a.host, a.http
 	a.mu.Unlock()
@@ -206,7 +209,7 @@ func (a *ambientModule) push(ctx context.Context, st Ambient) []string {
 	}
 	invoke := func(instance, action string, in any) {
 		b, _ := json.Marshal(in)
-		if _, err := a.app.Engine.Invoke(ctx, systemActor, sdk.Call{Instance: instance, Action: action, Input: b}, core.InvokeOptions{NoWait: true}); err != nil {
+		if _, err := a.app.Engine.Invoke(ctx, actor, sdk.Call{Instance: instance, Action: action, Input: b}, core.InvokeOptions{NoWait: true}); err != nil {
 			problems = append(problems, instance+": "+err.Error())
 		}
 	}
@@ -246,7 +249,7 @@ func (a *ambientModule) Watch(ctx context.Context) {
 		b, _ := json.Marshal(st)
 		a.app.Engine.Bus.Publish(sdk.Event{Type: "status.changed", Module: "status", Instance: ambientID, Data: b})
 		if prev.State != "" { // don't flash the light on every start
-			if p := a.push(ctx, st); len(p) > 0 {
+			if p := a.push(ctx, st, systemActor); len(p) > 0 {
 				a.app.Server.Log.Warn("ambient status: push problems", "problems", strings.Join(p, "; "))
 			}
 		}
@@ -274,8 +277,12 @@ func (a *ambientModule) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, err
 	case "status":
 		return sdk.JSON(a.Current(ctx))
 	case "push":
+		actor, ok := core.ActorFrom(ctx)
+		if !ok {
+			return sdk.Result{}, errors.New("push runs only through Conduit's engine")
+		}
 		st := a.Current(ctx)
-		if p := a.push(ctx, st); len(p) > 0 {
+		if p := a.push(ctx, st, actor); len(p) > 0 {
 			return sdk.Result{}, errors.New(strings.Join(p, "; "))
 		}
 		return sdk.JSON(st)

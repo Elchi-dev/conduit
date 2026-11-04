@@ -84,7 +84,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			"url":{"type":"string","default":"https://api.open-meteo.com","description":"Open-Meteo's address; change it for a self-hosted copy"},
 			"airQualityUrl":{"type":"string","default":"https://air-quality-api.open-meteo.com","description":"The air quality API's address"}}}`),
 		Actions: []sdk.ActionSpec{
-			{Name: "places", Title: "Places", Description: "The places in settings, the first being the default.", Risk: sdk.RiskRead},
+			{Name: "places", Title: "Places", Description: "The names of the places in settings, the first being the default (never their coordinates).", Risk: sdk.RiskRead},
 			{Name: "today", Title: "Today", Description: "A line per place for the day: now, today's high and low, and the chance of rain in the next 12 hours.", Risk: sdk.RiskRead},
 			{Name: "current", Title: "Current weather", Description: "Temperature, feels-like, conditions, humidity, wind and precipitation now, for a place (default: the first) or coordinates.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + where + `}}`)},
@@ -386,7 +386,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	}
 	switch call.Action {
 	case "places":
-		return sdk.JSON(c.places)
+		// Names only: the coordinates in settings are where people live
+		// and work, and outputs go to the audit log and events.
+		out := []map[string]any{}
+		for i, pl := range c.places {
+			out = append(out, map[string]any{"name": pl.Name, "default": i == 0})
+		}
+		return sdk.JSON(out)
 
 	case "today":
 		out := []map[string]any{}

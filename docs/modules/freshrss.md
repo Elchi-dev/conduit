@@ -15,7 +15,7 @@ full `…/api/greader.php` address works too) and your user name.
 | --- | --- | --- |
 | `unread_count` | read | Unread items in all, and per feed with its title, most first. |
 | `unread` | read | Unread items, newest first, everywhere or in one `feed` (`feed/12`, see `subscriptions`): title, link, feed, author and date. |
-| `subscriptions` | read | The feeds you follow with their categories, feed and site addresses. |
+| `subscriptions` | read | The feeds you follow with their categories and site address, and the feed address in short form (scheme, host and first path segment, without user, query or anything after; private feeds carry tokens). |
 | `mark_read` | write | Marks up to 50 `items` (ids from `unread`) read. FreshRSS is asked for the items first, so the preview names them, items already read are left out, and undo marks only the changed ones unread. |
 | `mark_unread` | write | The reverse, with the reverse undo. |
 

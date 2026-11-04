@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/modules/internal/dnsctl"
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -97,7 +98,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"days":{"type":"integer","minimum":1,"maximum":730,"default":60}}}`)},
 			{Name: "records", Title: "DNS records", Description: "A domain's DNS records, optionally only one name or type. Needs API access on for the domain.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["domain"],"properties":{` + domain + `,` + name + `,"type":{"type":"string"}}}`)},
-			{Name: "add_record", Title: "Add a record", Description: "Creates an A, AAAA, TXT or CNAME record at a new name that nothing answers for yet. Refused: the domain itself, _acme-challenge and _domainkey names, wildcards, names a wildcard covers, names that already have records of any type, and names at or below a delegation (use add_record_any). Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_record", Title: "Add a record", Description: "Creates an A, AAAA, TXT or CNAME record at a new name that nothing answers for yet. Refused: the domain itself, names with a label starting with _ (ACME, DKIM, DMARC, MTA-STS, TLS reporting, SRV, ownership proofs), mta-sts, autodiscover, autoconfig and wpad hosts, wildcards, names a wildcard covers, names that already have records of any type, and names at or below a delegation (use add_record_any). Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["domain","name","type","content"],"properties":{` + domain + `,` + name + `,"type":{"type":"string","enum":` + types(writeTypes) + `},` + fields + `}}`)},
 			{Name: "add_record_any", Title: "Add a record of any type", Description: "Creates a record of any type (NS, MX, CAA, TLSA, HTTPS, SRV, ALIAS, …) or at a name add_record refuses, also next to existing records of the same name: these can delegate a subdomain, take mail, allow certificates or override a wildcard. The preview says what it overrides. Undo deletes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["domain","name","type","content"],"properties":{` + domain + `,` + name + `,"type":{"type":"string","enum":` + types(anyTypes) + `},` + fields + `}}`)},
@@ -337,14 +338,7 @@ func overrides(recs []record, full, domain string) []string {
 	if full == domain {
 		out = append(out, "it is the domain itself (mail, certificates and delegation hang off it)")
 	}
-	for _, l := range strings.Split(strings.TrimSuffix(strings.TrimSuffix(full, domain), "."), ".") {
-		switch {
-		case strings.HasPrefix(l, "_acme-challenge"):
-			out = append(out, "it is an _acme-challenge name (it proves control for certificates)")
-		case l == "_domainkey":
-			out = append(out, "it is a DKIM key name (it lets mail be signed for the domain)")
-		}
-	}
+	out = append(out, dnsctl.Reasons(strings.TrimSuffix(strings.TrimSuffix(full, domain), "."))...)
 	if strings.HasPrefix(full, "*.") {
 		out = append(out, "it is a wildcard (it answers for every name below it that doesn't exist)")
 	}

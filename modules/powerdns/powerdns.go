@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/modules/internal/dnsctl"
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/modules/internal/tlspin"
@@ -98,7 +99,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "zones", Title: "Zones", Description: "Name, kind (native, primary, secondary), serial and DNSSEC.", Risk: sdk.RiskRead},
 			{Name: "records", Title: "Records", Description: "A zone's record sets, optionally only one name or type.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["zone"],"properties":{` + zone + `,` + name + `,"type":{"type":"string"}}}`)},
-			{Name: "add_record", Title: "Add a record", Description: "Creates an A, AAAA, TXT or CNAME record at a new name that nothing answers for yet. Refused: the zone apex, _acme-challenge and _domainkey names, wildcards, names a wildcard covers, names that already have records of any type, and names at or below a delegation (use add_record_any). Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_record", Title: "Add a record", Description: "Creates an A, AAAA, TXT or CNAME record at a new name that nothing answers for yet. Refused: the zone apex, names with a label starting with _ (ACME, DKIM, DMARC, MTA-STS, TLS reporting, SRV, ownership proofs), mta-sts, autodiscover, autoconfig and wpad hosts, wildcards, names a wildcard covers, names that already have records of any type, and names at or below a delegation (use add_record_any). Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","name","type"],"properties":{` + zone + `,` + name + `,` + wtyp + `,"content":{"type":"string","description":"One record's content"},` + contents + `,` + ttl + `}}`)},
 			{Name: "add_record_any", Title: "Add a record of any type", Description: "Creates a record set of any type (NS, DS, MX, CAA, TLSA, HTTPS, SRV, …) or at a name add_record refuses: these can delegate a subtree, take mail, allow certificates or override a wildcard. The preview says what it overrides. An existing name and type is refused (replace it instead). Undo deletes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","name","type"],"properties":{` + zone + `,` + name + `,` + typ + `,"content":{"type":"string","description":"One record's content"},` + contents + `,` + ttl + `}}`)},
@@ -378,15 +379,7 @@ func (z zoneDetail) overrides(ch change) []string {
 	if ch.name == ch.zone {
 		out = append(out, "it is the zone apex (mail, certificates and delegation hang off it)")
 	}
-	labels := strings.Split(strings.TrimSuffix(strings.TrimSuffix(ch.name, ch.zone), "."), ".")
-	for _, l := range labels {
-		switch {
-		case strings.HasPrefix(l, "_acme-challenge"):
-			out = append(out, "it is an _acme-challenge name (it proves control for certificates)")
-		case l == "_domainkey":
-			out = append(out, "it is a DKIM key name (it lets mail be signed for the domain)")
-		}
-	}
+	out = append(out, dnsctl.Reasons(strings.TrimSuffix(strings.TrimSuffix(ch.name, ch.zone), "."))...)
 	if strings.HasPrefix(ch.name, "*.") {
 		out = append(out, "it is a wildcard (it answers for every name below it that doesn't exist)")
 	}

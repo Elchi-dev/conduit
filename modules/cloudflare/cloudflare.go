@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/elchi-dev/conduit/modules/internal/dnsctl"
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -67,11 +68,15 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "zones", Title: "Zones", Risk: sdk.RiskRead},
 			{Name: "records", Title: "DNS records", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["zone"],"properties":{"zone":{"type":"string"},"type":{"type":"string"},"name":{"type":"string"}}}`)},
-			{Name: "set_record", Title: "Create or change a record", Description: "Changes the record with this type and name, or creates it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "set_record", Title: "Create or change a record", Description: "Changes the record with this type and name, or creates it. Names that carry control over the domain (a label starting with _, or mta-sts, autodiscover, autoconfig and wpad hosts) need set_record_any.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","type","name","content"],"properties":{` + recordProps + `}}`)},
 			{Name: "delete_record", Title: "Delete a record", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","type","name"],"properties":{"zone":{"type":"string"},"type":{"type":"string"},"name":{"type":"string"}}}`)},
 			{Name: "restore_record", Title: "Restore a record", Description: "Puts back a record exactly as it was (used by undo).", Risk: sdk.RiskWrite, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["zone","record"],"properties":{"zone":{"type":"string"},"record":{"type":"object","additionalProperties":true},"replace":{"type":"string"}}}`)},
+			{Name: "set_record_any", Title: "Create or change a control record", Description: "set_record for names that carry control over the domain: any label starting with _ (ACME, DKIM, DMARC, MTA-STS, TLS reporting, SRV, ownership proofs) and mta-sts, autodiscover, autoconfig and wpad hosts. The preview says what it controls.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["zone","type","name","content"],"properties":{` + recordProps + `}}`)},
+			{Name: "restore_record_any", Title: "Restore a control record", Description: "restore_record for the names set_record_any is for (used by undo).", Risk: sdk.RiskDestructive, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","record"],"properties":{"zone":{"type":"string"},"record":{"type":"object","additionalProperties":true},"replace":{"type":"string"}}}`)},
 			{Name: "purge_cache", Title: "Purge cache", Description: "Specific URLs, or everything when none are given. Purging drops the cached copies, so every visitor hits the origin until the cache fills again (destructive).", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["zone"],"properties":{"zone":{"type":"string"},"files":{"type":"array","items":{"type":"string"}}}}`)},
@@ -214,6 +219,24 @@ func (a *account) zoneID(ctx context.Context, zone string) (string, error) {
 }
 
 // fqdn expands "@" and relative names within the zone.
+// controls says why a record at name carries control over zone (see
+// dnsctl), or nil for a plain host name.
+func controls(name, zone string) []string {
+	if name == zone || !strings.HasSuffix(name, "."+zone) {
+		return nil
+	}
+	return dnsctl.Reasons(strings.TrimSuffix(name, "."+zone))
+}
+
+// restoreAction is the undo for a change at name: restoring a control
+// record is as destructive as setting one.
+func restoreAction(name, zone string) string {
+	if len(controls(strings.ToLower(strings.TrimSuffix(name, ".")), zone)) > 0 {
+		return "restore_record_any"
+	}
+	return "restore_record"
+}
+
 func fqdn(name, zone string) string {
 	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
 	zone = strings.ToLower(strings.TrimSuffix(zone, "."))
@@ -301,8 +324,12 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		}
 		return sdk.JSON(rs)
 
-	case "set_record":
+	case "set_record", "set_record_any":
 		want := Record{Type: strings.ToUpper(p.Type), Name: fqdn(p.Name, zone), Content: strings.TrimSpace(p.Content), TTL: p.TTL, Proxied: p.Proxied, Priority: p.Priority}
+		control := controls(want.Name, zone)
+		if c.Action == "set_record" && len(control) > 0 {
+			return sdk.Result{}, fmt.Errorf("%s carries control over the domain (%s), so it needs set_record_any", want.Name, strings.Join(control, "; "))
+		}
 		if want.TTL == 0 {
 			want.TTL = 1
 		}
@@ -322,7 +349,11 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 			if len(existing) == 1 {
 				ch.Op, ch.Before = "update", raw(existing[0].body())
 			}
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s %s → %s", map[string]string{"create": "Create", "update": "Change"}[ch.Op], target, want.Content), Changes: []sdk.Change{ch}}}, nil
+			summary := fmt.Sprintf("%s %s → %s", map[string]string{"create": "Create", "update": "Change"}[ch.Op], target, want.Content)
+			if len(control) > 0 {
+				summary += ". It controls: " + strings.Join(control, "; ")
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{ch}}}, nil
 		}
 		var got Record
 		if len(existing) == 1 {
@@ -332,7 +363,7 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 			}
 			r, _ := sdk.JSON(got)
 			old.ID = ""
-			r.Undo = sdk.UndoWith("restore_record", map[string]any{"zone": zone, "record": old, "replace": got.ID}, "Put back "+target+" → "+old.Content)
+			r.Undo = sdk.UndoWith(restoreAction(old.Name, zone), map[string]any{"zone": zone, "record": old, "replace": got.ID}, "Put back "+target+" → "+old.Content)
 			return r, nil
 		}
 		if err := a.call(ctx, "POST", "/zones/"+zid+"/dns_records", nil, want.body(), &got); err != nil {
@@ -363,12 +394,15 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		}
 		r, _ := sdk.JSON(map[string]any{"deleted": old.Type + " " + old.Name})
 		old.ID = ""
-		r.Undo = sdk.UndoWith("restore_record", map[string]any{"zone": zone, "record": old}, "Restore "+old.Type+" "+old.Name)
+		r.Undo = sdk.UndoWith(restoreAction(old.Name, zone), map[string]any{"zone": zone, "record": old}, "Restore "+old.Type+" "+old.Name)
 		return r, nil
 
-	case "restore_record":
+	case "restore_record", "restore_record_any":
 		if p.Record == nil {
 			return sdk.Result{}, errors.New("record is required")
+		}
+		if c.Action == "restore_record" && len(controls(fqdn(p.Record.Name, zone), zone)) > 0 {
+			return sdk.Result{}, fmt.Errorf("%s carries control over the domain, so it needs restore_record_any", p.Record.Name)
 		}
 		var got Record
 		if p.Replace != "" {

@@ -73,7 +73,7 @@ func TestAmbientStates(t *testing.T) {
 	}
 	st := a.compute(ctx)
 	st.Color = ambientColors[st.State]
-	if p := a.push(ctx, st); len(p) != 0 || got.State != "stopped" || got.Color != "purple" {
+	if p := a.push(ctx, st, systemActor); len(p) != 0 || got.State != "stopped" || got.Color != "purple" {
 		t.Fatalf("push %v %+v", p, got)
 	}
 

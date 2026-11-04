@@ -13,7 +13,7 @@ used (free for non-commercial use).
 
 | Action | Risk | Notes |
 | --- | --- | --- |
-| `places` | read | The places in settings. |
+| `places` | read | The names of the places in settings, the first marked as the default. Never their coordinates: they're where people live and work, and outputs go to the audit log. |
 | `today` | read | A line per place: temperature and conditions now, today's low and high, and the chance and amount of rain in the next 12 hours. The daily brief uses it. |
 | `current` | read | Temperature, feels-like, conditions, humidity, wind speed and direction and precipitation now. |
 | `precipitation` | read | Hour by hour for the next 12 `hours` (up to 48): chance of precipitation, amount, temperature and conditions. |

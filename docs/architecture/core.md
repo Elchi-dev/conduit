@@ -31,7 +31,10 @@ the daemon, the MCP server and automations all call into it.
    audits it and records the entry on the approval as `resultSeq`. Approvals
    still pending when the daemon starts are expired, since nothing is
    waiting on them any more.
-5. The module runs the call.
+5. The module runs the call, with the caller in its context
+   (`core.ActorFrom(ctx)`; the dry run computed for an approval gets it
+   too). A module that calls other modules on the caller's behalf makes
+   those calls as that caller (see [nested calls](modules.md#nested-calls)).
 6. The result is audited (`ok`, `error` or `planned` for dry runs) with any
    undo token, and an `action.<status>` event is published.
 

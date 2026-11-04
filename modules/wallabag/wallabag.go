@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -19,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/elchi-dev/conduit/internal/netguard"
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/modules/internal/tlspin"
+	"github.com/elchi-dev/conduit/modules/internal/urlguard"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
@@ -400,15 +399,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 }
 
 func (c *conn) save(ctx context.Context, call sdk.Call, p input) (sdk.Result, error) {
-	raw := strings.TrimSpace(p.URL)
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(raw) > 4096 {
-		return sdk.Result{}, errors.New("the link is an http(s) address")
-	}
-	if u.User != nil {
-		return sdk.Result{}, errors.New("the link has a user name or password in it; leave those out")
-	}
-	if err := localHost(u.Hostname()); err != nil {
+	// The server fetches what it saves: nothing on the local network
+	// (urlguard; redirects and rebinding are the server's to refuse).
+	u, err := urlguard.URL(ctx, p.URL)
+	if err != nil {
 		return sdk.Result{}, err
 	}
 	if len([]rune(p.Title)) > 1000 {
@@ -500,35 +494,9 @@ func (c *conn) flag(ctx context.Context, call sdk.Call, p input) (sdk.Result, er
 	return res, err
 }
 
-// localHost refuses links wallabag would fetch from inside your network,
-// as Karakeep's module does: IP literals that are loopback, private,
-// link-local, carrier-grade NAT or otherwise reserved, numeric hosts
-// (0x7f.1, 2130706433), localhost, single-label names and the .local,
-// .internal, .localhost, .home.arpa and .lan suffixes.
+// localHost refuses hosts the server would fetch from inside your network
+// (see urlguard.Host), without resolving them.
 func localHost(host string) error {
-	h := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
-	refuse := fmt.Errorf("%s is a local or private address; only links to public sites can be saved", host)
-	if h == "" {
-		return refuse
-	}
-	if a, err := netip.ParseAddr(h); err == nil {
-		if netguard.ReservedAddr(a) {
-			return refuse
-		}
-		return nil
-	}
-	if !strings.Contains(h, ".") || h == "localhost" {
-		return refuse
-	}
-	for _, suffix := range []string{".localhost", ".local", ".internal", ".home.arpa", ".lan"} {
-		if strings.HasSuffix(h, suffix) {
-			return refuse
-		}
-	}
-	labels := strings.Split(h, ".")
-	last := labels[len(labels)-1]
-	if strings.HasPrefix(last, "0x") || strings.Trim(last, "0123456789") == "" {
-		return refuse
-	}
-	return nil
+	_, err := urlguard.Host(host)
+	return err
 }

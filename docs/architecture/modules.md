@@ -117,6 +117,23 @@ servers). Each configuration is an *instance* with its own id.
   reverse them. The audit log keeps it, so any entry with an undo token gets an
   Undo button.
 
+## Nested calls
+
+A built-in module that reads or changes other modules for its caller (the
+daily brief, the ambient status's `push`) goes through `Engine.Invoke` as
+that caller, taken from `core.ActorFrom(ctx)`, never as the system actor
+or another actor with more rights: a call must not get a caller more than
+its own policy allows. Parts that aren't module calls (the audit log,
+approvals, keys) follow the scopes of the person or key behind the caller.
+The system actor is for what Conduit does on its own (health checks,
+alerts forwarded to notification channels, pushes when the state changes)
+with content and destinations the owner set up. A scheduled job a person
+set up acts as that person: the brief run by a trusted automation reads as
+whoever saved it last.
+
+Routes that serve module data outside `Invoke` check the policy themselves
+(game covers need a games read the policy doesn't deny).
+
 ## Agent context
 
 A built-in module can also implement `sdk.AgentContext` to offer agents MCP

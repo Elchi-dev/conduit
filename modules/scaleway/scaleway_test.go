@@ -141,11 +141,19 @@ func TestScalewayPower(t *testing.T) {
 		t.Fatalf("dry run %+v %v", r, err)
 	}
 	r, err := invoke(m, "power_off", one, false)
-	if err != nil || f.state != "stopped" || r.Undo == nil || r.Undo.Action != "power_on" {
+	if err != nil || f.state != "stopped" || r.Undo == nil || r.Undo.Action != "power_on_billable" {
 		t.Fatalf("power_off %+v %v", r, err)
 	}
 	if _, err := invoke(m, "reboot", one, false); err == nil {
 		t.Fatal("rebooted a stopped server")
+	}
+	// From fully stopped, billing resumes: power_on (write) refuses and
+	// points to power_on_billable, whose preview names the type.
+	if _, err := invoke(m, "power_on", one, false); err == nil || !strings.Contains(err.Error(), "power_on_billable") {
+		t.Fatalf("power_on from stopped: %v", err)
+	}
+	if p, err := invoke(m, "power_on_billable", one, true); err != nil || !strings.Contains(p.Plan.Summary, "billing resumes") || !strings.Contains(string(p.Plan.Changes[0].After), `"commercial_type":"DEV1-S"`) {
+		t.Fatalf("power_on_billable plan %+v %v", p.Plan, err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.state != "running" {
 		t.Fatalf("undo %v", err)
@@ -161,12 +169,22 @@ func TestScalewayPower(t *testing.T) {
 		switch a.Name {
 		case "power_on":
 			want = sdk.RiskWrite
-		case "power_off", "reboot":
+		case "power_off", "reboot", "power_on_billable":
 			want = sdk.RiskDestructive
 		}
 		if a.Risk != want {
 			t.Errorf("%s is %s", a.Name, a.Risk)
 		}
+	}
+}
+
+// power_on at write only starts a server stopped in place (still billed).
+func TestScalewayPowerOnInPlace(t *testing.T) {
+	m, f := setup(t, "secret://scw")
+	f.state = "stopped in place"
+	r, err := invoke(m, "power_on", `{"server":"`+srvID+`"}`, false)
+	if err != nil || f.state != "running" || r.Undo != nil {
+		t.Fatalf("power_on in place %+v %v", r, err)
 	}
 }
 

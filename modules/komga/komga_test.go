@@ -40,8 +40,10 @@ func (f *fakeKomga) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/libraries":
 		io.WriteString(w, `[{"id":"L1","name":"Comics","root":"/data/comics","unavailable":false},{"id":"L2","name":"Manga","root":"/data/manga","unavailable":true}]`)
 	case r.URL.Path == "/api/v1/libraries/L1":
-		io.WriteString(w, `{"id":"L1","name":"Comics","root":"/data/comics"}`)
-	case r.URL.Path == "/api/v1/libraries/L1/scan" && r.Method == "POST":
+		io.WriteString(w, `{"id":"L1","name":"Comics","root":"/data/comics","emptyTrashAfterScan":false}`)
+	case r.URL.Path == "/api/v1/libraries/L3":
+		io.WriteString(w, `{"id":"L3","name":"Books","root":"/data/books","emptyTrashAfterScan":true}`)
+	case (r.URL.Path == "/api/v1/libraries/L1/scan" || r.URL.Path == "/api/v1/libraries/L3/scan") && r.Method == "POST":
 		if !f.admin {
 			w.WriteHeader(403)
 			return
@@ -95,8 +97,22 @@ func TestKomga(t *testing.T) {
 				t.Fatalf("%s %s: %s %v", c.action, c.in, r.Output, err)
 			}
 		}
-		r, err := invoke(m, "scan_library", `{"library":"L1","deep":true}`, true)
-		if err != nil || r.Plan == nil || r.Plan.Summary != `Deep scan library "Comics"` || len(f.scanned) != 0 {
+		// A deep scan, or one that empties the trash, isn't a plain write.
+		for _, in := range []string{`{"library":"L1","deep":true}`, `{"library":"L3"}`} {
+			for _, dry := range []bool{true, false} {
+				if _, err := invoke(m, "scan_library", in, dry); err == nil || !strings.Contains(err.Error(), "scan_library_full") {
+					t.Fatalf("scan_library %s: %v", in, err)
+				}
+			}
+		}
+		r, err := invoke(m, "scan_library_full", `{"library":"L1","deep":true}`, true)
+		if err != nil || r.Plan == nil || !strings.HasPrefix(r.Plan.Summary, `Deep scan library "Comics": a deep scan`) || len(f.scanned) != 0 {
+			t.Fatalf("%+v %v", r.Plan, err)
+		}
+		if r, err := invoke(m, "scan_library_full", `{"library":"L3"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "empties its trash") {
+			t.Fatalf("%+v %v", r.Plan, err)
+		}
+		if r, err := invoke(m, "scan_library", `{"library":"L1"}`, true); err != nil || r.Plan.Summary != `Scan library "Comics"` {
 			t.Fatalf("%+v %v", r.Plan, err)
 		}
 		if _, err := invoke(m, "scan_library", `{"library":"L1"}`, false); err != nil || strings.Join(f.scanned, ",") != "false" {

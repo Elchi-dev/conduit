@@ -19,12 +19,13 @@ one instance per zone.
 | `servers` | read | Instances in the zone: state, type, architecture, public and private addresses, tags |
 | `clusters` | read | Kapsule clusters in the region: status, Kubernetes version, type, CNI and whether an upgrade is available. Never kubeconfigs, tokens or the API endpoint: there's no action that fetches them |
 | `buckets` | read | Object Storage buckets in the region and when they were created. Needs the access key |
-| `power_on` | write | Starts a stopped `server`. Undo powers it off again |
+| `power_on` | write | Starts a `server` that is stopped in place (still on its hypervisor, so still billed). A fully stopped server is refused with a pointer to `power_on_billable` |
+| `power_on_billable` | destructive | Starts a fully stopped `server`: Scaleway allocates it again and bills its commercial type from then on. The preview shows the commercial type and says billing resumes. Undo powers it off again |
 | `power_off` | destructive | Stops a running server and releases it from its hypervisor: its services go down until it's powered on, and an address that isn't a flexible IP may change. Undo powers it on |
 | `reboot` | destructive | Reboots a running server |
 
 Power actions have previews and are refused when the server isn't in a
-state they apply to (`power_on` only from stopped, `reboot` only when
+state they apply to (`power_on` only from stopped in place, `power_on_billable` from stopped, `reboot` only when
 running). With `projectId` set, a server of another project is refused.
 Health reports how many servers the zone has and how many aren't running.
 

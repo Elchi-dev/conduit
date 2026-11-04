@@ -407,7 +407,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			for _, x := range s.Categories {
 				cats = append(cats, x.Label)
 			}
-			out = append(out, map[string]any{"feedId": s.ID, "title": s.Title, "feedUrl": s.URL, "site": s.HTMLURL, "categories": cats})
+			out = append(out, map[string]any{"feedId": s.ID, "title": s.Title, "feedUrl": rest.ShortURL(s.URL), "site": s.HTMLURL, "categories": cats})
 		}
 		return sdk.JSON(out)
 

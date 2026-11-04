@@ -207,6 +207,18 @@ func (m *Module) ForwardsApprovals(id string) bool {
 	return m.cfgs[id].Approvals
 }
 
+// HidesDetails reports whether an instance replaces every message with a
+// generic line (its "private" setting), as deliver does.
+func (m *Module) HidesDetails(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := m.cfgs[id]
+	return c.Private && c.Channel != "desktop"
+}
+
+// PrivateNote is what an instance that hides details sends instead.
+var PrivateNote = Note{Title: "Conduit", Message: "Something needs your attention. Open Conduit to see what."}
+
 // AppURL returns an instance's configured app address.
 func (m *Module) AppURL(id string) string {
 	m.mu.Lock()
@@ -266,7 +278,7 @@ func (m *Module) secret(ctx context.Context, h sdk.Host, ref string) (string, er
 
 func (m *Module) deliver(ctx context.Context, c Config, h sdk.Host, id string, n Note) error {
 	if c.Private && c.Channel != "desktop" {
-		n.Title, n.Message = "Conduit", "Something needs your attention. Open Conduit to see what."
+		n.Title, n.Message = PrivateNote.Title, PrivateNote.Message
 	}
 	switch c.Channel {
 	case "desktop":

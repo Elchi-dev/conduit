@@ -161,3 +161,43 @@ func TestFQDN(t *testing.T) {
 		}
 	}
 }
+
+// Names that carry control over the domain (mail policy, ownership proofs,
+// client auto-configuration) can't be set or restored at write.
+func TestControlRecordsNeedSetRecordAny(t *testing.T) {
+	f := &fakeCF{records: map[string]Record{}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	m := New()
+	cfg, _ := json.Marshal(Config{Token: "secret://cf", API: srv.URL})
+	m.Configure(context.Background(), fakehost.New(map[string]string{"secret://cf": "cf"}), "cf", cfg)
+	for _, n := range []string{"_dmarc", "_mta-sts", "_smtp._tls", "_atproto", "_github-challenge-x", "_acme-challenge.www", "sel._domainkey", "mta-sts", "autodiscover", "autoconfig.example.com", "wpad.office"} {
+		in, _ := json.Marshal(map[string]any{"zone": "example.com", "type": "TXT", "name": n, "content": "x"})
+		if _, err := m.Invoke(context.Background(), sdk.Call{Instance: "cf", Action: "set_record", Input: in}); err == nil || !strings.Contains(err.Error(), "set_record_any") {
+			t.Fatalf("set_record %s: %v", n, err)
+		}
+		rec, _ := json.Marshal(map[string]any{"zone": "example.com", "record": map[string]any{"type": "TXT", "name": n + ".example.com", "content": "x"}})
+		if _, err := m.Invoke(context.Background(), sdk.Call{Instance: "cf", Action: "restore_record", Input: rec}); err == nil {
+			t.Fatalf("restore_record %s went through", n)
+		}
+	}
+	if len(f.records) != 0 {
+		t.Fatalf("created %v", f.records)
+	}
+	set := map[string]any{"zone": "example.com", "type": "TXT", "name": "_dmarc", "content": "v=DMARC1; p=reject"}
+	if p := run(t, m, "set_record_any", set, true); !strings.Contains(p.Plan.Summary, "It controls:") {
+		t.Fatalf("plan %+v", p.Plan)
+	}
+	run(t, m, "set_record_any", set, false)
+	set["content"] = "v=DMARC1; p=none"
+	changed := run(t, m, "set_record_any", set, false)
+	if changed.Undo == nil || changed.Undo.Action != "restore_record_any" {
+		t.Fatalf("undo %+v", changed.Undo)
+	}
+	undo(t, m, changed)
+	for _, a := range m.Manifest().Actions {
+		if strings.HasSuffix(a.Name, "_any") && a.Risk != sdk.RiskDestructive {
+			t.Fatalf("%s is %s", a.Name, a.Risk)
+		}
+	}
+}

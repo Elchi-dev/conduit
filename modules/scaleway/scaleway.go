@@ -85,7 +85,8 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "servers", Title: "Servers", Description: "Instances in the zone with state, commercial type, addresses and tags.", Risk: sdk.RiskRead},
 			{Name: "clusters", Title: "Kapsule clusters", Description: "Kubernetes Kapsule clusters in the region: status, version, type and whether an upgrade is available. Never kubeconfigs or credentials.", Risk: sdk.RiskRead},
 			{Name: "buckets", Title: "Object Storage buckets", Description: "Buckets in the region and when they were created (needs the access key).", Risk: sdk.RiskRead},
-			{Name: "power_on", Title: "Power on", Description: "Starts a stopped server. Undo powers it off again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: one},
+			{Name: "power_on", Title: "Power on", Description: "Starts a server that is stopped in place (still on its hypervisor and still billed). A fully stopped server needs power_on_billable.", Risk: sdk.RiskWrite, DryRun: true, Input: one},
+			{Name: "power_on_billable", Title: "Power on (billing resumes)", Description: "Starts a fully stopped server: Scaleway allocates it a hypervisor again and bills its commercial type by the hour from then on (destructive). The preview shows the type. Undo powers it off again.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: one},
 			{Name: "power_off", Title: "Power off", Description: "Stops a server and releases it from its hypervisor: its services go down until it's powered on, and an address that isn't a flexible IP may change (destructive). Undo powers it on.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: one},
 			{Name: "reboot", Title: "Reboot", Description: "Reboots a running server; its services go down while it restarts (destructive).", Risk: sdk.RiskDestructive, DryRun: true, Input: one},
 		},
@@ -347,7 +348,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	case "buckets":
 		return c.buckets(ctx)
 
-	case "power_on", "power_off", "reboot":
+	case "power_on", "power_on_billable", "power_off", "reboot":
 		if !uuidRe.MatchString(p.Server) {
 			return sdk.Result{}, errors.New("which server? (its id, from Servers)")
 		}
@@ -358,6 +359,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		target := s.Name + " (" + s.ID + ")"
 		switch call.Action {
 		case "power_on":
+			// A server stopped in place is still billed; one that is fully
+			// stopped isn't, and powering it on starts billing again.
+			if s.State == "stopped" {
+				return sdk.Result{}, fmt.Errorf("%s is fully stopped, so powering it on resumes billing for its %s; use power_on_billable", target, s.Type)
+			}
+			if s.State != "stopped in place" {
+				return sdk.Result{}, fmt.Errorf("%s is %s; only a server stopped in place can be powered on here", target, s.State)
+			}
+		case "power_on_billable":
 			if s.State != "stopped" && s.State != "stopped in place" {
 				return sdk.Result{}, fmt.Errorf("%s is %s; only a stopped server can be powered on", target, s.State)
 			}
@@ -370,21 +380,30 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				return sdk.Result{}, fmt.Errorf("%s is %s; only a running server can be rebooted", target, s.State)
 			}
 		}
-		want := map[string]string{"power_on": "running", "power_off": "stopped", "reboot": "running"}[call.Action]
+		want := map[string]string{"power_on": "running", "power_on_billable": "running", "power_off": "stopped", "reboot": "running"}[call.Action]
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: strings.ReplaceAll(call.Action, "_", " ") + " " + target,
-				Changes: []sdk.Change{{Target: target, Op: call.Action, Before: state(s.State), After: state(want)}}}}, nil
+			summary := strings.ReplaceAll(call.Action, "_", " ") + " " + target
+			ch := sdk.Change{Target: target, Op: call.Action, Before: state(s.State), After: state(want)}
+			if call.Action == "power_on_billable" {
+				summary = "Power on " + target
+				if s.State == "stopped" {
+					summary += ": billing resumes for its " + s.Type + " from now on"
+				}
+				ch.After, _ = json.Marshal(map[string]any{"state": want, "commercial_type": s.Type, "billed": true})
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{ch}}}, nil
 		}
-		action := map[string]string{"power_on": "poweron", "power_off": "poweroff", "reboot": "reboot"}[call.Action]
+		action := map[string]string{"power_on": "poweron", "power_on_billable": "poweron", "power_off": "poweroff", "reboot": "reboot"}[call.Action]
 		if _, err := c.api.Do(ctx, http.MethodPost, c.zonePath()+"/servers/"+p.Server+"/action", nil, map[string]string{"action": action}, nil); err != nil {
 			return sdk.Result{}, friendly(err, "such server in "+c.zone)
 		}
 		r, _ := sdk.JSON(map[string]any{"server": target, "was": s.State, "requested": call.Action})
 		switch {
-		case call.Action == "power_on" && s.State == "stopped":
+		case call.Action == "power_on_billable" && s.State == "stopped":
 			r.Undo = sdk.UndoWith("power_off", map[string]string{"server": p.Server}, "Power "+s.Name+" off again")
 		case call.Action == "power_off" && s.State == "running":
-			r.Undo = sdk.UndoWith("power_on", map[string]string{"server": p.Server}, "Power "+s.Name+" on again")
+			// poweroff stops it fully, so powering it on again bills it.
+			r.Undo = sdk.UndoWith("power_on_billable", map[string]string{"server": p.Server}, "Power "+s.Name+" on again")
 		}
 		return r, nil
 	}

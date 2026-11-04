@@ -259,7 +259,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			} else if p.ErrorsOnly {
 				continue
 			}
-			r := map[string]any{"id": f.ID, "title": f.Title, "site": f.SiteURL, "feedUrl": f.FeedURL, "checked": f.CheckedAt,
+			r := map[string]any{"id": f.ID, "title": f.Title, "site": f.SiteURL, "feedUrl": rest.ShortURL(f.FeedURL), "checked": f.CheckedAt,
 				"unread": counters.Unreads[strconv.FormatInt(f.ID, 10)]}
 			if f.Category != nil {
 				r["category"] = f.Category.Title

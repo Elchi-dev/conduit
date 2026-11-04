@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/elchi-dev/conduit/internal/core"
 	"github.com/elchi-dev/conduit/modules/games"
+	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
 // coverSource is implemented by the games module.
@@ -25,6 +27,20 @@ func (s *Server) gameCover(w http.ResponseWriter, r *http.Request) {
 	src, ok2 := m.(coverSource)
 	if !ok || !ok2 {
 		writeErr(w, http.StatusNotFound, "the games module isn't available")
+		return
+	}
+	// The cover is fetched outside the engine, so check the policy here: a
+	// caller denied the library on every games instance gets no covers.
+	p, _ := principal(r)
+	allowed := false
+	for _, in := range s.Engine.Instances("games") {
+		if d, err := s.Engine.Policy.Decide(r.Context(), p.Actor, in.Module, in.ID, "library", sdk.RiskRead); err == nil && d.Effect != core.Deny && in.Enabled {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		writeErr(w, http.StatusForbidden, "the policy doesn't let you read the games library")
 		return
 	}
 	b, ct, err := src.Cover(r.Context(), r.PathValue("id"))

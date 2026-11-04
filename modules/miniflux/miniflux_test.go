@@ -57,7 +57,7 @@ func (f *fakeMiniflux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/me":
 		io.WriteString(w, `{"id":1,"username":"elchi"}`)
 	case path == "/feeds" && r.Method == "GET":
-		io.WriteString(w, `[{"id":1,"title":"Example blog","site_url":"https://blog.example.com","feed_url":"https://blog.example.com/feed","checked_at":"2026-11-04T07:00:00Z","parsing_error_count":0,"parsing_error_message":"","category":{"id":1,"title":"Tech"}},
+		io.WriteString(w, `[{"id":1,"title":"Example blog","site_url":"https://blog.example.com","feed_url":"https://blog.example.com/feeds/private?token=s3cr3tfeedtoken","checked_at":"2026-11-04T07:00:00Z","parsing_error_count":0,"parsing_error_message":"","category":{"id":1,"title":"Tech"}},
 			{"id":2,"title":"Dead site","site_url":"https://dead.example.com","feed_url":"https://dead.example.com/rss","checked_at":"2026-11-04T07:00:00Z","parsing_error_count":4,"parsing_error_message":"404 Not Found","category":{"id":1,"title":"Tech"}}]`)
 	case path == "/feeds/counters":
 		io.WriteString(w, `{"reads":{"1":10},"unreads":{"1":2}}`)
@@ -139,6 +139,10 @@ func TestMiniflux(t *testing.T) {
 		if err != nil || !strings.Contains(string(r.Output), c.want) {
 			t.Fatalf("%s %s: %s %v", c.action, c.in, r.Output, err)
 		}
+	}
+	// Feed addresses can carry a token (private feeds): only a short form.
+	if r, _ := invoke(m, "feeds", `{}`, false); strings.Contains(string(r.Output), "s3cr3t") || !strings.Contains(string(r.Output), `"feedUrl":"https://blog.example.com/feeds/…`) {
+		t.Fatalf("feed url: %s", r.Output)
 	}
 	if r, _ := invoke(m, "feeds", `{"errorsOnly":true}`, false); strings.Contains(string(r.Output), "Example blog") {
 		t.Fatalf("errorsOnly kept a healthy feed: %s", r.Output)

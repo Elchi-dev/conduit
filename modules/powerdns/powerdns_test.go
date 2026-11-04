@@ -125,19 +125,19 @@ func TestPowerDNS(t *testing.T) {
 	}
 
 	// Adding a new record: preview, add, undo.
-	add := `{"zone":"example.com","name":"_dmarc","type":"TXT","content":"v=DMARC1; p=reject"}`
+	add := `{"zone":"example.com","name":"status","type":"TXT","content":"v=DMARC1; p=reject"}`
 	r, err = invoke(m, "add_record", add, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Create _dmarc.example.com. TXT in example.com." || r.Plan.Changes[0].Before != nil || len(f.sets) != 3 {
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Create status.example.com. TXT in example.com." || r.Plan.Changes[0].Before != nil || len(f.sets) != 3 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	r, err = invoke(m, "add_record", add, false)
-	if s := f.get("_dmarc.example.com.", "TXT"); err != nil || s == nil || s.Records[0].Content != `"v=DMARC1; p=reject"` || s.TTL != 3600 {
+	if s := f.get("status.example.com.", "TXT"); err != nil || s == nil || s.Records[0].Content != `"v=DMARC1; p=reject"` || s.TTL != 3600 {
 		t.Fatalf("%v %+v", err, f.sets)
 	}
 	if r.Undo == nil || r.Undo.Action != "delete_rrset" {
 		t.Fatalf("%+v", r.Undo)
 	}
-	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.get("_dmarc.example.com.", "TXT") != nil {
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.get("status.example.com.", "TXT") != nil {
 		t.Fatal(err)
 	}
 
@@ -287,6 +287,12 @@ func TestPowerDNSAddRecordLimits(t *testing.T) {
 		`{"zone":"example.com","name":"_acme-challenge-x","type":"CNAME","content":"acme.attacker.net"}`: "_acme-challenge",
 		`{"zone":"example.com","name":"sel._domainkey","type":"TXT","content":"v=DKIM1; p=AAAA"}`:        "DKIM",
 		`{"zone":"example.com","name":"*.dev","type":"A","content":"203.0.113.66"}`:                      "wildcard",
+		`{"zone":"example.com","name":"_dmarc","type":"TXT","content":"v=DMARC1; p=none"}`:               "service, policy or verification",
+		`{"zone":"example.com","name":"_smtp._tls","type":"TXT","content":"v=TLSRPTv1"}`:                 "service, policy or verification",
+		`{"zone":"example.com","name":"_atproto","type":"TXT","content":"did=did:plc:x"}`:                "service, policy or verification",
+		`{"zone":"example.com","name":"mta-sts","type":"CNAME","content":"mta-sts.attacker.net."}`:       "mta-sts host",
+		`{"zone":"example.com","name":"autodiscover","type":"CNAME","content":"ad.attacker.net."}`:       "autodiscover host",
+		`{"zone":"example.com","name":"wpad.office","type":"A","content":"203.0.113.66"}`:                "wpad host",
 		`{"zone":"example.com","name":"www","type":"AAAA","content":"2001:db8::66"}`:                     "already has A",
 		`{"zone":"example.com","name":"mail","type":"A","content":"203.0.113.66"}`:                       "already has MX",
 		`{"zone":"example.com","name":"corp","type":"A","content":"203.0.113.66"}`:                       "delegated",

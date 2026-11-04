@@ -371,7 +371,7 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 		if spec.DryRun {
 			dry := call
 			dry.DryRun = true
-			if r, err := m.Invoke(ctx, dry); err == nil {
+			if r, err := m.Invoke(WithActor(ctx, actor), dry); err == nil {
 				plan = r.Plan
 				if plan != nil && plan.Changes == nil {
 					plan.Changes = []sdk.Change{}
@@ -463,7 +463,9 @@ func (e *Engine) runWhenApproved(actor Actor, m sdk.Module, spec sdk.ActionSpec,
 // run's plan for the caller too (it is denied some of the module's reads);
 // a sensitive action's plan is always redacted in the log and events.
 func (e *Engine) run(ctx context.Context, m sdk.Module, spec sdk.ActionSpec, in Instance, call sdk.Call, base Entry, out Outcome, approval string, hidePlan bool) (Outcome, error) {
-	res, err := m.Invoke(ctx, call)
+	// The module runs with the caller in its context, so any call it makes
+	// on the caller's behalf goes through the policy as that caller.
+	res, err := m.Invoke(WithActor(ctx, base.Actor), call)
 	if res.Plan != nil && res.Plan.Changes == nil {
 		res.Plan.Changes = []sdk.Change{}
 	}

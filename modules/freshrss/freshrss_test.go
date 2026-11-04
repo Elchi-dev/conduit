@@ -70,7 +70,7 @@ func (f *fakeFresh) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/reader/api/0/unread-count":
 		io.WriteString(w, `{"max":2,"unreadcounts":[{"id":"feed/3","count":1,"newestItemTimestampUsec":"1"},{"id":"feed/4","count":0},{"id":"user/-/state/com.google/reading-list","count":1}]}`)
 	case path == "/reader/api/0/subscription/list":
-		io.WriteString(w, `{"subscriptions":[{"id":"feed/3","title":"Example news","categories":[{"id":"user/-/label/News","label":"News"}],"url":"https://news.example.com/feed","htmlUrl":"https://news.example.com/"}]}`)
+		io.WriteString(w, `{"subscriptions":[{"id":"feed/3","title":"Example news","categories":[{"id":"user/-/label/News","label":"News"}],"url":"https://user:pw@news.example.com/a1b2c3d4e5f6a7b8c9d0/feed?key=s3cr3tfeedtoken","htmlUrl":"https://news.example.com/"}]}`)
 	case strings.HasPrefix(path, "/reader/api/0/stream/contents/") && q.Get("xt") == "user/-/state/com.google/read":
 		var items []string
 		for _, id := range []string{id1, id2} {
@@ -135,6 +135,10 @@ func TestFreshRSS(t *testing.T) {
 		if err != nil || !strings.Contains(string(r.Output), c.want) {
 			t.Fatalf("%s %s: %s %v", c.action, c.in, r.Output, err)
 		}
+	}
+	// Feed addresses can carry a token (private feeds): only a short form.
+	if r, _ := invoke(m, "subscriptions", `{}`, false); strings.Contains(string(r.Output), "s3cr3t") || strings.Contains(string(r.Output), "a1b2c3d4e5f6") || strings.Contains(string(r.Output), "pw@") {
+		t.Fatalf("feed url: %s", r.Output)
 	}
 	if r, _ := invoke(m, "unread", `{}`, false); strings.Contains(string(r.Output), "Story 2") {
 		t.Fatalf("read item listed: %s", r.Output)

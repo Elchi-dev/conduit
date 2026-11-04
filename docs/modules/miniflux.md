@@ -10,7 +10,7 @@ it in the vault. It acts as you. Enter Miniflux's address, such as
 
 | Action | Risk | Notes |
 | --- | --- | --- |
-| `feeds` | read | Every feed with its category, unread count, last check and, for failing feeds, the error count and message. `errorsOnly` keeps just the failing ones. |
+| `feeds` | read | Every feed with its category, its address in short form (scheme, host and first path segment, as private feeds carry tokens), unread count, last check and, for failing feeds, the error count and message. `errorsOnly` keeps just the failing ones. |
 | `unread` | read | Unread entries, newest first, everywhere or in one `feed` (id): title, link, feed, date and reading time. |
 | `starred` | read | Starred entries, newest first. |
 | `mark_read` | write | Marks up to 50 `entries` (ids) read. The preview names the entries that change; entries that are already read are left out, and undo marks only the changed ones unread again. |

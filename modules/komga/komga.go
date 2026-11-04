@@ -75,7 +75,9 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + lib + `,` + limit + `}}`)},
 			{Name: "on_deck", Title: "Reading progress", Description: "Books you're in the middle of (page and progress) and On Deck: the next book in series you're reading.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + limit + `}}`)},
-			{Name: "scan_library", Title: "Scan a library", Description: "Asks Komga to look for new, changed and removed files in a library now (needs an admin account). It runs in the background; deep re-reads every file.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "scan_library", Title: "Scan a library", Description: "Asks Komga to look for new, changed and removed files in a library now (needs an admin account). It runs in the background. Refused for a deep scan, and for a library set to empty its trash after a scan (that deletes the books whose files are missing, with their read progress): use scan_library_full.", Risk: sdk.RiskWrite, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["library"],"properties":{` + lib + `,"deep":{"type":"boolean","default":false}}}`)},
+			{Name: "scan_library_full", Title: "Scan a library (deep, or emptying trash)", Description: "scan_library for a deep scan, which re-reads every file and can rewrite their metadata, or a library set to empty its trash after a scan, which deletes the books and series whose files are missing, with their read progress (destructive). The preview says which.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["library"],"properties":{` + lib + `,"deep":{"type":"boolean","default":false}}}`)},
 		},
 	}
@@ -186,6 +188,10 @@ type library struct {
 	Name        string `json:"name"`
 	Root        string `json:"root"`
 	Unavailable bool   `json:"unavailable"`
+	// EmptyTrash is Komga's "empty trash after scan": a scan then deletes
+	// the books and series whose files it didn't find, with their read
+	// progress, instead of marking them unavailable.
+	EmptyTrash bool `json:"emptyTrashAfterScan"`
 }
 
 type series struct {
@@ -349,7 +355,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(map[string]any{"inProgress": reading, "onDeck": next})
 
-	case "scan_library":
+	case "scan_library", "scan_library_full":
 		if p.Library == "" {
 			return sdk.Result{}, errors.New("give the library to scan (see libraries)")
 		}
@@ -364,8 +370,23 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if p.Deep {
 			kind = "Deep scan"
 		}
+		var risks []string
+		if p.Deep {
+			risks = append(risks, "a deep scan re-reads every file and can rewrite their metadata")
+		}
+		if l.EmptyTrash {
+			risks = append(risks, "the library empties its trash after a scan, deleting the books and series whose files are missing, with their read progress")
+		}
+		if call.Action == "scan_library" && len(risks) > 0 {
+			return sdk.Result{}, fmt.Errorf("library %q: %s, so it needs scan_library_full", l.Name, strings.Join(risks, "; "))
+		}
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s library %q", kind, l.Name), Changes: []sdk.Change{{Target: fmt.Sprintf("library %q (%s)", l.Name, l.Root), Op: "scan"}}}}, nil
+			summary := fmt.Sprintf("%s library %q", kind, l.Name)
+			if len(risks) > 0 {
+				summary += ": " + strings.Join(risks, "; ")
+			}
+			after, _ := json.Marshal(map[string]bool{"deep": p.Deep, "emptyTrashAfterScan": l.EmptyTrash})
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: fmt.Sprintf("library %q (%s)", l.Name, l.Root), Op: "scan", After: after}}}}, nil
 		}
 		if err := c.do(ctx, http.MethodPost, "/v1/libraries/"+l.ID+"/scan", url.Values{"deep": {strconv.FormatBool(p.Deep)}}, nil, nil); err != nil {
 			return sdk.Result{}, err

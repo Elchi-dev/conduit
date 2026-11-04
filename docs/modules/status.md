@@ -32,7 +32,7 @@ signals.
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `status` | read | The current state |
-| `push` | write | Sends the current state to every target now (useful to test) |
+| `push` | write | Sends the current state to every target now (useful to test). The light and Discord are changed as the caller, through their own actions, so the caller's rules on Home Assistant and Discord apply; the automatic pushes on a change are Conduit's own |
 
 | Event | When |
 | --- | --- |

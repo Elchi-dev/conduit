@@ -85,6 +85,10 @@ func TestWeather(t *testing.T) {
 			t.Fatalf("%s isn't read-only", a.Name)
 		}
 	}
+	// places names them, never where they are.
+	if r, err := invoke(m, "places", `{}`); err != nil || strings.Contains(string(r.Output), "latitude") || strings.Contains(string(r.Output), "longitude") {
+		t.Fatalf("places: %s %v", r.Output, err)
+	}
 	for _, c := range []struct{ action, in, want string }{
 		{"places", `{}`, `"name":"Office"`},
 		{"current", `{}`, `"windFrom":"W"`},

@@ -15,7 +15,8 @@ as that user, and Komga shows only the libraries it may see.
 | `series` | read | Series by title, in one `library` (id) or all, optionally matching a `search`: book counts, how many are read, unread or in progress, and the series status. |
 | `recent` | read | The newest books, everywhere or in one `library`. |
 | `on_deck` | read | Books you're in the middle of (page, pages and percent, last read), and On Deck: the next book in series you're reading. |
-| `scan_library` | write | With a preview naming the library. Asks Komga to look for new, changed and removed files in a `library` now; `deep` re-reads every file. It runs in the background, has nothing to undo and needs an admin account. |
+| `scan_library` | write | With a preview naming the library. Asks Komga to look for new, changed and removed files in a `library` now. It runs in the background, has nothing to undo and needs an admin account. Refused, in the preview too, for a `deep` scan and for a library set to empty its trash after a scan (which deletes the books and series whose files are missing, with their read progress): those need `scan_library_full`. |
+| `scan_library_full` | destructive | `scan_library` for a `deep` scan (re-reads every file and can rewrite its metadata) or a library that empties its trash after a scan. The preview reads the library's setting and says which applies. |
 
 **Security.** The API key goes in the `X-API-Key` header (or the login as
 HTTP basic auth) and the client won't follow a redirect to another host.

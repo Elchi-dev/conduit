@@ -54,16 +54,21 @@ import (
 	"github.com/elchi-dev/conduit/modules/portainer"
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/qbittorrent"
+	"github.com/elchi-dev/conduit/modules/railway"
 	"github.com/elchi-dev/conduit/modules/redis"
+	"github.com/elchi-dev/conduit/modules/render"
 	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
+	"github.com/elchi-dev/conduit/modules/stripe"
+	"github.com/elchi-dev/conduit/modules/supabase"
 	"github.com/elchi-dev/conduit/modules/synology"
 	"github.com/elchi-dev/conduit/modules/system"
 	"github.com/elchi-dev/conduit/modules/tailscale"
+	"github.com/elchi-dev/conduit/modules/telegram"
 	"github.com/elchi-dev/conduit/modules/todoist"
 	"github.com/elchi-dev/conduit/modules/traefik"
 	"github.com/elchi-dev/conduit/modules/trello"
@@ -164,6 +169,11 @@ func builtins(app *App) []sdk.Module {
 		notion.New(),
 		netlify.New(),
 		argocd.New(),
+		telegram.New(),
+		stripe.New(),
+		supabase.New(),
+		render.New(),
+		railway.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

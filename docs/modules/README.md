@@ -75,6 +75,11 @@ recommended policies.
 | Notion | [notion.md](notion.md) | team, developer |
 | Netlify | [netlify.md](netlify.md) | developer |
 | Argo CD | [argocd.md](argocd.md) | developer, homelab, team |
+| Telegram | [telegram.md](telegram.md) | homelab, team |
+| Stripe | [stripe.md](stripe.md) | team, developer |
+| Supabase | [supabase.md](supabase.md) | developer |
+| Render | [render.md](render.md) | developer |
+| Railway | [railway.md](railway.md) | developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

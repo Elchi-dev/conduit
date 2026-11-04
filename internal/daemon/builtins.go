@@ -17,10 +17,13 @@ import (
 	"github.com/elchi-dev/conduit/modules/bitbucket"
 	"github.com/elchi-dev/conduit/modules/bluesky"
 	"github.com/elchi-dev/conduit/modules/bookstack"
+	"github.com/elchi-dev/conduit/modules/buildkite"
 	"github.com/elchi-dev/conduit/modules/caddy"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/chatwoot"
+	"github.com/elchi-dev/conduit/modules/circleci"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
+	"github.com/elchi-dev/conduit/modules/codecov"
 	"github.com/elchi-dev/conduit/modules/comfyui"
 	"github.com/elchi-dev/conduit/modules/consul"
 	"github.com/elchi-dev/conduit/modules/containerregistry"
@@ -30,6 +33,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/docker"
+	"github.com/elchi-dev/conduit/modules/drone"
 	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/firefly"
@@ -116,6 +120,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/shelly"
 	"github.com/elchi-dev/conduit/modules/signal"
 	"github.com/elchi-dev/conduit/modules/slack"
+	"github.com/elchi-dev/conduit/modules/snyk"
 	"github.com/elchi-dev/conduit/modules/sonarqube"
 	"github.com/elchi-dev/conduit/modules/speedtest"
 	"github.com/elchi-dev/conduit/modules/spotify"
@@ -273,6 +278,11 @@ func builtins(app *App) []sdk.Module {
 		keycloak.New(),
 		harbor.New(),
 		sonarqube.New(),
+		circleci.New(),
+		buildkite.New(),
+		codecov.New(),
+		snyk.New(),
+		drone.New(),
 		nut.New(),
 		scrutiny.New(),
 		speedtest.New(),

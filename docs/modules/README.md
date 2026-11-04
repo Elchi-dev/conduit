@@ -101,6 +101,11 @@ recommended policies.
 | Keycloak | [keycloak.md](keycloak.md) | homelab, team |
 | Harbor | [harbor.md](harbor.md) | homelab, developer, team |
 | SonarQube (SonarCloud) | [sonarqube.md](sonarqube.md) | developer, team |
+| CircleCI | [circleci.md](circleci.md) | developer, team |
+| Buildkite | [buildkite.md](buildkite.md) | developer, team |
+| Codecov | [codecov.md](codecov.md) | developer, team |
+| Snyk | [snyk.md](snyk.md) | developer, team |
+| Drone CI | [drone.md](drone.md) | developer, team |
 | Network UPS Tools | [nut.md](nut.md) | homelab |
 | Scrutiny | [scrutiny.md](scrutiny.md) | homelab |
 | Speedtest Tracker | [speedtest.md](speedtest.md) | homelab |

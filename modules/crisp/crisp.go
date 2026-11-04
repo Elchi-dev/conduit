@@ -159,7 +159,7 @@ func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, 
 		return friendly(err, what)
 	}
 	if env.Error {
-		return fmt.Errorf("Crisp refused the request (%s)", clip(env.Reason, 60))
+		return fmt.Errorf("Crisp refused the request (%s)", clip(rest.Redact(env.Reason), 60))
 	}
 	if out != nil && len(env.Data) > 0 && string(env.Data) != "null" {
 		if err := json.Unmarshal(env.Data, out); err != nil {

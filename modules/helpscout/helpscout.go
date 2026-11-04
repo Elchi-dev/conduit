@@ -271,6 +271,14 @@ func plain(s string) string {
 	return strings.TrimSpace(html.UnescapeString(tagRe.ReplaceAllString(s, "")))
 }
 
+// htmlBody makes the text an HTML body that shows exactly as written: Help Scout's thread
+// bodies are HTML, so markup an agent writes (a link, an image, hidden text)
+// would otherwise reach the customer as markup.
+func htmlBody(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>")
+}
+
 func mustJSON(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
@@ -485,9 +493,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Email a reply on conversation %s (%s) to %s; it can't be unsent", cid, clip(cv.Subject, 100), strings.TrimSpace(to)),
 				Changes: []sdk.Change{{Target: "conversation " + cid, Op: "reply", After: mustJSON(map[string]any{"to": strings.TrimSpace(to), "text": clip(body, 2000)})}}}}, nil
 		}
-		path, in := "/conversations/"+cid+"/notes", map[string]any{"text": body}
+		path, in := "/conversations/"+url.PathEscape(cid)+"/notes", map[string]any{"text": htmlBody(body)}
 		if !note {
-			path, in = "/conversations/"+cid+"/reply", map[string]any{"text": body, "customer": map[string]any{"id": cv.Customer.ID}}
+			path, in = "/conversations/"+url.PathEscape(cid)+"/reply", map[string]any{"text": htmlBody(body), "customer": map[string]any{"id": cv.Customer.ID}}
 		}
 		if err := c.do(ctx, http.MethodPost, path, nil, in, nil, "conversation "+cid); err != nil {
 			return sdk.Result{}, err
@@ -528,7 +536,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				Changes: []sdk.Change{{Target: "conversation " + cid, Op: "update", Before: mustJSON(map[string]any{"status": cv.Status}), After: mustJSON(map[string]any{"status": to})}}}}, nil
 		}
 		in := map[string]any{"op": "replace", "path": "/status", "value": to}
-		if err := c.do(ctx, http.MethodPatch, "/conversations/"+cid, nil, in, nil, "conversation "+cid); err != nil {
+		if err := c.do(ctx, http.MethodPatch, "/conversations/"+url.PathEscape(cid), nil, in, nil, "conversation "+cid); err != nil {
 			return sdk.Result{}, err
 		}
 		r, err := sdk.JSON(map[string]any{"conversation": cv.ID, "from": cv.Status, "to": to})

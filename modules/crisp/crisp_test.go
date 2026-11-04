@@ -252,3 +252,22 @@ func TestCrispPlansHoldNoCustomerData(t *testing.T) {
 		}
 	}
 }
+
+func TestCrispReasonRedacted(t *testing.T) {
+	// A long credential-like reason is redacted before it's cut, so no part
+	// of it survives the clip.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"error":true,"reason":"bad key abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ","data":{}}`)
+	}))
+	t.Cleanup(srv.Close)
+	m := New()
+	m.Base, m.HTTP = srv.URL, srv.Client()
+	raw, _ := json.Marshal(map[string]any{"websiteId": website, "identifier": "secret://id", "key": "secret://key"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://id": "ident-1", "secret://key": "crkey"}), "c", raw); err != nil {
+		t.Fatal(err)
+	}
+	h := m.Health(context.Background(), "c")
+	if h.Status != "down" || strings.Contains(h.Message, "abcdefghij") || !strings.Contains(h.Message, "[redacted]") {
+		t.Fatal(h)
+	}
+}

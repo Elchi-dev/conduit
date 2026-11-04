@@ -259,6 +259,14 @@ func plain(s string) string {
 	return strings.TrimSpace(html.UnescapeString(tagRe.ReplaceAllString(s, "")))
 }
 
+// htmlBody makes the text an HTML body that shows exactly as written: FreeScout's thread
+// bodies are HTML, so markup an agent writes (a link, an image, hidden text)
+// would otherwise reach the customer as markup.
+func htmlBody(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>")
+}
+
 func mustJSON(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
@@ -467,8 +475,8 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if note {
 			typ = "note"
 		}
-		in := map[string]any{"type": typ, "text": body, "user": c.user}
-		if err := c.do(ctx, http.MethodPost, "/conversations/"+cid+"/threads", nil, in, nil, "conversation "+cid); err != nil {
+		in := map[string]any{"type": typ, "text": htmlBody(body), "user": c.user}
+		if err := c.do(ctx, http.MethodPost, "/conversations/"+url.PathEscape(cid)+"/threads", nil, in, nil, "conversation "+cid); err != nil {
 			return sdk.Result{}, err
 		}
 		added := "reply"
@@ -506,7 +514,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{Plan: &sdk.Plan{Summary: s,
 				Changes: []sdk.Change{{Target: "conversation " + cid, Op: "update", Before: mustJSON(map[string]any{"status": cv.Status}), After: mustJSON(map[string]any{"status": to})}}}}, nil
 		}
-		if err := c.do(ctx, http.MethodPut, "/conversations/"+cid, nil, map[string]any{"status": to, "byUser": c.user}, nil, "conversation "+cid); err != nil {
+		if err := c.do(ctx, http.MethodPut, "/conversations/"+url.PathEscape(cid), nil, map[string]any{"status": to, "byUser": c.user}, nil, "conversation "+cid); err != nil {
 			return sdk.Result{}, err
 		}
 		r, err := sdk.JSON(map[string]any{"conversation": cv.ID, "from": cv.Status, "to": to})

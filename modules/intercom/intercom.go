@@ -266,6 +266,14 @@ func plain(s string) string {
 	return strings.TrimSpace(html.UnescapeString(tagRe.ReplaceAllString(s, "")))
 }
 
+// htmlBody makes the text an HTML body that shows exactly as written: Intercom's
+// bodies are HTML, so markup an agent writes (a link, an image, hidden text)
+// would otherwise reach the customer as markup.
+func htmlBody(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	return "<p>" + strings.ReplaceAll(html.EscapeString(s), "\n", "<br>") + "</p>"
+}
+
 func mustJSON(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
@@ -540,7 +548,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if note {
 			kind = "note"
 		}
-		in := map[string]any{"message_type": kind, "type": "admin", "admin_id": me.ID, "body": body}
+		in := map[string]any{"message_type": kind, "type": "admin", "admin_id": me.ID, "body": htmlBody(body)}
 		if _, err := c.api.Do(ctx, http.MethodPost, "/conversations/"+url.PathEscape(cid)+"/reply", nil, in, nil); err != nil {
 			return sdk.Result{}, friendly(err, "conversation "+cid)
 		}

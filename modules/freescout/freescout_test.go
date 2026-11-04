@@ -248,3 +248,24 @@ func TestFreeScoutPlansHoldNoCustomerData(t *testing.T) {
 		}
 	}
 }
+
+func TestFreeScoutBodyEscaped(t *testing.T) {
+	m, f := setup(t, "secret://fs")
+	in := `{"conversation":42,"user":1,"text":"Hi <a href=\"https://evil.test\">refund</a> & <script>x()</script>\nbye"}`
+	for _, action := range []string{"reply", "add_note"} {
+		if _, err := invoke(m, action, in, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, w := range f.writes {
+		var got map[string]any
+		json.Unmarshal([]byte(w), &got)
+		// The user is always the configured one, whatever the input says.
+		if got["text"] != "Hi &lt;a href=&#34;https://evil.test&#34;&gt;refund&lt;/a&gt; &amp; &lt;script&gt;x()&lt;/script&gt;<br>bye" || got["user"] != float64(2) {
+			t.Fatal(w)
+		}
+	}
+	if len(f.writes) != 2 {
+		t.Fatal(f.writes)
+	}
+}

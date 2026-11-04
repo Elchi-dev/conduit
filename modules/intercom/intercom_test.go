@@ -131,14 +131,14 @@ func TestIntercomWrites(t *testing.T) {
 	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "to Jane Customer <jane@example.com>") || len(f.writes) != 0 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if _, err := invoke(m, "reply", `{"conversation":1001,"text":"Shipped today"}`, false); err != nil || f.writes[0] != `{"admin_id":"7","body":"Shipped today","message_type":"comment","type":"admin"}` {
+	if _, err := invoke(m, "reply", `{"conversation":1001,"text":"Shipped today"}`, false); err != nil || f.writes[0] != `{"admin_id":"7","body":"\u003cp\u003eShipped today\u003c/p\u003e","message_type":"comment","type":"admin"}` {
 		t.Fatalf("%v %v", err, f.writes)
 	}
 	r, err = invoke(m, "add_note", `{"conversation":1001,"text":"ask @kim"}`, true)
 	if err != nil || !strings.Contains(r.Plan.Summary, "mentions @kim") {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if r, err := invoke(m, "add_note", `{"conversation":1001,"text":"VIP"}`, false); err != nil || r.Undo != nil || f.writes[1] != `{"admin_id":"7","body":"VIP","message_type":"note","type":"admin"}` {
+	if r, err := invoke(m, "add_note", `{"conversation":1001,"text":"VIP"}`, false); err != nil || r.Undo != nil || f.writes[1] != `{"admin_id":"7","body":"\u003cp\u003eVIP\u003c/p\u003e","message_type":"note","type":"admin"}` {
 		t.Fatalf("%+v %v %v", r, err, f.writes)
 	}
 
@@ -281,5 +281,18 @@ func TestIntercomPlansHoldNoCustomerData(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestIntercomBodyEscaped(t *testing.T) {
+	m, f := setup(t, "secret://ic")
+	in := `{"conversation":1001,"text":"Hi <a href=\"https://evil.test\">refund</a> & <img src=x>\r\nbye"}`
+	if _, err := invoke(m, "reply", in, false); err != nil || len(f.writes) != 1 {
+		t.Fatalf("%v %v", err, f.writes)
+	}
+	var got map[string]string
+	json.Unmarshal([]byte(f.writes[0]), &got)
+	if got["body"] != "<p>Hi &lt;a href=&#34;https://evil.test&#34;&gt;refund&lt;/a&gt; &amp; &lt;img src=x&gt;<br>bye</p>" {
+		t.Fatal(got["body"])
 	}
 }

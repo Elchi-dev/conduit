@@ -38,6 +38,9 @@ follows redirects only within the same host and never from https to http.
 Conversation ids are numbers, states come from fixed lists, texts are
 checked (up to 20,000 characters, no control characters) and notes with a
 wildcard mention such as `@all` are refused, all before a request is made.
+Intercom bodies are HTML, so the text is sent HTML-escaped (line breaks
+kept): an agent's markup (a link, an image, hidden text) reaches the
+customer as the literal text the preview showed.
 
 **Notes.** Intercom's API can't delete conversation parts, so a note has no
 undo. Snoozed conversations whose wake-up time has passed undo to open.

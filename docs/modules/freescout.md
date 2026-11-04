@@ -39,6 +39,10 @@ a plain http(s) URL without credentials, query or `..`. Conversation,
 mailbox and user ids are numbers, statuses come from fixed lists, texts are
 checked (up to 20,000 characters, no control characters) and notes with a
 wildcard mention such as `@all` are refused, all before a request is made.
+Thread bodies are HTML, so the text is sent HTML-escaped (line breaks
+kept): an agent's markup (a link, an image, hidden text) reaches the
+customer as the literal text the preview showed. The user comes only from
+the settings; a call can't choose another.
 
 **Notes.** FreeScout's API can't delete threads, so a note has no undo.
 Marking conversations as spam isn't offered. The health check reads the

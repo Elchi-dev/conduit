@@ -256,3 +256,23 @@ func TestHelpScoutPlansHoldNoCustomerData(t *testing.T) {
 		}
 	}
 }
+
+func TestHelpScoutBodyEscaped(t *testing.T) {
+	m, f := setup(t, "secret://hs")
+	in := `{"conversation":501,"text":"Hi <a href=\"https://evil.test\">refund</a> & <span style=\"display:none\">x</span>\nbye"}`
+	for _, action := range []string{"reply", "add_note"} {
+		if _, err := invoke(m, action, in, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, w := range f.writes {
+		var got map[string]any
+		json.Unmarshal([]byte(w[strings.Index(w, " ")+1:]), &got)
+		if got["text"] != "Hi &lt;a href=&#34;https://evil.test&#34;&gt;refund&lt;/a&gt; &amp; &lt;span style=&#34;display:none&#34;&gt;x&lt;/span&gt;<br>bye" {
+			t.Fatal(w)
+		}
+	}
+	if len(f.writes) != 2 {
+		t.Fatal(f.writes)
+	}
+}

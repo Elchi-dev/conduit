@@ -22,6 +22,9 @@ recommended policies.
 | Discord | [discord.md](discord.md) | gamer, team |
 | Kubernetes | [kubernetes.md](kubernetes.md) | developer, team |
 | Proxmox VE | [proxmox.md](proxmox.md) | homelab, team |
+| Proxmox Backup Server | [proxmoxbackup.md](proxmoxbackup.md) | homelab, team |
+| Xen Orchestra | [xenorchestra.md](xenorchestra.md) | homelab, team |
+| Incus | [incus.md](incus.md) | homelab, developer, team |
 | Slack | [slack.md](slack.md) | team, developer |
 | Jira | [jira.md](jira.md) | team, developer |
 | Spotify | [spotify.md](spotify.md) | gamer |

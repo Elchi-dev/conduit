@@ -117,6 +117,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/huggingface"
 	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/incidentio"
+	"github.com/elchi-dev/conduit/modules/incus"
 	"github.com/elchi-dev/conduit/modules/infisical"
 	"github.com/elchi-dev/conduit/modules/influxdb"
 	"github.com/elchi-dev/conduit/modules/instatus"
@@ -221,6 +222,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/powerdns"
 	"github.com/elchi-dev/conduit/modules/printful"
 	"github.com/elchi-dev/conduit/modules/proxmox"
+	"github.com/elchi-dev/conduit/modules/proxmoxbackup"
 	"github.com/elchi-dev/conduit/modules/pterodactyl"
 	"github.com/elchi-dev/conduit/modules/qbittorrent"
 	"github.com/elchi-dev/conduit/modules/railway"
@@ -306,6 +308,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woocommerce"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
+	"github.com/elchi-dev/conduit/modules/xenorchestra"
 	"github.com/elchi-dev/conduit/modules/youtrack"
 	"github.com/elchi-dev/conduit/modules/youtube"
 	"github.com/elchi-dev/conduit/modules/zabbix"
@@ -349,6 +352,9 @@ func builtins(app *App) []sdk.Module {
 		discord.New(),
 		kubernetes.New(),
 		proxmox.New(),
+		proxmoxbackup.New(),
+		xenorchestra.New(),
+		incus.New(),
 		obs.New(),
 		aws.New(),
 		slack.New(),

@@ -20,8 +20,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
+	"github.com/elchi-dev/conduit/modules/grafana"
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
+	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jira"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
@@ -30,14 +32,17 @@ import (
 	"github.com/elchi-dev/conduit/modules/mastodon"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/milanote"
+	"github.com/elchi-dev/conduit/modules/n8n"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
+	"github.com/elchi-dev/conduit/modules/paperless"
 	"github.com/elchi-dev/conduit/modules/pihole"
 	"github.com/elchi-dev/conduit/modules/plex"
+	"github.com/elchi-dev/conduit/modules/portainer"
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/s3"
@@ -124,6 +129,11 @@ func builtins(app *App) []sdk.Module {
 		containerregistry.New(),
 		milanote.New(),
 		files.New(),
+		grafana.New(),
+		portainer.New(),
+		immich.New(),
+		paperless.New(),
+		n8n.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

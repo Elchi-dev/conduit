@@ -55,6 +55,11 @@ recommended policies.
 | Container registry | [containerregistry.md](containerregistry.md) | developer, homelab |
 | Milanote | [milanote.md](milanote.md) | team, developer |
 | Files and backups | [files.md](files.md) | homelab, team, developer |
+| Grafana | [grafana.md](grafana.md) | homelab, developer, team |
+| Portainer | [portainer.md](portainer.md) | homelab, developer |
+| Immich | [immich.md](immich.md) | homelab |
+| Paperless-ngx | [paperless.md](paperless.md) | homelab |
+| n8n | [n8n.md](n8n.md) | homelab, developer, team |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

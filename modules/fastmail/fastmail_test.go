@@ -20,14 +20,15 @@ import (
 const token = "fmu1-TOKEN-LEAKME"
 
 type fakeJMAP struct {
-	mu       sync.Mutex
-	srv      string
-	apiHost  string // replaces the session's API host
-	redirect string
-	requests []string
-	calls    [][]any
-	uploaded string
-	rejected bool
+	mu        sync.Mutex
+	srv       string
+	apiHost   string // replaces the session's API host
+	redirect  string
+	requests  []string
+	calls     [][]any
+	uploaded  string
+	rejected  bool
+	wildFirst bool // a wildcard identity is listed first
 }
 
 func (f *fakeJMAP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +84,9 @@ func (f *fakeJMAP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			case "Identity/get":
 				res = `{"list":[{"id":"I1","email":"me@fastmail.com","name":"Me"},{"id":"I2","email":"*@example.org"}]}`
+				if f.wildFirst {
+					res = `{"list":[{"id":"I2","email":"*@example.org"},{"id":"I1","email":"me@fastmail.com","name":"Me"}]}`
+				}
 			case "Email/import":
 				res = `{"created":{"m":{"id":"Mnew","blobId":"Gblob1"}}}`
 			case "EmailSubmission/set":
@@ -166,7 +170,9 @@ func TestSend(t *testing.T) {
 	m, f := setup(t, Config{Token: "secret://fm", From: "news@example.org"})
 	in := map[string]any{"to": []string{"kim@example.com"}, "bcc": []string{"hidden@example.com"}, "subject": "Hi", "body": "Hello"}
 	r, err := invoke(m, "send_mail", in, true)
-	if err != nil || r.Plan.Summary != `Send "Hi" to 2 recipients` || len(f.requests) != 0 {
+	// The dry run looks up the identity (to show the real From) but
+	// uploads and submits nothing.
+	if err != nil || r.Plan.Summary != `Send "Hi" to 2 recipients` || !strings.Contains(string(r.Plan.Changes[0].After), `"from":"news@example.org"`) || f.uploaded != "" || len(f.calls) != 2 {
 		t.Fatalf("%v %+v %v", err, r.Plan, f.requests)
 	}
 	r, err = invoke(m, "send_mail", in, false)
@@ -190,6 +196,17 @@ func TestSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	noLeak(t, err.Error())
+}
+
+func TestDefaultIdentitySkipsWildcard(t *testing.T) {
+	m, f := setup(t, Config{Token: "secret://fm"})
+	f.mu.Lock()
+	f.wildFirst = true
+	f.mu.Unlock()
+	r, err := invoke(m, "send_mail", map[string]any{"to": []string{"kim@example.com"}, "subject": "Hi", "body": "Hello"}, true)
+	if err != nil || !strings.Contains(string(r.Plan.Changes[0].After), `"from":"me@fastmail.com"`) {
+		t.Fatalf("%v %+v", err, r.Plan)
+	}
 }
 
 func TestInvalidInputNeverReachesServer(t *testing.T) {

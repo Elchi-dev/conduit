@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/mimemsg"
@@ -556,7 +557,8 @@ type gEvent struct {
 		Response string `json:"responseStatus"`
 		Self     bool   `json:"self"`
 	} `json:"attendees"`
-	Meet string `json:"hangoutLink"`
+	Meet       string   `json:"hangoutLink"`
+	Recurrence []string `json:"recurrence"` // set on a recurring series itself
 }
 
 type gTime struct {
@@ -652,6 +654,18 @@ func eventIn(p input, meeting bool) (start, end time.Time, attendees []string, e
 	return start, end, mimemsg.Bare(as), nil
 }
 
+// preview is the start of a long text, as the plans show it.
+func preview(s string) string {
+	if len(s) <= 4000 {
+		return s
+	}
+	s = s[:4000]
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s + "…"
+}
+
 func (c *conn) createEvent(ctx context.Context, call sdk.Call, cal string, p input) (sdk.Result, error) {
 	meeting := call.Action == "schedule_meeting"
 	start, end, attendees, err := eventIn(p, meeting)
@@ -663,6 +677,10 @@ func (c *conn) createEvent(ctx context.Context, call sdk.Call, cal string, p inp
 		after := map[string]any{"calendar": cal, "subject": subject, "start": start.Format(time.RFC3339), "end": end.Format(time.RFC3339)}
 		if p.Location != "" {
 			after["location"] = p.Location
+		}
+		if p.Body != "" {
+			// The description goes out with every invitation.
+			after["body"] = preview(p.Body)
 		}
 		summary := fmt.Sprintf("Add %q on %s", subject, start.Format("Mon 2 Jan 15:04 MST"))
 		if meeting {
@@ -731,8 +749,14 @@ func (c *conn) deleteEvent(ctx context.Context, call sdk.Call, cal, id string) (
 	}
 	if call.DryRun {
 		// Not a sensitive action: the plan names no title or attendee.
-		b, _ := json.Marshal(map[string]any{"start": e.Start.String(), "end": e.End.String(), "attendees": others})
+		before := map[string]any{"start": e.Start.String(), "end": e.End.String(), "attendees": others}
 		summary := "Delete the event starting " + e.Start.String()
+		if len(e.Recurrence) > 0 {
+			// Deleting the series itself deletes every occurrence.
+			before["series"] = true
+			summary = "Delete the whole recurring series starting " + e.Start.String()
+		}
+		b, _ := json.Marshal(before)
 		if others > 0 {
 			summary += fmt.Sprintf(" (%d attendees get a cancellation)", others)
 		}

@@ -27,8 +27,8 @@ default).
 | `send_mail` | destructive | A plain-text message to `to`, `cc` and `bcc` (50 recipients at most). The preview shows recipients, subject and body. Sensitive. |
 | `events` | read | Events in the next `days` (7 by default, up to 60): title, start, end, location, organizer, attendees with their answers, Meet link. Sensitive. |
 | `create_event` | write | A private event without attendees; nobody is notified. Undo deletes it. Sensitive. |
-| `schedule_meeting` | destructive | An event with `attendees`, each emailed an invitation; `online` adds a Google Meet link. Undo deletes it, which sends a cancellation. Sensitive. |
-| `delete_event` | destructive | Deletes an event and notifies its attendees. The preview shows its time and attendee count, never the title or names. An event that's already gone is "nothing to change". |
+| `schedule_meeting` | destructive | An event with `attendees`, each emailed an invitation; `online` adds a Google Meet link. The preview shows the attendees and the description they'll get. Undo deletes it, which sends a cancellation. Sensitive. |
+| `delete_event` | destructive | Deletes an event and notifies its attendees. The preview shows its time and attendee count, never the title or names, and says when the id is a recurring series itself (deleting it deletes every occurrence). An event that's already gone is "nothing to change". |
 | `files` | read | Drive files, newest first: name, type, size, modified, link. Filter by `folder` id and by words in the `name`. Sensitive. |
 
 Every action that returns mail, events or file names is sensitive, so the
@@ -41,8 +41,10 @@ they expire, and a refused one is dropped and fetched again once. The
 client won't follow a redirect to another host or from https to http, and
 errors never include tokens or Google's error description. Ids and
 calendar names are checked and escaped, and Drive search terms are quoted,
-before any request. Subjects and addresses with line breaks are refused,
-so nothing can add a header; the message is built as MIME, and Gmail drops
+before any request. Subjects and addresses with line breaks, control characters,
+Unicode line separators or bidirectional overrides are refused, so nothing
+can add a header; an address must be a plain `local@domain` with one `@`,
+and a subject containing `=?` is encoded whole; the message is built as MIME, and Gmail drops
 the Bcc header on delivery.
 
 ## Notes

@@ -49,7 +49,9 @@ var codeRe = regexp.MustCompile(`^[a-z_]{1,64}$`)
 
 // Exchange posts form to tokenURL and reads the access token. When user is
 // set, the client authenticates with HTTP Basic (user, pass) instead of
-// form fields.
+// form fields. A redirect to another host (or from https to http) isn't
+// followed, whatever client is passed: a 307 would repost the form, with
+// its secret, there.
 func Exchange(ctx context.Context, client *http.Client, tokenURL string, form url.Values, user, pass string) (Grant, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -61,7 +63,7 @@ func Exchange(ctx context.Context, client *http.Client, tokenURL string, form ur
 	if user != "" {
 		req.SetBasicAuth(user, pass)
 	}
-	res, err := client.Do(req)
+	res, err := rest.SameHostOnly(client).Do(req)
 	if err != nil {
 		return Grant{}, rest.TransportError(err)
 	}
@@ -89,6 +91,10 @@ func Exchange(ctx context.Context, client *http.Client, tokenURL string, form ur
 	n, _ := t.ExpiresIn.Int64()
 	return Grant{Access: t.Access, ExpiresIn: int(n), Refresh: t.Refresh}, nil
 }
+
+// maxLife is the longest an access token is kept, in seconds, whatever
+// lifetime the endpoint names.
+const maxLife = 24 * 3600
 
 // Cache holds one access token in memory.
 type Cache struct {
@@ -125,6 +131,9 @@ func (c *Cache) Get(ctx context.Context, fetch func(context.Context) (Grant, err
 	}
 	if g.ExpiresIn <= 0 {
 		g.ExpiresIn = 3600
+	}
+	if g.ExpiresIn > maxLife {
+		g.ExpiresIn = maxLife
 	}
 	c.access, c.expires = g.Access, c.now().Add(time.Duration(g.ExpiresIn)*time.Second)
 	return c.access, nil

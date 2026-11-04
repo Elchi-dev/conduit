@@ -8,6 +8,7 @@ package microsoft365
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/mention"
@@ -45,8 +47,9 @@ type conn struct {
 	tokenURL string
 	tok      oauth.Cache
 
-	mu      sync.Mutex
-	rotated string // the newest refresh token Microsoft sent, in memory only
+	mu         sync.Mutex
+	rotated    string   // the newest refresh token Microsoft sent, in memory only
+	rotatedFor [32]byte // hash of the stored refresh token it descends from
 }
 
 // Module implements sdk.Module.
@@ -185,23 +188,28 @@ func (c *conn) token(ctx context.Context) (string, error) {
 			g, err := oauth.Exchange(ctx, c.http, c.tokenURL, form, "", "")
 			return g, explainToken(err)
 		}
-		c.mu.Lock()
-		refresh := c.rotated
-		c.mu.Unlock()
 		stored, err := c.host.Secret(ctx, c.cfg.RefreshToken)
 		if err != nil {
 			return oauth.Grant{}, err
 		}
-		if refresh == "" {
-			refresh = strings.TrimSpace(stored)
+		stored = strings.TrimSpace(stored)
+		// A rotated token is used only while the vault still holds the token
+		// it came from: one replaced there (another user, a new consent)
+		// takes over at once.
+		sum := sha256.Sum256([]byte(stored))
+		refresh := stored
+		c.mu.Lock()
+		if c.rotated != "" && c.rotatedFor == sum {
+			refresh = c.rotated
 		}
+		c.mu.Unlock()
 		form.Set("grant_type", "refresh_token")
 		form.Set("scope", graphScope+" offline_access")
 		form.Set("refresh_token", refresh)
 		g, err := oauth.Exchange(ctx, c.http, c.tokenURL, form, "", "")
-		if err != nil && refresh != strings.TrimSpace(stored) {
+		if err != nil && refresh != stored {
 			// The rotated token was refused: fall back to the stored one.
-			form.Set("refresh_token", strings.TrimSpace(stored))
+			form.Set("refresh_token", stored)
 			g, err = oauth.Exchange(ctx, c.http, c.tokenURL, form, "", "")
 		}
 		if err != nil {
@@ -209,7 +217,7 @@ func (c *conn) token(ctx context.Context) (string, error) {
 		}
 		if g.Refresh != "" {
 			c.mu.Lock()
-			c.rotated = g.Refresh
+			c.rotated, c.rotatedFor = g.Refresh, sum
 			c.mu.Unlock()
 		}
 		return g, nil
@@ -507,10 +515,11 @@ type graphEvent struct {
 			Response string `json:"response"`
 		} `json:"status"`
 	} `json:"attendees"`
-	Online      bool `json:"isOnlineMeeting"`
-	Cancelled   bool `json:"isCancelled"`
-	AllDay      bool `json:"isAllDay"`
-	IsOrganizer bool `json:"isOrganizer"`
+	Online      bool   `json:"isOnlineMeeting"`
+	Cancelled   bool   `json:"isCancelled"`
+	AllDay      bool   `json:"isAllDay"`
+	IsOrganizer bool   `json:"isOrganizer"`
+	Type        string `json:"type"` // singleInstance, occurrence, exception, seriesMaster
 }
 
 type when struct {
@@ -611,6 +620,18 @@ func eventIn(p input, meeting bool) (start, end time.Time, attendees []string, e
 	return start, end, mimemsg.Bare(as), nil
 }
 
+// preview is the start of a long text, as the plans show it.
+func preview(s string) string {
+	if len(s) <= 4000 {
+		return s
+	}
+	s = s[:4000]
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s + "…"
+}
+
 func (c *conn) createEvent(ctx context.Context, call sdk.Call, p input) (sdk.Result, error) {
 	meeting := call.Action == "schedule_meeting"
 	start, end, attendees, err := eventIn(p, meeting)
@@ -622,6 +643,10 @@ func (c *conn) createEvent(ctx context.Context, call sdk.Call, p input) (sdk.Res
 		after := map[string]any{"subject": subject, "start": start.Format(time.RFC3339), "end": end.Format(time.RFC3339)}
 		if p.Location != "" {
 			after["location"] = p.Location
+		}
+		if p.Body != "" {
+			// The description goes out with every invitation.
+			after["body"] = preview(p.Body)
 		}
 		summary := fmt.Sprintf("Add %q on %s", subject, start.Format("Mon 2 Jan 15:04 MST"))
 		if meeting {
@@ -672,7 +697,7 @@ func (c *conn) createEvent(ctx context.Context, call sdk.Call, p input) (sdk.Res
 func (c *conn) deleteEvent(ctx context.Context, call sdk.Call, id string) (sdk.Result, error) {
 	var e graphEvent
 	path := c.me() + "/events/" + url.PathEscape(id)
-	if err := c.do(ctx, http.MethodGet, path, url.Values{"$select": {"id,start,end,attendees,isOrganizer"}}, nil, &e); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, url.Values{"$select": {"id,start,end,attendees,isOrganizer,type"}}, nil, &e); err != nil {
 		if rest.IsStatus(err, http.StatusNotFound) {
 			return sdk.JSON(map[string]any{"id": id, "deleted": true, "note": "nothing to change"})
 		}
@@ -680,8 +705,14 @@ func (c *conn) deleteEvent(ctx context.Context, call sdk.Call, id string) (sdk.R
 	}
 	if call.DryRun {
 		// Not a sensitive action: the plan names no subject or attendee.
-		b, _ := json.Marshal(map[string]any{"start": e.Start.rfc3339(), "end": e.End.rfc3339(), "attendees": len(e.Attendees)})
+		before := map[string]any{"start": e.Start.rfc3339(), "end": e.End.rfc3339(), "attendees": len(e.Attendees)}
 		summary := "Delete the event starting " + e.Start.rfc3339()
+		if e.Type == "seriesMaster" {
+			// Deleting the series' master deletes every occurrence.
+			before["series"] = true
+			summary = "Delete the whole recurring series starting " + e.Start.rfc3339()
+		}
+		b, _ := json.Marshal(before)
 		if len(e.Attendees) > 0 && e.IsOrganizer {
 			summary += fmt.Sprintf(" (%d attendees get a cancellation)", len(e.Attendees))
 		}

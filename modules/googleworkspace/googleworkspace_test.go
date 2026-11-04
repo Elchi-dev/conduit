@@ -117,6 +117,8 @@ func (f *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"id":"evnew1","status":"confirmed","summary":"Focus","start":{"dateTime":"2026-11-05T09:00:00Z"},"end":{"dateTime":"2026-11-05T10:00:00Z"},"attendees":[{"email":"kim@example.com"},{"email":"alex@example.com","self":true}]}`)
 	case p == "/calendar/v3/calendars/primary/events/evnew1" && r.Method == "DELETE":
 		w.WriteHeader(204)
+	case p == "/calendar/v3/calendars/primary/events/evseries" && r.Method == "GET":
+		io.WriteString(w, `{"id":"evseries","status":"confirmed","summary":"Weekly","recurrence":["RRULE:FREQ=WEEKLY"],"start":{"dateTime":"2026-11-05T09:00:00Z"},"end":{"dateTime":"2026-11-05T10:00:00Z"}}`)
 	case p == "/calendar/v3/calendars/primary/events/evold" && r.Method == "GET":
 		io.WriteString(w, `{"id":"evold","status":"cancelled"}`)
 	case p == "/drive/v3/files":
@@ -371,5 +373,19 @@ func TestCrossHostRedirectRefused(t *testing.T) {
 	}
 	if hits != 0 {
 		t.Fatal("followed")
+	}
+}
+
+func TestEventPreviews(t *testing.T) {
+	m, _ := setup(t, oauthCfg)
+	in := map[string]any{"subject": "Review", "start": "2026-11-05T10:00:00+01:00", "end": "2026-11-05T11:00:00+01:00",
+		"attendees": []string{"kim@example.com"}, "body": "Agenda: the numbers"}
+	r, err := call(m, "schedule_meeting", in, true)
+	if err != nil || !strings.Contains(string(r.Plan.Changes[0].After), "Agenda: the numbers") {
+		t.Fatalf("%v %+v", err, r.Plan)
+	}
+	p, err := call(m, "delete_event", map[string]any{"id": "evseries"}, true)
+	if err != nil || !strings.Contains(p.Plan.Summary, "whole recurring series") || strings.Contains(p.Plan.Summary, "Weekly") {
+		t.Fatalf("%v %+v", err, p.Plan)
 	}
 }

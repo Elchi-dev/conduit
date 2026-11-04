@@ -8,6 +8,7 @@ package mimemsg
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -42,13 +43,38 @@ type Message struct {
 	OmitBcc bool
 }
 
+// control reports a line break, a control character, a Unicode line or
+// paragraph separator, or a bidirectional override (which can make a
+// preview read differently from what the recipient sees).
 func control(s string) bool {
 	for _, r := range s {
-		if r == '\r' || r == '\n' || (unicode.IsControl(r) && r != '\t') {
+		if r == '\r' || r == '\n' || (unicode.IsControl(r) && r != '\t') || unicode.In(r, unicode.Zl, unicode.Zp) || bidi(r) {
 			return true
 		}
 	}
 	return false
+}
+
+func bidi(r rune) bool {
+	return r == 0x200e || r == 0x200f || r == 0x061c || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+}
+
+// plainAddress is an addr-spec with exactly one @ and no spaces, quotes,
+// brackets, format characters or other characters that need quoting, so
+// the address a preview shows is the one the provider delivers to (a
+// quoted local part like "a@b"@c reads back as a@b@c).
+func plainAddress(s string) bool {
+	at := strings.IndexByte(s, '@')
+	if at <= 0 || at == len(s)-1 || strings.Count(s, "@") != 1 || len(s) > 320 {
+		return false
+	}
+	for _, r := range s {
+		if r <= ' ' || r == 0x7f || unicode.IsSpace(r) || unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Cf) ||
+			strings.ContainsRune(`"()<>,;:\[]`, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // Addresses checks a list of addresses and returns them as written by
@@ -65,7 +91,7 @@ func Addresses(list []string, field string) ([]*mail.Address, error) {
 			return nil, fmt.Errorf("an address in %s has a line break or control character", field)
 		}
 		a, err := mail.ParseAddress(s)
-		if err != nil || control(a.Name) || !strings.Contains(a.Address, "@") {
+		if err != nil || control(a.Name) || !plainAddress(a.Address) {
 			return nil, fmt.Errorf("%q in %s isn't an email address", s, field)
 		}
 		out = append(out, a)
@@ -182,7 +208,7 @@ func (c *Checked) Build(now time.Time) []byte {
 	if !c.omitBcc {
 		h("Bcc", list(c.Bcc))
 	}
-	h("Subject", mime.QEncoding.Encode("utf-8", c.Subject))
+	h("Subject", encodeSubject(c.Subject))
 	h("Date", now.Format(time.RFC1123Z))
 	var id [12]byte
 	_, _ = rand.Read(id[:])
@@ -196,6 +222,28 @@ func (c *Checked) Build(now time.Time) []byte {
 	_, _ = w.Write([]byte(strings.ReplaceAll(text, "\n", "\r\n")))
 	_ = w.Close()
 	return b.Bytes()
+}
+
+// encodeSubject encodes a subject for its header. A subject that looks like
+// it already holds an encoded word ("=?…?=") is encoded as a whole, so the
+// recipient reads the text the preview showed and not what it decodes to.
+func encodeSubject(s string) string {
+	if !strings.Contains(s, "=?") {
+		return mime.QEncoding.Encode("utf-8", s)
+	}
+	var words []string
+	for len(s) > 0 {
+		n := len(s)
+		if n > 45 {
+			n = 45
+			for n > 0 && !utf8.RuneStart(s[n]) {
+				n--
+			}
+		}
+		words = append(words, "=?utf-8?b?"+base64.StdEncoding.EncodeToString([]byte(s[:n]))+"?=")
+		s = s[n:]
+	}
+	return strings.Join(words, "\r\n ")
 }
 
 // Preview is what a dry run shows of a message to send (the send actions

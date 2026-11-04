@@ -6,8 +6,8 @@ matching mail, reading messages and sending.
 **Setup.** In Fastmail, open Settings, Privacy & Security, Manage API
 tokens, and create a token with **Email** access (read-only is enough to
 read; add **Email submission** to send). Store it in the vault. Optionally
-set `from` to one of your sending identities; otherwise the first one is
-used. A wildcard identity (`*@example.com`) lets `from` be any address at
+set `from` to one of your sending identities; otherwise the first one
+that isn't a wildcard is used. A wildcard identity (`*@example.com`) lets `from` be any address at
 that domain.
 
 | Action | Risk | Notes |
@@ -15,7 +15,7 @@ that domain.
 | `mailboxes` | read | Every mailbox with its role (inbox, sent, …), parent, message and unread counts. |
 | `mail_list` | read | Newest messages in a mailbox (a role such as `inbox` or a mailbox id), optionally only unread or matching `text`: sender, subject, preview, received, unread, attachments. Sensitive. |
 | `mail_read` | read | Sender, recipients, subject, date, the text (HTML reduced to text, never rendered) and attachment names. Doesn't mark it read. Sensitive. |
-| `send_mail` | destructive | A plain-text message to `to`, `cc` and `bcc` (50 recipients at most), sent from your identity and filed in Sent. The preview shows recipients, subject and body. Sensitive. |
+| `send_mail` | destructive | A plain-text message to `to`, `cc` and `bcc` (50 recipients at most), sent from your identity and filed in Sent. The preview shows the From address the message will carry (the dry run looks up your identities), recipients, subject and body. Sensitive. |
 
 **How sending works.** The module builds the message as MIME, uploads it,
 imports it into Drafts and submits it in one JMAP request; on success
@@ -27,8 +27,10 @@ goes in the `Authorization` header. The JMAP session's API and upload
 addresses must be on the same host as the session itself, and the client
 won't follow a redirect to another host or from https to http, so the
 token can't be sent elsewhere. Ids are checked before any request.
-Subjects and addresses with line breaks are refused, so nothing can add a
-header, and errors name only the JMAP error type.
+Subjects and addresses with line breaks, control characters, Unicode line
+separators or bidirectional overrides are refused, and addresses must be a
+plain `local@domain` with one `@`, so nothing can add a header and the
+envelope matches the headers, and errors name only the JMAP error type.
 
 ## Notes
 

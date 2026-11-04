@@ -24,8 +24,8 @@ vault. The module signs in one of two ways:
 | `send_mail` | destructive | A plain-text message to `to`, `cc` and `bcc` (50 recipients at most). The preview shows the recipients, subject and body. Sensitive. |
 | `events` | read | Events in the next `days` (7 by default, up to 60) in UTC: subject, start, end, location, organizer, attendees with their answers. Sensitive. |
 | `create_event` | write | A private event without attendees; nobody is notified. Undo deletes it. Sensitive. |
-| `schedule_meeting` | destructive | An event with `attendees`, who each get an invitation; `online` adds a Teams link. Undo deletes it, which sends a cancellation. Sensitive. |
-| `delete_event` | destructive | Deletes an event; for a meeting you organize, attendees get a cancellation. The preview shows its time and attendee count, never the subject or names. An event that's already gone is "nothing to change". |
+| `schedule_meeting` | destructive | An event with `attendees`, who each get an invitation; `online` adds a Teams link. The preview shows the attendees and the description they'll get. Undo deletes it, which sends a cancellation. Sensitive. |
+| `delete_event` | destructive | Deletes an event; for a meeting you organize, attendees get a cancellation. The preview shows its time and attendee count, never the subject or names, and says when the id is a recurring series' master (deleting it deletes every occurrence). An event that's already gone is "nothing to change". |
 | `post_channel_message` | destructive | Plain text to a channel (`team` id and `channel` id) as the signed-in user. The preview names who's mentioned. Sensitive. |
 | `files` | read | Files and folders in a OneDrive folder (`path`, empty for the root): name, size, modified, type and link. Sensitive. |
 
@@ -36,11 +36,16 @@ audit log, approvals and events keep only its shape.
 Access tokens live in memory per instance until shortly before they
 expire; a refused token is dropped and fetched again once. When Microsoft
 rotates the refresh token, the new one is kept in memory and the stored
-one stays the fallback. The client won't follow a redirect to another host
+one stays the fallback; once the stored token is replaced in the vault,
+the rotated one is no longer used. Token requests never follow a redirect
+to another host. The client won't follow a redirect to another host
 or from https to http, and errors never include tokens or the token
 endpoint's description. Ids, folders and paths are checked and escaped
-before they reach a URL. Subjects and addresses with line breaks are
-refused, so nothing can add a header; the message is built as MIME and
+before they reach a URL. Subjects and addresses with line breaks, control characters,
+Unicode line separators or bidirectional overrides are refused, so nothing
+can add a header or make the preview read differently; an address must be
+a plain `local@domain` with one `@` (no quoted local part), and a subject
+that contains `=?` is encoded whole so it isn't decoded as an encoded word; the message is built as MIME and
 sent through `sendMail`. Messages with `@channel`, `@team`, `@everyone` or
 `<at>` tags are refused rather than notifying a whole channel.
 

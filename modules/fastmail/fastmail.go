@@ -548,21 +548,13 @@ func (c *conn) read(ctx context.Context, id string) (sdk.Result, error) {
 	return sdk.JSON(out)
 }
 
-func (c *conn) send(ctx context.Context, sc sdk.Call, p input) (sdk.Result, error) {
-	// Bcc recipients go in the envelope only.
-	msg, err := mimemsg.Message{From: c.cfg.From, To: p.To, Cc: p.Cc, Bcc: p.Bcc, Subject: p.Subject, Text: p.Body, OmitBcc: true}.Check()
-	if err != nil {
-		return sdk.Result{}, err
-	}
-	if sc.DryRun {
-		b, _ := json.Marshal(msg.Preview())
-		return sdk.Result{Plan: &sdk.Plan{Summary: msg.Summary(), Changes: []sdk.Change{{Target: fmt.Sprintf("%d recipients", msg.Count()), Op: "send", After: b}}}}, nil
-	}
+// sender finds the identity to send as and the Drafts and Sent mailboxes.
+func (c *conn) sender(ctx context.Context) (identity, from string, drafts, sent *mailbox, err error) {
 	res, err := c.jmap(ctx, []string{capMail, capSubmission},
 		call{"Identity/get", map[string]any{"ids": nil, "properties": []string{"id", "email", "name"}}},
 		call{"Mailbox/get", map[string]any{"ids": nil, "properties": []string{"id", "role"}}})
 	if err != nil {
-		return sdk.Result{}, err
+		return "", "", nil, nil, err
 	}
 	var ids struct {
 		List []struct {
@@ -575,34 +567,53 @@ func (c *conn) send(ctx context.Context, sc sdk.Call, p input) (sdk.Result, erro
 		List []mailbox `json:"list"`
 	}
 	if json.Unmarshal(res[0], &ids) != nil || json.Unmarshal(res[1], &boxes) != nil {
-		return sdk.Result{}, errors.New("unexpected answer from Fastmail")
+		return "", "", nil, nil, errors.New("unexpected answer from Fastmail")
 	}
-	identity, from := "", ""
+	want := strings.ToLower(c.cfg.From)
 	for _, x := range ids.List {
 		e := strings.ToLower(x.Email)
-		want := strings.ToLower(c.cfg.From)
+		wild := strings.HasPrefix(e, "*@")
 		switch {
-		case want == "" && identity == "":
+		case want == "" && identity == "" && !wild:
+			// A wildcard identity (*@domain) has no address of its own.
 			identity, from = x.ID, x.Email
 		case want != "" && e == want:
 			identity, from = x.ID, x.Email
-		case want != "" && identity == "" && strings.HasPrefix(e, "*@") && strings.HasSuffix(want, e[1:]):
+		case want != "" && identity == "" && wild && strings.HasSuffix(want, e[1:]):
 			identity, from = x.ID, c.cfg.From
 		}
 	}
 	if !idRe.MatchString(identity) {
 		if c.cfg.From != "" {
-			return sdk.Result{}, fmt.Errorf("%s isn't one of your sending identities", c.cfg.From)
+			return "", "", nil, nil, fmt.Errorf("%s isn't one of your sending identities", c.cfg.From)
 		}
-		return sdk.Result{}, errors.New("the account has no sending identity")
+		return "", "", nil, nil, errors.New("the account has no sending identity (set from to an address of a wildcard identity)")
 	}
-	drafts, sent := byRole(boxes.List, "drafts"), byRole(boxes.List, "sent")
+	drafts, sent = byRole(boxes.List, "drafts"), byRole(boxes.List, "sent")
 	if drafts == nil || sent == nil || !idRe.MatchString(drafts.ID) || !idRe.MatchString(sent.ID) {
-		return sdk.Result{}, errors.New("the account has no Drafts or Sent mailbox")
+		return "", "", nil, nil, errors.New("the account has no Drafts or Sent mailbox")
 	}
+	return identity, from, drafts, sent, nil
+}
+
+func (c *conn) send(ctx context.Context, sc sdk.Call, p input) (sdk.Result, error) {
+	// Checked before anything is asked of Fastmail.
+	if _, err := (mimemsg.Message{From: c.cfg.From, To: p.To, Cc: p.Cc, Bcc: p.Bcc, Subject: p.Subject, Text: p.Body, OmitBcc: true}).Check(); err != nil {
+		return sdk.Result{}, err
+	}
+	identity, from, drafts, sent, err := c.sender(ctx)
+	if err != nil {
+		return sdk.Result{}, err
+	}
+	// Bcc recipients go in the envelope only. The preview shows the
+	// address the message goes out from.
 	msg2, err := mimemsg.Message{From: from, To: p.To, Cc: p.Cc, Bcc: p.Bcc, Subject: p.Subject, Text: p.Body, OmitBcc: true}.Check()
 	if err != nil {
 		return sdk.Result{}, err
+	}
+	if sc.DryRun {
+		b, _ := json.Marshal(msg2.Preview())
+		return sdk.Result{Plan: &sdk.Plan{Summary: msg2.Summary(), Changes: []sdk.Change{{Target: fmt.Sprintf("%d recipients", msg2.Count()), Op: "send", After: b}}}}, nil
 	}
 	blob, err := c.upload(ctx, msg2.Build(time.Now()))
 	if err != nil {
@@ -612,7 +623,7 @@ func (c *conn) send(ctx context.Context, sc sdk.Call, p input) (sdk.Result, erro
 	for _, a := range msg2.Recipients() {
 		rcpt = append(rcpt, map[string]string{"email": a})
 	}
-	res, err = c.jmap(ctx, []string{capMail, capSubmission},
+	res, err := c.jmap(ctx, []string{capMail, capSubmission},
 		call{"Email/import", map[string]any{"emails": map[string]any{"m": map[string]any{"blobId": blob,
 			"mailboxIds": map[string]bool{drafts.ID: true}, "keywords": map[string]bool{"$draft": true, "$seen": true}}}}},
 		call{"EmailSubmission/set", map[string]any{

@@ -76,7 +76,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"path":{"type":"string","description":"Only under this folder"},"limit":{"type":"integer","default":50,"maximum":100}}}`)},
 			{Name: "metadata", Title: "File details", Description: "A file's or folder's name, path, id, size, modified time and content hash.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["path"],"properties":{` + path + `}}`)},
-			{Name: "create_shared_link", Title: "Create a shared link", Description: "Makes a link anyone who has it can open (view only). If the file already has one, that one is returned. Undo revokes the file's links.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true, Sensitive: true,
+			{Name: "create_shared_link", Title: "Create a shared link", Description: "Makes a view-only link with the account's default audience: anyone who has it, unless a Dropbox team's policy limits links to members (the result names the audience). If the file already has one, that one is returned. Undo revokes every link to the file.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["path"],"properties":{` + path + `,"expires":{"type":"string","description":"RFC 3339 expiry (paid plans)"}}}`)},
 			{Name: "revoke_shared_link", Title: "Revoke shared links", Description: "Revokes a shared link, or every link to a file (by its id). People with the link can't open it any more.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"url":{"type":"string","description":"The link to revoke"},"id":{"type":"string","description":"Or a file id (id:…): revoke all its links"}}}`)},
@@ -129,10 +129,13 @@ func (c *conn) token(ctx context.Context) (string, error) {
 			c.cfg.AppKey, strings.TrimSpace(secret))
 		var e *oauth.Error
 		if errors.As(err, &e) {
-			if e.Code == "invalid_grant" {
+			switch e.Code {
+			case "invalid_grant":
 				return g, errors.New("Dropbox refused the refresh token (revoked, or issued to another app); sign in again for a new one")
+			case "invalid_client", "unauthorized_client":
+				return g, errors.New("Dropbox refused the app key or secret")
 			}
-			return g, errors.New("Dropbox refused the app key or secret")
+			return g, fmt.Errorf("Dropbox didn't issue a token: %v", e)
 		}
 		return g, err
 	})
@@ -411,11 +414,42 @@ func (c *conn) search(ctx context.Context, q, path string, n int) (sdk.Result, e
 }
 
 type link struct {
-	URL     string `json:"url"`
-	Name    string `json:"name"`
-	Path    string `json:"path_lower"`
-	ID      string `json:"id"`
-	Expires string `json:"expires"`
+	URL         string `json:"url"`
+	Name        string `json:"name"`
+	Path        string `json:"path_lower"`
+	ID          string `json:"id"`
+	Expires     string `json:"expires"`
+	Permissions struct {
+		Audience struct {
+			Tag string `json:".tag"`
+		} `json:"effective_audience"`
+		Visibility struct {
+			Tag string `json:".tag"`
+		} `json:"resolved_visibility"`
+		Access struct {
+			Tag string `json:".tag"`
+		} `json:"link_access_level"`
+	} `json:"link_permissions"`
+}
+
+var tagRe = regexp.MustCompile(`^[a-z_]{1,40}$`)
+
+// row is what the module shows of a link: who can open it (public,
+// team, password, no_one…) as Dropbox resolved it, since a team's policy
+// can differ from what a personal account gets.
+func (l link) row() map[string]any {
+	r := map[string]any{"url": l.URL, "name": l.Name, "id": l.ID, "expires": l.Expires}
+	aud := l.Permissions.Audience.Tag
+	if aud == "" {
+		aud = l.Permissions.Visibility.Tag
+	}
+	if tagRe.MatchString(aud) {
+		r["audience"] = aud
+	}
+	if a := l.Permissions.Access.Tag; tagRe.MatchString(a) {
+		r["access"] = a
+	}
+	return r
 }
 
 func (c *conn) links(ctx context.Context, path string) ([]link, error) {
@@ -438,16 +472,24 @@ func (c *conn) share(ctx context.Context, call sdk.Call, path, exp string) (sdk.
 		return sdk.Result{}, err
 	}
 	if len(existing) > 0 {
-		l := existing[0]
-		return sdk.JSON(map[string]any{"url": l.URL, "name": l.Name, "id": l.ID, "expires": l.Expires, "note": "nothing to change: the file already has a shared link"})
+		r := existing[0].row()
+		r["note"] = "nothing to change: the file already has a shared link"
+		if exp != "" {
+			r["note"] = "nothing to change: the file already has a shared link (its own expiry stays; the one asked for isn't applied)"
+		}
+		return sdk.JSON(r)
 	}
 	if call.DryRun {
-		after := map[string]any{"name": e.Name, "path": e.Path, "type": e.Tag, "access": "anyone with the link can view"}
+		// Dropbox applies the account's default: anyone with the link on a
+		// personal account; a team's sharing policy may make it team-only
+		// (the result says which it got).
+		after := map[string]any{"name": e.Name, "path": e.Path, "type": e.Tag, "access": "view only",
+			"audience": "the account's default: anyone with the link (a Dropbox team's policy may limit it to members)"}
 		if exp != "" {
 			after["expires"] = exp
 		}
 		b, _ := json.Marshal(after)
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Create a link anyone can open to %s", e.Path), Changes: []sdk.Change{{Target: e.Path, Op: "share", After: b}}}}, nil
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Create a view-only shared link to %s (the account's default audience, usually anyone with the link)", e.Path), Changes: []sdk.Change{{Target: e.Path, Op: "share", After: b}}}}, nil
 	}
 	args := map[string]any{"path": path}
 	if exp != "" {
@@ -457,7 +499,7 @@ func (c *conn) share(ctx context.Context, call sdk.Call, path, exp string) (sdk.
 	if err := c.rpc(ctx, "sharing/create_shared_link_with_settings", args, &l); err != nil {
 		return sdk.Result{}, err
 	}
-	res, err := sdk.JSON(map[string]any{"url": l.URL, "name": l.Name, "id": l.ID, "expires": l.Expires})
+	res, err := sdk.JSON(l.row())
 	id := l.ID
 	if id == "" {
 		id = e.ID

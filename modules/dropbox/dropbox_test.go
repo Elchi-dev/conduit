@@ -94,7 +94,7 @@ func (f *fakeDropbox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "/2/sharing/create_shared_link_with_settings":
 		f.links["id:abc123"] = "https://www.dropbox.com/scl/fi/xyz/report.pdf?rlkey=SHARED&dl=0"
-		fmt.Fprintf(w, `{".tag":"file","url":%q,"name":"report.pdf","id":"id:abc123"}`, f.links["id:abc123"])
+		fmt.Fprintf(w, `{".tag":"file","url":%q,"name":"report.pdf","id":"id:abc123","link_permissions":{"resolved_visibility":{".tag":"team_only"},"effective_audience":{".tag":"team"},"link_access_level":{".tag":"viewer"}}}`, f.links["id:abc123"])
 	case "/2/sharing/revoke_shared_link":
 		if a["url"] != f.links["id:abc123"] {
 			conflict("shared_link_not_found/")
@@ -210,7 +210,7 @@ func TestBadCredentials(t *testing.T) {
 func TestSharedLinkAndUndo(t *testing.T) {
 	m, f := setup(t, "secret://as")
 	r, err := invoke(m, "create_shared_link", map[string]any{"path": "/Docs/report.pdf"}, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "/Docs/report.pdf") || len(f.links) != 0 {
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "/Docs/report.pdf") || !strings.Contains(string(r.Plan.Changes[0].After), "team's policy") || len(f.links) != 0 {
 		t.Fatalf("%v %+v", err, r.Plan)
 	}
 	r, err = invoke(m, "create_shared_link", map[string]any{"path": "/Docs/report.pdf"}, false)
@@ -219,6 +219,10 @@ func TestSharedLinkAndUndo(t *testing.T) {
 	}
 	if r.Undo == nil || r.Undo.Action != "revoke_shared_link" || string(r.Undo.Input) != `{"id":"id:abc123"}` {
 		t.Fatalf("%+v", r.Undo)
+	}
+	// The result names the audience Dropbox gave the link (a team's policy).
+	if !strings.Contains(string(r.Output), `"audience":"team"`) || !strings.Contains(string(r.Output), `"access":"viewer"`) {
+		t.Fatal(string(r.Output))
 	}
 	// Again: nothing to change, and no undo for a link it didn't make.
 	r, err = invoke(m, "create_shared_link", map[string]any{"path": "/Docs/report.pdf"}, false)

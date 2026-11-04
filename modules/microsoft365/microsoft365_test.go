@@ -36,6 +36,7 @@ type fakeGraph struct {
 	lastBody  map[string]any
 	redirect  string
 	badSecret bool
+	series    bool // the event is a series master
 }
 
 func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +93,8 @@ func (f *fakeGraph) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"value":[{"id":"EV1","subject":"Standup","start":{"dateTime":"2026-11-05T09:00:00.0000000","timeZone":"UTC"},"end":{"dateTime":"2026-11-05T09:15:00.0000000","timeZone":"UTC"},"attendees":[{"emailAddress":{"address":"kim@example.com"},"status":{"response":"accepted"}}]}]}`)
 	case r.Method == "POST" && strings.HasSuffix(p, "/events"):
 		io.WriteString(w, `{"id":"EVNEW1","subject":"Focus","start":{"dateTime":"2026-11-05T09:00:00.0000000","timeZone":"UTC"},"end":{"dateTime":"2026-11-05T10:00:00.0000000","timeZone":"UTC"}}`)
+	case r.Method == "GET" && strings.HasSuffix(p, "/events/EVNEW1") && f.series:
+		io.WriteString(w, `{"id":"EVNEW1","type":"seriesMaster","isOrganizer":true,"start":{"dateTime":"2026-11-05T09:00:00.0000000","timeZone":"UTC"},"end":{"dateTime":"2026-11-05T10:00:00.0000000","timeZone":"UTC"}}`)
 	case r.Method == "GET" && strings.HasSuffix(p, "/events/EVNEW1"):
 		io.WriteString(w, `{"id":"EVNEW1","isOrganizer":true,"start":{"dateTime":"2026-11-05T09:00:00.0000000","timeZone":"UTC"},"end":{"dateTime":"2026-11-05T10:00:00.0000000","timeZone":"UTC"},"attendees":[{"emailAddress":{"address":"kim@example.com"}}]}`)
 	case r.Method == "DELETE" && strings.HasSuffix(p, "/events/EVNEW1"):
@@ -392,5 +395,38 @@ func TestCrossHostRedirectRefused(t *testing.T) {
 	}
 	if hits != 0 {
 		t.Fatal("followed the redirect")
+	}
+}
+
+func TestReplacedRefreshTokenWinsOverRotated(t *testing.T) {
+	m, f, _ := setup(t, Config{ClientSecret: "secret://cs", RefreshToken: "secret://rt"})
+	if _, err := call(m, "events", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := m.set.Get("m")
+	c.host.(*fakehost.Host).Secrets["secret://rt"] = "REFRESH-OTHER-USER"
+	c.tok.Drop()
+	if _, err := call(m, "events", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.tokens) != 2 || f.tokens[1].Get("refresh_token") != "REFRESH-OTHER-USER" {
+		t.Fatalf("the rotated token of the replaced one was used: %v", f.tokens)
+	}
+}
+
+func TestEventPreviews(t *testing.T) {
+	m, f, _ := setup(t, Config{ClientSecret: "secret://cs", RefreshToken: "secret://rt"})
+	in := map[string]any{"subject": "Review", "start": "2026-11-05T10:00:00+01:00", "end": "2026-11-05T11:00:00+01:00",
+		"attendees": []string{"kim@example.com"}, "body": "Agenda: the numbers"}
+	r, err := call(m, "schedule_meeting", in, true)
+	if err != nil || !strings.Contains(string(r.Plan.Changes[0].After), "Agenda: the numbers") {
+		t.Fatalf("%v %+v", err, r.Plan)
+	}
+	f.mu.Lock()
+	f.series = true
+	f.mu.Unlock()
+	p, err := call(m, "delete_event", map[string]any{"id": "EVNEW1"}, true)
+	if err != nil || !strings.Contains(p.Plan.Summary, "whole recurring series") {
+		t.Fatalf("%v %+v", err, p.Plan)
 	}
 }

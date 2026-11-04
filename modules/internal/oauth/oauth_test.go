@@ -46,3 +46,32 @@ func TestCache(t *testing.T) {
 		t.Fatal(n)
 	}
 }
+
+func TestExchangeRefusesCrossHostRedirect(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		t.Errorf("the form reached another host: %s", b)
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/token", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	_, err := Exchange(context.Background(), &http.Client{}, srv.URL, url.Values{"client_secret": {"SECRET-VALUE"}}, "", "")
+	if err == nil || strings.Contains(err.Error(), "SECRET") {
+		t.Fatal(err)
+	}
+}
+
+func TestCacheCapsLifetime(t *testing.T) {
+	now := time.Now()
+	c := &Cache{Now: func() time.Time { return now }}
+	n := 0
+	fetch := func(context.Context) (Grant, error) { n++; return Grant{Access: "a", ExpiresIn: 1 << 30}, nil }
+	c.Get(context.Background(), fetch)
+	now = now.Add(25 * time.Hour)
+	c.Get(context.Background(), fetch)
+	if n != 2 {
+		t.Fatal(n)
+	}
+}

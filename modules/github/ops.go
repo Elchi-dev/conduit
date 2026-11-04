@@ -528,7 +528,7 @@ func init() {
 			}
 			return sdk.JSON(out)
 		})
-	def(write("add_collaborator", "Add a collaborator", "Invites a person (or changes their permission). Undo removes them or restores the old permission.",
+	def(destructive("add_collaborator", "Add a collaborator", "Invites a person (or changes their permission): it changes who can reach the repository, so this is destructive. Undo removes them or restores the old permission.",
 		schema("repo,username", pRepo, pStr("username", "GitHub login"), pEnum("permission", "Default push", "pull", "triage", "push", "maintain", "admin")), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)
@@ -590,7 +590,7 @@ func init() {
 			}
 			return a.listSlim(ctx, "/orgs/"+o+"/teams", nil, "", p.limit())
 		})
-	def(write("set_team_access", "Give a team access", "Adds a team to a repository or changes its permission. Undo restores it.",
+	def(destructive("set_team_access", "Give a team access", "Adds a team to a repository or changes its permission: it changes who can reach the repository, so this is destructive. Undo restores it.",
 		schema("repo,team,permission", pRepo, pStr("team", "Team slug"), pEnum("permission", "", "pull", "triage", "push", "maintain", "admin")), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)
@@ -653,7 +653,7 @@ func init() {
 			}
 			return a.listSlim(ctx, "/repos/"+r+"/keys", nil, "", 100)
 		})
-	def(write("add_deploy_key", "Add a deploy key", "An SSH public key with access to one repository.", schema("repo,title,key", pRepo, pTitle, pText("key", "The public key (ssh-ed25519 …)"), pBool("readOnly", "Default true")), true),
+	def(destructive("add_deploy_key", "Add a deploy key", "An SSH public key with access to one repository (write access unless readOnly), so this is destructive.", schema("repo,title,key", pRepo, pTitle, pText("key", "The public key (ssh-ed25519 …)"), pBool("readOnly", "Default true")), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)
 			if err != nil {
@@ -701,7 +701,7 @@ func init() {
 			}
 			return a.listSlim(ctx, "/repos/"+r+"/environments", nil, "environments", 100)
 		})
-	def(write("set_environment", "Create or change an environment", "Wait timer, required reviewers and which branches may deploy. Undo restores the previous rules (or deletes a new environment).",
+	def(destructive("set_environment", "Create or change an environment", "Wait timer, required reviewers and which branches may deploy: loosening them lets deploys through without review, so this is destructive. Undo restores the previous rules (or deletes a new environment).",
 		schema("repo,name", pRepo, pStr("name", "Environment name"), pObj("settings", `GitHub's fields: wait_timer (minutes), prevent_self_review, reviewers [{type: User|Team, id}], deployment_branch_policy {protected_branches, custom_branch_policies} or null`)), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)
@@ -772,7 +772,7 @@ func init() {
 			}
 			return a.listSlim(ctx, "/orgs/"+o+"/members", q, "", p.limit())
 		})
-	def(write("set_org_membership", "Invite or change an organization member", "Invites a person, or changes a member's role. Undo restores it.",
+	def(destructive("set_org_membership", "Invite or change an organization member", "Invites a person, or changes a member's role (admin owns the organization), so this is destructive. Undo restores it.",
 		schema("org,username", pOrg, pStr("username", ""), pEnum("role", "Default member", "member", "admin")), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			o, err := needName("org", p.Org)

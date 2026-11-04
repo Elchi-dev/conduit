@@ -15,8 +15,8 @@ https address.
 | `projects` | read | |
 | `issues` | read | Unresolved, newest first, with event and user counts. Optional project and extra Sentry search (`level:error`). |
 | `issue` | read | The issue and its latest event: time, release, environment and a few tags (no user data) |
-| `resolve` | write | Undo marks it unresolved |
-| `ignore` | write | Undo marks it unresolved |
+| `resolve` | destructive | Takes it out of the unresolved issues and their alerts until it happens again. Undo marks it unresolved |
+| `ignore` | destructive | Hides it and silences its alerts. Undo marks it unresolved |
 | `unresolve` | write | |
 
 **Security.** Give the token only the scopes above; `event:write` is what

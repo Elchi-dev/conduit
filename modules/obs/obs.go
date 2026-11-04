@@ -54,7 +54,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "scenes", Title: "Scenes", Risk: sdk.RiskRead},
 			{Name: "switch_scene", Title: "Switch scene", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["scene"],"properties":{"scene":{"type":"string"}}}`)},
-			{Name: "start_stream", Title: "Start streaming", Risk: sdk.RiskWrite, Reversible: true},
+			{Name: "start_stream", Title: "Start streaming", Description: "Goes live: whatever the current scene shows (a screen, a camera, a microphone) is broadcast to the public at once, so this is destructive.", Risk: sdk.RiskDestructive, Reversible: true},
 			{Name: "stop_stream", Title: "Stop streaming", Description: "Ends the live broadcast.", Risk: sdk.RiskDestructive},
 			{Name: "start_record", Title: "Start recording", Risk: sdk.RiskWrite, Reversible: true},
 			{Name: "stop_record", Title: "Stop recording", Description: "Returns where the file was saved. It ends the recording in progress (destructive, like stop_stream).", Risk: sdk.RiskDestructive},

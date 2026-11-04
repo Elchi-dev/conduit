@@ -459,3 +459,19 @@ func findSpec(m *Module, name string) (sdk.ActionSpec, bool) {
 	}
 	return sdk.ActionSpec{}, false
 }
+
+// Access, protection, visibility and approvals reach beyond the repository's
+// content, so they're destructive whatever their names say.
+func TestAccessAndProtectionAreDestructive(t *testing.T) {
+	for _, n := range []string{"add_collaborator", "set_team_access", "set_org_membership", "add_deploy_key",
+		"set_environment", "set_branch_protection", "update_repo", "archive_repo", "review_pr"} {
+		if s, ok := findSpec(New(), n); !ok || s.Risk != sdk.RiskDestructive {
+			t.Errorf("%s must be destructive: %+v", n, s)
+		}
+	}
+	for _, n := range []string{"unarchive_repo", "review_comment", "put_file"} {
+		if s, ok := findSpec(New(), n); !ok || s.Risk != sdk.RiskWrite {
+			t.Errorf("%s stays write: %+v", n, s)
+		}
+	}
+}

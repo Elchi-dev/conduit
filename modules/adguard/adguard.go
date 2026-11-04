@@ -50,10 +50,10 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "status", Title: "Status", Description: "Whether protection is on, and today's numbers.", Risk: sdk.RiskRead},
 			{Name: "query_log", Title: "Recent queries", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"limit":{"type":"integer","default":50,"maximum":500},"blockedOnly":{"type":"boolean"}}}`)},
-			{Name: "protection_off", Title: "Pause protection", Description: "For some minutes, or until switched back on (0).", Risk: sdk.RiskWrite, Reversible: true,
+			{Name: "protection_off", Title: "Pause protection", Description: "For some minutes, or until switched back on (0). Nothing is filtered meanwhile, for every client, so this is destructive.", Risk: sdk.RiskDestructive, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"minutes":{"type":"integer","default":10,"minimum":0,"maximum":1440}}}`)},
 			{Name: "protection_on", Title: "Turn protection back on", Risk: sdk.RiskWrite, Reversible: true},
-			{Name: "rule_add", Title: "Add a filtering rule", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(ruleIn)},
+			{Name: "rule_add", Title: "Add a filtering rule", Description: "A blocking rule stops a domain resolving for every client, an allow rule lets it through every filter, so this is destructive. Undo removes it.", Risk: sdk.RiskDestructive, Reversible: true, Input: sdk.Schema(ruleIn)},
 			{Name: "rule_remove", Title: "Remove a filtering rule", Risk: sdk.RiskDestructive, Reversible: true, Input: sdk.Schema(ruleIn)},
 		},
 	}

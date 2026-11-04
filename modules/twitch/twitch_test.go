@@ -121,3 +121,24 @@ func TestTwitch(t *testing.T) {
 		t.Fatal("plaintext secret accepted")
 	}
 }
+
+// What these do reaches past what an agent approved for write may do
+// (going public, paging or silencing people, filtering every client,
+// network access, stopping a service), so they're destructive.
+func TestRiskOfReachingActions(t *testing.T) {
+	want := map[string]bool{}
+	for _, n := range []string{"set_stream"} {
+		want[n] = true
+	}
+	for _, a := range New().Manifest().Actions {
+		if want[a.Name] {
+			delete(want, a.Name)
+			if a.Risk != sdk.RiskDestructive {
+				t.Errorf("%s must be destructive, is %s", a.Name, a.Risk)
+			}
+		}
+	}
+	for n := range want {
+		t.Errorf("no action %s", n)
+	}
+}

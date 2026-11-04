@@ -14,7 +14,7 @@ on another machine on your network).
 | `status` | read | Streaming and recording, with their running time, and the current scene |
 | `scenes` | read | In the order OBS shows them |
 | `switch_scene` | write | Undo switches back to the scene that was live before |
-| `start_stream` | write | Undo stops the stream |
+| `start_stream` | destructive | Goes live: whatever the current scene shows is public at once. Undo stops the stream |
 | `stop_stream` | destructive | Ends the live broadcast for your viewers |
 | `start_record` | write | Undo stops the recording |
 | `stop_record` | destructive | Returns the path of the saved file. It ends the recording in progress, so it is destructive like `stop_stream`. |

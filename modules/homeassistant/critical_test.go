@@ -295,3 +295,38 @@ func TestCriticalEntitiesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSceneRefusesCritical(t *testing.T) {
+	m, f := setupCritical(t, "light.garage")
+	f.state["scene.evening"] = st("scene.evening", "unknown", map[string]any{"entity_id": []any{"light.desk", "switch.kettle"}})
+	f.state["scene.leave"] = st("scene.leave", "unknown", map[string]any{"entity_id": []any{"light.desk", "cover.garage_door"}})
+	f.state["scene.night"] = st("scene.night", "unknown", map[string]any{"entity_id": []any{"switch.unread"}})
+	f.state["scene.hue"] = st("scene.hue", "unknown", nil)
+	f.state["scene.porch"] = st("scene.porch", "unknown", map[string]any{"entity_id": []any{"light.garage"}})
+	for scene, want := range map[string]string{
+		"scene.leave": "sets cover.garage_door, which is critical (a cover",
+		"scene.night": "couldn't be read",
+		"scene.hue":   "doesn't list the entities it sets",
+		"scene.porch": "listed in criticalEntities",
+		"scene.nope":  "no entity",
+	} {
+		_, err := call(m, "scene", `{"scene":"`+scene+`"}`, false)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v", scene, err)
+		}
+		if err != nil && scene != "scene.nope" && !strings.Contains(err.Error(), "call_service") {
+			t.Errorf("%s: the refusal must point to call_service: %v", scene, err)
+		}
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("a scene with a critical entity was activated: %v", f.calls)
+	}
+	if _, err := call(m, "scene", `{"scene":"scene.evening"}`, false); err != nil || len(f.calls) != 1 || !strings.HasPrefix(f.calls[0], "scene/turn_on") {
+		t.Fatalf("plain scene: %v %v", err, f.calls)
+	}
+	// set_light keeps to the same rule for a light listed as critical.
+	f.calls = nil
+	if _, err := call(m, "set_light", `{"entity":"light.garage","restore":{"on":false}}`, false); err == nil || !strings.Contains(err.Error(), "is critical") || len(f.calls) != 0 {
+		t.Fatalf("set_light on a critical light: %v %v", err, f.calls)
+	}
+}

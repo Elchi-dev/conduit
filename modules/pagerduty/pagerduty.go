@@ -62,11 +62,11 @@ func (m *Module) Manifest() sdk.Manifest {
 		Actions: []sdk.ActionSpec{
 			{Name: "incidents", Title: "Open incidents", Description: "Triggered and acknowledged incidents.", Risk: sdk.RiskRead},
 			{Name: "oncall", Title: "On call now", Risk: sdk.RiskRead},
-			{Name: "acknowledge", Title: "Acknowledge an incident", Risk: sdk.RiskWrite, Input: id},
-			{Name: "resolve", Title: "Resolve an incident", Risk: sdk.RiskWrite, Input: id},
-			{Name: "trigger", Title: "Open an incident", Description: "Through the Events API of the service the routing key belongs to.", Risk: sdk.RiskWrite, Reversible: true,
+			{Name: "acknowledge", Title: "Acknowledge an incident", Description: "Stops the incident escalating to further people (destructive: nobody else gets paged).", Risk: sdk.RiskDestructive, Input: id},
+			{Name: "resolve", Title: "Resolve an incident", Description: "Alerting and escalation for it stop even if the problem goes on (destructive). It can't be undone.", Risk: sdk.RiskDestructive, Input: id},
+			{Name: "trigger", Title: "Open an incident", Description: "Through the Events API of the service the routing key belongs to. It pages whoever is on call for that service, so this is destructive.", Risk: sdk.RiskDestructive, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["summary"],"properties":{"summary":{"type":"string","maxLength":1024},"severity":{"type":"string","enum":["critical","error","warning","info"],"default":"error"},"source":{"type":"string","default":"conduit"},"dedupKey":{"type":"string"}}}`)},
-			{Name: "resolve_event", Title: "Resolve an event", Description: "Resolves the incident an earlier event opened, by its dedup key.", Risk: sdk.RiskWrite,
+			{Name: "resolve_event", Title: "Resolve an event", Description: "Resolves the incident an earlier event opened, by its dedup key: its alerting stops even if the problem goes on (destructive).", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["dedupKey"],"properties":{"dedupKey":{"type":"string"}}}`)},
 		},
 	}

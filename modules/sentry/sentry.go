@@ -60,8 +60,8 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "issues", Title: "Unresolved issues", Description: "Most recent first, with event and user counts.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"project":{"type":"string","description":"Project slug (optional)"},"query":{"type":"string","description":"Extra Sentry search, e.g. level:error"}}}`)},
 			{Name: "issue", Title: "Issue details", Description: "The issue and a summary of its latest event.", Risk: sdk.RiskRead, Input: id},
-			{Name: "resolve", Title: "Resolve an issue", Risk: sdk.RiskWrite, Reversible: true, Input: id},
-			{Name: "ignore", Title: "Ignore an issue", Risk: sdk.RiskWrite, Reversible: true, Input: id},
+			{Name: "resolve", Title: "Resolve an issue", Description: "Takes it out of the unresolved issues and their alerts until it happens again (destructive). Undo marks it unresolved.", Risk: sdk.RiskDestructive, Reversible: true, Input: id},
+			{Name: "ignore", Title: "Ignore an issue", Description: "Hides it and silences its alerts, even when it happens again (destructive). Undo marks it unresolved.", Risk: sdk.RiskDestructive, Reversible: true, Input: id},
 			{Name: "unresolve", Title: "Mark an issue unresolved", Risk: sdk.RiskWrite, Input: id},
 		},
 	}

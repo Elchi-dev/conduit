@@ -85,7 +85,7 @@ func (m *Module) Manifest() sdk.Manifest {
 					`,"tailLines":{"type":"integer","default":200,"maximum":5000},"since":{"type":"string","description":"e.g. 15m or 2h"},"previous":{"type":"boolean","description":"Logs of the previous, crashed container"}}}`)},
 			{Name: "events", Title: "Warnings", Description: "Recent warning events, newest first.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + nsProp + `,"all":{"type":"boolean","description":"Include normal events too"}}}`)},
-			{Name: "scale", Title: "Scale a deployment", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "scale", Title: "Scale a deployment", Description: "Sets how many replicas run; 0 stops it, fewer can drop requests and more can cost money, so this is destructive. Undo scales back.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["deployment","replicas"],"properties":{` + nsProp + `,"deployment":` + name("Deployment name") + `,"replicas":{"type":"integer","minimum":0,"maximum":1000}}}`)},
 			{Name: "restart", Title: "Restart a deployment", Description: "A rolling restart, like kubectl rollout restart.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["deployment"],"properties":{` + nsProp + `,"deployment":` + name("Deployment name") + `}}`)},

@@ -14,7 +14,7 @@ you check most.
 | --- | --- | --- |
 | `streams` | read | Live or not, title, game, viewers and start time, for up to 100 channels |
 | `channel` | read | A channel's title and category, live or not |
-| `set_stream` | write | Your title and/or category (by name or id). Preview first; undo puts the previous ones back. Needs the user token |
+| `set_stream` | destructive | Shown to everyone on Twitch at once (like Kick's `set_stream`). Your title and/or category (by name or id). Preview first; undo puts the previous ones back. Needs the user token |
 
 **Security.** The app token is fetched with the client secret and kept in
 memory until it expires. The user token can change your channel's title and

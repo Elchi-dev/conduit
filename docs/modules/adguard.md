@@ -11,9 +11,9 @@ reference.
 | --- | --- | --- |
 | `status` | read | Protection on or off, queries, blocked, percentage, average response time, top blocked domains |
 | `query_log` | read | Recent queries, optionally only blocked ones |
-| `protection_off` | write | Pause protection for some minutes (default 10), or until switched back on (0). Undo turns it back on |
+| `protection_off` | destructive | Nothing is filtered meanwhile, for every client (like Pi-hole's `disable`). Pause protection for some minutes (default 10), or until switched back on (0). Undo turns it back on |
 | `protection_on` | write | Undo pauses it again |
-| `rule_add` / `rule_remove` | write / destructive | A custom filtering rule, such as `\|\|ads.example.com^` to block or `@@\|\|example.com^` to allow. Each undoes the other |
+| `rule_add` / `rule_remove` | destructive | Blocking or allowing a domain changes what every client can resolve. A custom filtering rule, such as `\|\|ads.example.com^` to block or `@@\|\|example.com^` to allow. Each undoes the other |
 
 Health is degraded while protection is paused and down when DNS isn't
 running.

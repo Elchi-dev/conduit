@@ -13,7 +13,7 @@ Enter the address, such as `http://pi.hole`.
 | `top_blocked` | read | The most blocked domains |
 | `disable` | destructive | Pause blocking for some seconds (default 300), or until switched back on (0). Undo turns it back on |
 | `enable` | write | Turn blocking back on. Undo pauses it again |
-| `domain_add` / `domain_remove` | write / destructive | An exact domain on the deny (default) or allow list. Each undoes the other |
+| `domain_add` / `domain_remove` | destructive | Blocking or allowing a domain changes what every client can resolve. An exact domain on the deny (default) or allow list. Each undoes the other |
 
 Health is degraded while blocking is paused.
 

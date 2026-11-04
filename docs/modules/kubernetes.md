@@ -28,7 +28,7 @@ role of your own).
 | `deployments` | read | Desired, ready, updated and available replicas |
 | `logs` | read | `pod`, optional `container`, `tailLines` (default 200, at most 5000), `since` (e.g. `15m`), `previous` for a crashed container |
 | `events` | read | Warning events, newest first (at most 100); `all` includes normal events |
-| `scale` | write | Preview shows the old and new replica count. Undo scales back. |
+| `scale` | destructive | 0 stops the deployment, fewer replicas can drop requests and more can cost money. Preview shows the old and new replica count. Undo scales back. |
 | `restart` | destructive | A rolling restart, like `kubectl rollout restart`. Preview available. |
 | `delete_pod` | destructive | The preview says which controller owns the pod, so you can see whether it comes back. |
 

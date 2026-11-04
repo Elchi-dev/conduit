@@ -333,7 +333,7 @@ func init() {
 				return withUndo(res, err, undo, map[string]any{"repo": r, "number": p.Number}, "Undo")
 			})
 	}
-	def(write("review_pr", "Review a pull request", "Approve, request changes or comment, optionally with line comments.",
+	def(destructive("review_pr", "Review a pull request", "Approve, request changes or comment, optionally with line comments. An approval counts toward required reviews, so this is destructive; a plain line comment is review_comment.",
 		schema("repo,number,event", pRepo, pNumber, pEnum("event", "", "APPROVE", "REQUEST_CHANGES", "COMMENT"), pBody,
 			`"comments":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"line":{"type":"integer"},"side":{"type":"string","enum":["LEFT","RIGHT"]},"body":{"type":"string"}}},"description":"Line comments"}`), false),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {

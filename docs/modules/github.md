@@ -59,7 +59,7 @@ agents may read, writes ask, destructive actions ask more firmly):
 - **read**: everything that only looks.
 - **write**: changes that are normal maintenance and usually reversible:
   creating and editing, committing a file, opening and closing, labels,
-  re-running a run that already ran.
+  re-running a run that already ran, unarchiving.
 - **destructive**: running a workflow on a branch or tag
   (`dispatch_workflow`: it runs that revision's code with the repository's
   secrets), cancelling a run in progress (`cancel_run`), setting a secret
@@ -67,7 +67,15 @@ agents may read, writes ask, destructive actions ask more firmly):
   deleting a file (`delete_file`), deleting a repository, branch, tag, release, label,
   milestone, webhook, environment, deploy key, secret or variable,
   transferring a repository, removing people or teams, merging, and the
-  generic `api_write`, `api_delete` and `graphql_mutate`.
+  generic `api_write`, `api_delete` and `graphql_mutate`. So are changes to
+  who can reach a repository or what guards it, whatever their names say:
+  adding people, teams, organization members and deploy keys
+  (`add_collaborator`, `set_team_access`, `set_org_membership`,
+  `add_deploy_key`), branch protection and environment rules
+  (`set_branch_protection`, `set_environment`), repository settings
+  (`update_repo`: visibility and the name), archiving (`archive_repo`) and
+  reviews (`review_pr`: an approval counts toward required reviews; a line
+  comment alone is `review_comment`, a write).
 
 Every write and destructive action (apart from the first-generation ones
 listed below) supports a dry run, so an approval shows what will happen:

@@ -81,7 +81,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["bucket","key"],"properties":{` + b + `,` + k + `}}`)},
 			{Name: "usage", Title: "Bucket usage", Description: "Counts objects and adds up their sizes (stops after 50,000 objects).", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["bucket"],"properties":{` + b + `,"prefix":{"type":"string"}}}`)},
-			{Name: "link", Title: "Download link", Description: "A link anyone can use to download the file until it expires (at most 7 days).", Risk: sdk.RiskRead, Sensitive: true,
+			{Name: "link", Title: "Download link", Description: "A link anyone can use to download the file until it expires (at most 7 days). It can't be revoked short of rotating the access key, so, like a share link, this is destructive.", Risk: sdk.RiskDestructive, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["bucket","key"],"properties":{` + b + `,` + k + `,"hours":{"type":"integer","default":24,"minimum":1,"maximum":168}}}`)},
 			{Name: "delete", Title: "Delete a file", Description: "Removes the object. Without versioning on the bucket it's gone for good.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["bucket","key"],"properties":{` + b + `,` + k + `}}`)},

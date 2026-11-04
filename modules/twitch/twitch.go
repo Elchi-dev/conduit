@@ -70,7 +70,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"channels":{"type":"array","items":{"type":"string"},"maxItems":100}}}`)},
 			{Name: "channel", Title: "Channel info", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["channel"],"properties":{"channel":{"type":"string"}}}`)},
-			{Name: "set_stream", Title: "Change your stream", Description: "Title and/or category (needs the user token).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "set_stream", Title: "Change your stream", Description: "Title and/or category, shown to everyone on Twitch at once, so this is destructive (needs the user token).", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"title":{"type":"string","maxLength":140},"category":{"type":"string","description":"A game or category name, e.g. Just Chatting"},"categoryId":{"type":"string"}}}`)},
 		},
 	}

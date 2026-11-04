@@ -74,7 +74,7 @@ func (m *Module) Manifest() sdk.Manifest {
 					"color":{"type":"string","description":"A name (red, green, amber, blue, white) or #rrggbb"},
 					"brightness":{"type":"integer","minimum":0,"maximum":100,"description":"Percent"},
 					"restore":{"type":"object","additionalProperties":true,"description":"A saved state to put back (used by undo)"}}}`)},
-			{Name: "scene", Title: "Activate a scene", Risk: sdk.RiskWrite, Input: sdk.Schema(`{"type":"object","required":["scene"],"properties":{"scene":{"type":"string","description":"e.g. scene.movie_night"}}}`)},
+			{Name: "scene", Title: "Activate a scene", Description: "A scene that sets a critical entity (a lock, garage door, alarm, valve, heating …), or whose entities can't be read, is refused: activate it with call_service (scene.turn_on).", Risk: sdk.RiskWrite, Input: sdk.Schema(`{"type":"object","required":["scene"],"properties":{"scene":{"type":"string","description":"e.g. scene.movie_night"}}}`)},
 			{Name: "call_service", Title: "Call a service", Description: "Any Home Assistant service, e.g. lock.unlock. Agents ask first: a service can do anything.", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["domain","service"],"properties":{"domain":{"type":"string"},"service":{"type":"string"},"data":{"type":"object","additionalProperties":true}}}`)},
 		},
@@ -311,6 +311,9 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		if err != nil {
 			return sdk.Result{}, err
 		}
+		if why := h.why(before); why != "" {
+			return sdk.Result{}, plainRefusal(p.Entity, "turn_on", why)
+		}
 		prev := snapshot(before)
 		if p.Restore != nil {
 			if !p.Restore.On {
@@ -349,6 +352,9 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 	case "scene":
 		if !strings.HasPrefix(p.Scene, "scene.") || !entityRe.MatchString(p.Scene) {
 			return sdk.Result{}, errors.New("scenes look like scene.movie_night")
+		}
+		if err := h.sceneSafe(ctx, p.Scene); err != nil {
+			return sdk.Result{}, err
 		}
 		if err := h.service(ctx, "scene", "turn_on", map[string]any{"entity_id": p.Scene}); err != nil {
 			return sdk.Result{}, err

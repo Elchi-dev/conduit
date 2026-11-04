@@ -16,10 +16,10 @@ incident from an automation and resolve it again.
 | --- | --- | --- |
 | `incidents` | read | Triggered and acknowledged, newest first, with service and assignees |
 | `oncall` | read | Who's on call now per escalation policy and level |
-| `acknowledge` | write | |
-| `resolve` | write | Not reversible in PagerDuty |
-| `trigger` | write | Opens an incident with a summary, severity and optional dedup key. Undo resolves it. |
-| `resolve_event` | write | Resolves the incident an event opened, by dedup key |
+| `acknowledge` | destructive | Stops the incident escalating to further people |
+| `resolve` | destructive | Alerting and escalation stop even if the problem goes on. Not reversible in PagerDuty |
+| `trigger` | destructive | Pages whoever is on call for the service. Opens an incident with a summary, severity and optional dedup key. Undo resolves it. |
+| `resolve_event` | destructive | Resolves the incident an event opened, by dedup key |
 
 Health is degraded while incidents are triggered and unacknowledged.
 

@@ -18,8 +18,8 @@ opener behind a plain relay.
 | `state` | read | One entity with its attributes, and why it's critical |
 | `turn_on`, `turn_off`, `toggle` | write | Lights, switches, fans and other everyday entities. Undo puts the previous on/off state back. Critical entities are refused with a pointer to `turn_critical`. |
 | `turn_critical` | destructive | `entity` and `action` (`on`, `off` or `toggle`). Opens or closes covers and valves, turns sirens, cameras, heating and critical switches on or off. The preview says exactly what changes, such as "closed → open; this opens the garage door". It reads the state back, and undo puts the previous state back where that's exact. `toggle` needs the current state to be known on or off. |
-| `set_light` | write | Colour by name (red, green, amber, orange, yellow, blue, purple, white) or `#rrggbb`, brightness in percent. Undo restores colour, brightness and on/off. Used by the ambient status light. |
-| `scene` | write | Activates `scene.*` |
+| `set_light` | write | Colour by name (red, green, amber, orange, yellow, blue, purple, white) or `#rrggbb`, brightness in percent. Undo restores colour, brightness and on/off. Used by the ambient status light. A light listed in `criticalEntities` is refused, as with `turn_off`. |
+| `scene` | write | Activates `scene.*`. A scene that sets a critical entity is refused, and so is one that doesn't list its entities (scenes some integrations provide) or whose entities can't be read: activate those with `call_service` (`scene.turn_on`), which is destructive. |
 | `call_service` | destructive | Any service (`lock.unlock`, `alarm_control_panel.alarm_disarm`…), so agents ask first. Locks and alarm panels, which have no on or off, use this. |
 
 **Critical entities** are:

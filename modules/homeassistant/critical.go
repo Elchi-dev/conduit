@@ -336,3 +336,48 @@ func (h *home) turnCritical(ctx context.Context, c sdk.Call, entity, act string)
 	}
 	return r, err
 }
+
+// sceneSafe refuses a scene that would set a critical entity. A scene lists
+// the entities it sets in its entity_id attribute; one that doesn't (a scene
+// an integration provides), or one whose entities can't be read, can't be
+// checked, so it's refused too.
+func (h *home) sceneSafe(ctx context.Context, scene string) error {
+	s, err := h.state(ctx, scene)
+	if err != nil {
+		return err
+	}
+	via := "activate it with call_service (domain scene, service turn_on, data {\"entity_id\":\"" + scene + "\"})"
+	var ids []string
+	switch v := s.Attributes["entity_id"].(type) {
+	case []any:
+		for _, e := range v {
+			if id, ok := e.(string); ok {
+				ids = append(ids, id)
+			}
+		}
+	case string:
+		ids = []string{v}
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("%s doesn't list the entities it sets, so it can't be checked for critical ones: %s", scene, via)
+	}
+	if len(ids) > 200 {
+		return fmt.Errorf("%s sets more than 200 entities, too many to check for critical ones: %s", scene, via)
+	}
+	for _, id := range ids {
+		if !entityRe.MatchString(id) {
+			return fmt.Errorf("%s sets %q, which can't be checked: %s", scene, id, via)
+		}
+		e, err := h.state(ctx, id)
+		why := ""
+		if err != nil {
+			why = "its state couldn't be read, so what it controls can't be checked"
+		} else {
+			why = h.why(e)
+		}
+		if why != "" {
+			return fmt.Errorf("%s sets %s, which is critical (%s): %s", scene, id, why, via)
+		}
+	}
+	return nil
+}

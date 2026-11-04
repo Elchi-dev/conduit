@@ -74,7 +74,7 @@ func init() {
 			full := str(toMap(raw), "full_name")
 			return withUndo(res, err, "delete_repo", map[string]string{"repo": full}, "Delete "+full)
 		})
-	def(write("update_repo", "Change repository settings", "Description, homepage, visibility (private/public/internal), default branch, features (issues, wiki, projects, discussions), merge options, or a new name.",
+	def(destructive("update_repo", "Change repository settings", "Description, homepage, visibility (private/public/internal), default branch, features (issues, wiki, projects, discussions), merge options, or a new name. Making a repository public or renaming it can't be contained, so this is destructive. Undo restores the previous settings.",
 		schema("repo,settings", pRepo, pObj("settings", "Settings to change, by GitHub's names: description, homepage, visibility, private, default_branch, has_issues, has_wiki, has_projects, has_discussions, allow_squash_merge, allow_merge_commit, allow_rebase_merge, allow_auto_merge, delete_branch_on_merge, name ...")), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)
@@ -133,7 +133,13 @@ func init() {
 		if !arch {
 			name, title, verb, undo = "unarchive_repo", "Unarchive a repository", "Unarchive", "archive_repo"
 		}
-		def(write(name, title, "Archived repositories are read-only.", schema("repo", pRepo), true),
+		spec := write(name, title, "Archived repositories are read-only.", schema("repo", pRepo), true)
+		if arch {
+			// Archiving stops every push, issue and pull request, so it's
+			// destructive (unarchiving gives that back, so it stays write).
+			spec = destructive(name, title, "Makes the repository read-only: no pushes, issues or pull requests until it's unarchived, so this is destructive. Undo unarchives it.", schema("repo", pRepo), true)
+		}
+		def(spec,
 			func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 				r, err := needRepo(p.Repo)
 				if err != nil {
@@ -309,7 +315,7 @@ func init() {
 			}
 			return res, err
 		})
-	def(write("set_branch_protection", "Protect a branch", "Sets a branch's protection rules (replacing the current ones). Undo restores the previous rules.",
+	def(destructive("set_branch_protection", "Protect a branch", "Sets a branch's protection rules (replacing the current ones): looser rules let changes in without review or checks, so this is destructive. Undo restores the previous rules.",
 		schema("repo,branch,protection", pRepo, pStr("branch", ""), pObj("protection", `GitHub's protection object: required_status_checks {strict, contexts}, enforce_admins, required_pull_request_reviews {required_approving_review_count, dismiss_stale_reviews, require_code_owner_reviews}, restrictions {users, teams, apps} or null, required_linear_history, allow_force_pushes, allow_deletions, required_conversation_resolution. Missing required keys default to null.`)), true),
 		func(ctx context.Context, a *account, p args, c sdk.Call) (sdk.Result, error) {
 			r, err := needRepo(p.Repo)

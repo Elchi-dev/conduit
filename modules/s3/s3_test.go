@@ -234,3 +234,17 @@ func TestVirtualHost(t *testing.T) {
 		t.Fatalf("%s %s", u.Host, u.EscapedPath())
 	}
 }
+
+// A presigned link hands the file to anyone who has it and can't be
+// revoked, so it's destructive like every share link.
+func TestLinkIsDestructive(t *testing.T) {
+	for _, a := range New().Manifest().Actions {
+		if a.Name == "link" {
+			if a.Risk != sdk.RiskDestructive || !a.Sensitive {
+				t.Fatalf("link must be destructive and sensitive: %+v", a)
+			}
+			return
+		}
+	}
+	t.Fatal("no link action")
+}

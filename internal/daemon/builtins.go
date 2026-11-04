@@ -19,6 +19,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/docker"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/fly"
+	"github.com/elchi-dev/conduit/modules/frigate"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
 	"github.com/elchi-dev/conduit/modules/gitea"
@@ -29,12 +30,14 @@ import (
 	"github.com/elchi-dev/conduit/modules/homeassistant"
 	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
+	"github.com/elchi-dev/conduit/modules/jenkins"
 	"github.com/elchi-dev/conduit/modules/jira"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/mastodon"
 	"github.com/elchi-dev/conduit/modules/mattermost"
+	"github.com/elchi-dev/conduit/modules/mealie"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/n8n"
@@ -75,11 +78,13 @@ import (
 	"github.com/elchi-dev/conduit/modules/truenas"
 	"github.com/elchi-dev/conduit/modules/twitch"
 	"github.com/elchi-dev/conduit/modules/unifi"
+	"github.com/elchi-dev/conduit/modules/unraid"
 	"github.com/elchi-dev/conduit/modules/uptimekuma"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/web"
+	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
@@ -174,6 +179,11 @@ func builtins(app *App) []sdk.Module {
 		supabase.New(),
 		render.New(),
 		railway.New(),
+		unraid.New(),
+		jenkins.New(),
+		frigate.New(),
+		mealie.New(),
+		wgeasy.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

@@ -80,6 +80,11 @@ recommended policies.
 | Supabase | [supabase.md](supabase.md) | developer |
 | Render | [render.md](render.md) | developer |
 | Railway | [railway.md](railway.md) | developer |
+| Unraid | [unraid.md](unraid.md) | homelab |
+| Jenkins | [jenkins.md](jenkins.md) | developer, team |
+| Frigate | [frigate.md](frigate.md) | homelab |
+| Mealie | [mealie.md](mealie.md) | homelab |
+| wg-easy | [wgeasy.md](wgeasy.md) | homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

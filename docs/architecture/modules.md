@@ -44,6 +44,15 @@ Their value is a vault reference (`secret://name`). A module resolves it with
 `Host.Secret`, which only succeeds for references that appear in that
 instance's own settings.
 
+## Outbound connections
+
+Modules that talk to a server should make their HTTP clients with
+`sdk.HTTPClient(host, timeout)` (or `sdk.Transport(host)`) and raw
+connections with `sdk.DialContext(host)`. An instance can be attached to one
+of the daemon's [networks](networks.md) (userspace WireGuard), and these
+helpers send its connections there; with no network, or a host that doesn't
+implement the optional `sdk.NetHost`, they behave like Go's defaults.
+
 ## Instances
 
 A module can be configured several times (two mail accounts, three Grafana

@@ -166,7 +166,9 @@ func TestTwoTunnelsHTTP(t *testing.T) {
 	serveOn(t, a, "10.77.0.1:80")
 
 	cl := &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) { return b.Dial(ctx, network, addr, nil) },
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return b.Dial(ctx, network, addr, nil)
+		},
 	}}
 	res, err := cl.Get("http://10.77.0.1/")
 	if err != nil {

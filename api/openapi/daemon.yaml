@@ -1222,7 +1222,7 @@ paths:
       summary: Start signing in with the provider (a browser navigation; redirects to the provider)
       security: []
       responses:
-        "302": { description: To the provider's sign-in page, or to /?signin_error=<code> }
+        "302": { description: "To the provider's sign-in page, or to /?signin_error=<code>" }
   /auth/oidc/callback:
     get:
       operationId: ssoCallback
@@ -1234,7 +1234,7 @@ paths:
         - { name: code, in: query, schema: { type: string } }
         - { name: state, in: query, schema: { type: string } }
       responses:
-        "302": { description: To / with a session cookie, or to /?signin_error=<code> }
+        "302": { description: "To / with a session cookie, or to /?signin_error=<code>" }
   /me/2fa:
     get:
       operationId: twoFactorStatus

@@ -3,6 +3,29 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · Last hours before the deadline (325 modules, review 45, two sweeps)
+
+- **Review 45 (wikis):** restoring a page guests can read is its own
+  destructive action in Wiki.js and MediaWiki, so the write-level restore
+  can't republish or rewrite public pages; undo previews don't quote old
+  content; MediaWiki edits only wikitext pages, never scripts.
+- **Risk sweep of every module** (1,741 non-destructive actions read): 27
+  actions in 11 modules raised to destructive because of what they do, not
+  what they're called (OBS going live, PagerDuty and Sentry silencing,
+  AdGuard and Pi-hole blocking, Tailscale access, Kubernetes scaling,
+  GitHub access and protection, S3 presigned links); Home Assistant scenes
+  get the critical check. GitHub `put_file` refuses Actions code, which
+  runs with the repository's secrets.
+- **Undo sweep** (about 110 destructive actions whose undo is a write
+  action): Cloudflare restore only puts a record back over itself, Nginx
+  Proxy Manager needs the new destructive `enable_advanced` for hosts with
+  custom config, Gumroad `enable_product` is destructive.
+- **Decision:** raising risk inside v1 is allowed by the stability policy
+  and listed in the v1.1.0 notes; no action was renamed or removed.
+- **Left as documented decisions:** sending mail and chat messages, and
+  turning automations back on (n8n, Node-RED), stay write; InfluxDB
+  `enable_task` is destructive.
+
 ## 2026-11-04 · After 1.0, late evening (322 modules, reviews 39–42)
 
 - **Modules 303–322:** AI usage and spend (Anthropic, OpenAI, Mistral,

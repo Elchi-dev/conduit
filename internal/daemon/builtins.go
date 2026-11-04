@@ -64,11 +64,13 @@ import (
 	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/komga"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
+	"github.com/elchi-dev/conduit/modules/lemonsqueezy"
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/linode"
 	"github.com/elchi-dev/conduit/modules/listmonk"
 	"github.com/elchi-dev/conduit/modules/litellm"
 	"github.com/elchi-dev/conduit/modules/mail"
+	"github.com/elchi-dev/conduit/modules/mailgun"
 	"github.com/elchi-dev/conduit/modules/mastodon"
 	"github.com/elchi-dev/conduit/modules/matrix"
 	"github.com/elchi-dev/conduit/modules/mattermost"
@@ -104,6 +106,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/porkbun"
 	"github.com/elchi-dev/conduit/modules/portainer"
 	"github.com/elchi-dev/conduit/modules/posthog"
+	"github.com/elchi-dev/conduit/modules/postmark"
 	"github.com/elchi-dev/conduit/modules/powerdns"
 	"github.com/elchi-dev/conduit/modules/proxmox"
 	"github.com/elchi-dev/conduit/modules/pterodactyl"
@@ -111,10 +114,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/railway"
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/render"
+	"github.com/elchi-dev/conduit/modules/resend"
 	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/scaleway"
 	"github.com/elchi-dev/conduit/modules/scrutiny"
 	"github.com/elchi-dev/conduit/modules/seerr"
+	"github.com/elchi-dev/conduit/modules/sendgrid"
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/shelly"
@@ -303,6 +308,11 @@ func builtins(app *App) []sdk.Module {
 		matrix.New(),
 		signal.New(),
 		listmonk.New(),
+		resend.New(),
+		mailgun.New(),
+		sendgrid.New(),
+		postmark.New(),
+		lemonsqueezy.New(),
 		zendesk.New(),
 		freshdesk.New(),
 		chatwoot.New(),

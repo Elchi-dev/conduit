@@ -86,6 +86,7 @@ recommended policies.
 | Argo CD | [argocd.md](argocd.md) | developer, homelab, team |
 | Telegram | [telegram.md](telegram.md) | homelab, team |
 | Stripe | [stripe.md](stripe.md) | team, developer |
+| Lemon Squeezy | [lemonsqueezy.md](lemonsqueezy.md) | developer, team |
 | Supabase | [supabase.md](supabase.md) | developer |
 | Render | [render.md](render.md) | developer |
 | Railway | [railway.md](railway.md) | developer |
@@ -134,6 +135,10 @@ recommended policies.
 | Matrix | [matrix.md](matrix.md) | homelab, team |
 | Signal (signal-cli-rest-api) | [signal.md](signal.md) | homelab |
 | listmonk | [listmonk.md](listmonk.md) | team, homelab |
+| Resend | [resend.md](resend.md) | developer, team |
+| Mailgun | [mailgun.md](mailgun.md) | developer, team |
+| SendGrid | [sendgrid.md](sendgrid.md) | developer, team |
+| Postmark | [postmark.md](postmark.md) | developer, team |
 | Zendesk | [zendesk.md](zendesk.md) | team |
 | Freshdesk | [freshdesk.md](freshdesk.md) | team |
 | Chatwoot | [chatwoot.md](chatwoot.md) | team |

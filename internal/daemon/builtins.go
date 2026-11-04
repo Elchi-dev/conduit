@@ -5,6 +5,9 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/automation"
 	"github.com/elchi-dev/conduit/modules/adguard"
+	"github.com/elchi-dev/conduit/modules/argocd"
+	"github.com/elchi-dev/conduit/modules/arr"
+	"github.com/elchi-dev/conduit/modules/authentik"
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/backblaze"
 	"github.com/elchi-dev/conduit/modules/calendar"
@@ -35,9 +38,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/n8n"
+	"github.com/elchi-dev/conduit/modules/netlify"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
+	"github.com/elchi-dev/conduit/modules/notion"
+	"github.com/elchi-dev/conduit/modules/npm"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/opnsense"
@@ -47,6 +53,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/plex"
 	"github.com/elchi-dev/conduit/modules/portainer"
 	"github.com/elchi-dev/conduit/modules/proxmox"
+	"github.com/elchi-dev/conduit/modules/qbittorrent"
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/sentry"
@@ -57,6 +64,9 @@ import (
 	"github.com/elchi-dev/conduit/modules/synology"
 	"github.com/elchi-dev/conduit/modules/system"
 	"github.com/elchi-dev/conduit/modules/tailscale"
+	"github.com/elchi-dev/conduit/modules/todoist"
+	"github.com/elchi-dev/conduit/modules/traefik"
+	"github.com/elchi-dev/conduit/modules/trello"
 	"github.com/elchi-dev/conduit/modules/truenas"
 	"github.com/elchi-dev/conduit/modules/twitch"
 	"github.com/elchi-dev/conduit/modules/unifi"
@@ -144,6 +154,16 @@ func builtins(app *App) []sdk.Module {
 		mattermost.New(),
 		opnsense.New(),
 		woodpecker.New(),
+		arr.New(),
+		qbittorrent.New(),
+		npm.New(),
+		traefik.New(),
+		authentik.New(),
+		todoist.New(),
+		trello.New(),
+		notion.New(),
+		netlify.New(),
+		argocd.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

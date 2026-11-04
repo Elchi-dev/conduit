@@ -65,6 +65,16 @@ recommended policies.
 | Mattermost | [mattermost.md](mattermost.md) | team, developer |
 | OPNsense | [opnsense.md](opnsense.md) | homelab |
 | Woodpecker CI | [woodpecker.md](woodpecker.md) | developer, homelab |
+| Sonarr, Radarr and the *arrs | [arr.md](arr.md) | homelab |
+| qBittorrent | [qbittorrent.md](qbittorrent.md) | homelab |
+| Nginx Proxy Manager | [npm.md](npm.md) | homelab |
+| Traefik | [traefik.md](traefik.md) | homelab, developer |
+| authentik | [authentik.md](authentik.md) | homelab, team |
+| Todoist | [todoist.md](todoist.md) | developer, team |
+| Trello | [trello.md](trello.md) | team, developer |
+| Notion | [notion.md](notion.md) | team, developer |
+| Netlify | [netlify.md](netlify.md) | developer |
+| Argo CD | [argocd.md](argocd.md) | developer, homelab, team |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

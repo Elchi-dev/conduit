@@ -29,9 +29,11 @@ owner and a company equally; never tailor it to one setup.
   console, mDNS discovery, home tiles, guides, browser tests and an
   accessibility pass in CI, installing signed modules from a hub,
   restricted vault folders for teams.
-- **Now (Wed 4 Nov, early):** v0.3.0. Helpers on daemon passkeys, the
-  website in German, and five more modules (Grafana, GitHub Actions,
-  Portainer, Immich, Paperless-ngx).
+- **Now (Wed 4 Nov, ~07:00 CET):** 105 built-in modules, passkeys on the
+  daemon, the website in English and German, six security reviews fixed,
+  signed releases (v0.3.1). Next: a final review pass and polish, then
+  v1.0.0 (notes in docs/releases/v1.0.0.md), then keep adding modules
+  toward v1.1 until Thu 00:00.
 - **Backlog** (take the next item when a phase ends; the build runs until
   Thu 2026-11-05 00:00 CET):
   1. Daemon passkeys (serve the desktop app on localhost, which WebAuthn

@@ -3,6 +3,47 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · Phases 39–45 — Passkeys, the website in German, 105 modules, two more reviews
+
+- **Phase 39, website:** every page in English and German (`/de/`), a
+  language switch that keeps the page, hreflang alternates; marketplace
+  pages; `/registry/` moves to `/modules/`; `pnpm test:i18n` for the site.
+- **Phase 40, daemon passkeys:** usernameless, user verification required
+  (counts as both factors), only under host names (WebAuthn refuses IP
+  addresses, so not in the desktop app); challenges single use and bound;
+  e2e with Chrome's virtual authenticator.
+- **Phase 41, modules 56–105** in eight batches: Grafana, Portainer,
+  Immich, Paperless-ngx, n8n; Synology, Backblaze B2, Mattermost, OPNsense,
+  Woodpecker (and Cloudflare tunnels, Gitea Actions); the *arr suite,
+  qBittorrent, Nginx Proxy Manager, Traefik, authentik; Todoist, Trello,
+  Notion, Netlify, Argo CD; Unraid, Jenkins, Frigate, Mealie, wg-easy;
+  Telegram, Stripe, Supabase, Render, Railway; MQTT, Navidrome,
+  Audiobookshelf, Kodi, Syncthing; Bitbucket, Azure DevOps, Terraform
+  Cloud, Nomad, Datadog; HashiCorp Vault/OpenBao, Consul, Keycloak, Harbor,
+  SonarQube; NUT, Scrutiny, Speedtest Tracker, Tautulli, Overseerr. Every
+  one: secret references only, no cross-host redirects, inputs checked
+  before they reach a URL, previews for changes, fake-server tests.
+  Everything here is tested against fakes written from each API's docs, not
+  against live servers; the docs pages say where an API detail is unverified
+  (Unraid, Railway, Supabase usage, Speedtest Tracker, Tautulli).
+- **Phase 42, fifth review** (passkeys and 20 modules): raw nginx config at
+  write risk, Argo CD sync pruning or picking revisions, qBittorrent save
+  paths, Backblaze hides that delete under lifecycle rules, passkey
+  ceremony exhaustion, broad Grafana silences; all fixed.
+- **Phase 43, sixth review** (20 more modules): only risk levels were
+  wrong (deploying any commit, re-enabling revoked VPN peers, reversing
+  cancellations, blinding cameras and monitors, MQTT shared-subscription
+  theft); all fixed.
+- **Phase 44, a risk check over every action** (`internal/daemon/
+  risk_lint_test.go`): actions named like deploy, stop, restart, delete,
+  revoke, refund, apply, merge, approve or shutdown must be destructive,
+  with a short allow-list of documented exceptions. It raised a dozen older
+  actions; by the same rule, shipping code, re-running pipelines, network
+  access and filtering changes, and running an automation are destructive.
+- **Phase 45, CI:** the hub image copies the readme renderer the
+  marketplace shares; a flaky Ollama test fixed; e2e for the new screens.
+- **Decision (owner, 02:33):** work without asking; restart stopped work.
+
 ## 2026-11-04 · Phases 34–38 — Signed releases, owner requests, fourth review
 
 - **Phase 34, releases:** v0.3.0 (all platforms, macOS runners back) and

@@ -13,8 +13,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/audiobookshelf"
 	"github.com/elchi-dev/conduit/modules/authentik"
 	"github.com/elchi-dev/conduit/modules/aws"
+	"github.com/elchi-dev/conduit/modules/azure"
 	"github.com/elchi-dev/conduit/modules/azuredevops"
 	"github.com/elchi-dev/conduit/modules/backblaze"
+	"github.com/elchi-dev/conduit/modules/bazarr"
 	"github.com/elchi-dev/conduit/modules/beszel"
 	"github.com/elchi-dev/conduit/modules/betterstack"
 	"github.com/elchi-dev/conduit/modules/bitbucket"
@@ -25,6 +27,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/caddy"
 	"github.com/elchi-dev/conduit/modules/calcom"
 	"github.com/elchi-dev/conduit/modules/calendar"
+	"github.com/elchi-dev/conduit/modules/calibreweb"
 	"github.com/elchi-dev/conduit/modules/caprover"
 	"github.com/elchi-dev/conduit/modules/chatwoot"
 	"github.com/elchi-dev/conduit/modules/checkmk"
@@ -59,6 +62,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
 	"github.com/elchi-dev/conduit/modules/gatus"
+	"github.com/elchi-dev/conduit/modules/gcp"
 	"github.com/elchi-dev/conduit/modules/ghost"
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
@@ -79,10 +83,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/infisical"
 	"github.com/elchi-dev/conduit/modules/influxdb"
+	"github.com/elchi-dev/conduit/modules/ionos"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
 	"github.com/elchi-dev/conduit/modules/jira"
 	"github.com/elchi-dev/conduit/modules/karakeep"
+	"github.com/elchi-dev/conduit/modules/kavita"
 	"github.com/elchi-dev/conduit/modules/keycloak"
 	"github.com/elchi-dev/conduit/modules/kick"
 	"github.com/elchi-dev/conduit/modules/kodi"
@@ -126,6 +132,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/notion"
 	"github.com/elchi-dev/conduit/modules/npm"
 	"github.com/elchi-dev/conduit/modules/nut"
+	"github.com/elchi-dev/conduit/modules/nzbget"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/onepassword"
@@ -134,6 +141,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/openxbl"
 	"github.com/elchi-dev/conduit/modules/opnsense"
 	"github.com/elchi-dev/conduit/modules/outline"
+	"github.com/elchi-dev/conduit/modules/ovhcloud"
 	"github.com/elchi-dev/conduit/modules/paddle"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/paperless"
@@ -156,6 +164,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/resend"
 	"github.com/elchi-dev/conduit/modules/restic"
 	"github.com/elchi-dev/conduit/modules/rocketchat"
+	"github.com/elchi-dev/conduit/modules/romm"
 	"github.com/elchi-dev/conduit/modules/s3"
 	"github.com/elchi-dev/conduit/modules/sabnzbd"
 	"github.com/elchi-dev/conduit/modules/scaleway"
@@ -271,6 +280,10 @@ func builtins(app *App) []sdk.Module {
 		sentry.New(),
 		tailscale.New(),
 		hetzner.New(),
+		azure.New(),
+		gcp.New(),
+		ovhcloud.New(),
+		ionos.New(),
 		digitalocean.New(),
 		linode.New(),
 		vultr.New(),
@@ -452,6 +465,11 @@ func builtins(app *App) []sdk.Module {
 		monday.New(),
 		plane.New(),
 		youtrack.New(),
+		kavita.New(),
+		calibreweb.New(),
+		romm.New(),
+		bazarr.New(),
+		nzbget.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

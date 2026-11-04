@@ -49,6 +49,10 @@ recommended policies.
 | Vultr | [vultr.md](vultr.md) | developer, homelab |
 | Scaleway | [scaleway.md](scaleway.md) | developer, homelab |
 | UpCloud | [upcloud.md](upcloud.md) | developer, homelab |
+| Azure | [azure.md](azure.md) | developer, team |
+| Google Cloud | [gcp.md](gcp.md) | developer, team |
+| OVHcloud | [ovhcloud.md](ovhcloud.md) | developer, homelab |
+| IONOS Cloud | [ionos.md](ionos.md) | developer, homelab |
 | Vercel | [vercel.md](vercel.md) | developer |
 | Fly.io | [fly.md](fly.md) | developer |
 | Databases (PostgreSQL, MySQL) | [database.md](database.md) | developer, team |
@@ -219,6 +223,11 @@ recommended policies.
 | monday.com | [monday.md](monday.md) | team |
 | Plane | [plane.md](plane.md) | developer, team, homelab |
 | YouTrack | [youtrack.md](youtrack.md) | developer, team |
+| Kavita | [kavita.md](kavita.md) | homelab, gamer |
+| Calibre-Web | [calibreweb.md](calibreweb.md) | homelab |
+| RomM | [romm.md](romm.md) | gamer, homelab |
+| Bazarr | [bazarr.md](bazarr.md) | homelab |
+| NZBGet | [nzbget.md](nzbget.md) | homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

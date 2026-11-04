@@ -3,6 +3,31 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+## 2026-11-04 · After 1.0, continued (185 modules, reviews 12–15)
+
+- **Modules 156–185:** CI and code quality (CircleCI, Buildkite, Codecov,
+  Snyk, Drone), email delivery and payments (Resend, Mailgun, SendGrid,
+  Postmark, Lemon Squeezy), secrets managers (1Password Connect, Bitwarden
+  Secrets Manager with local decryption, Infisical, Doppler, SOPS
+  metadata), home (PhotoPrism, Homebox, Grocy, Monica, linkding), community
+  chat (Rocket.Chat, Zulip, Discourse, Lemmy, Nextcloud Talk) and databases
+  and search (Elasticsearch, MongoDB, ClickHouse, InfluxDB, Meilisearch).
+- **Review 12, nested calls:** module code now runs with the caller in its
+  context (core.WithActor). The daily brief used to read mail and calendar
+  as the system, so an agent denied the calendar could read it through the
+  brief; it now reads as the caller. This also affects v1.0, so it wants a
+  v1.0.1 once Actions runs. DNS control names (_dmarc, mta-sts…) need the
+  destructive add; a shared URL guard for links agents hand to servers.
+- **Review 13, errors:** sensitive actions' errors are stored as a class
+  only; stored errors never carry URL queries or credentials.
+- **Review 14:** SOPS parsing can't be used to exhaust memory or CPU;
+  PhotoPrism searches can't reach place data at read.
+- **Review 15:** query checks are real parsers, not text matching: a Flux
+  lexer, MongoDB checks on the decoded BSON, Elasticsearch wrapper queries
+  refused; chat wildcard mentions refused.
+- **Restarts:** the container restarted twice; one restart stopped work
+  from about 10:40 to 13:28. Nothing committed was lost.
+
 ## 2026-11-04 · After 1.0 — toward v1.1 (155 modules, reviews 8–11)
 
 - **Modules 106–155**, in batches, each followed by an independent review:

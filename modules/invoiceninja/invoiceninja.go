@@ -58,11 +58,12 @@ type Module struct {
 func New() *Module { return &Module{} }
 
 var (
-	pathRe   = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
-	idRe     = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
-	dateRe   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	amountRe = regexp.MustCompile(`^\d{1,12}(\.\d{1,4})?$`)
-	qtyRe    = regexp.MustCompile(`^\d{1,9}(\.\d{1,4})?$`)
+	pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
+	idRe   = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+	dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	// No leading zeros: the strings go into the request as JSON numbers.
+	amountRe = regexp.MustCompile(`^(0|[1-9]\d{0,11})(\.\d{1,4})?$`)
+	qtyRe    = regexp.MustCompile(`^(0|[1-9]\d{0,8})(\.\d{1,4})?$`)
 )
 
 const (
@@ -238,15 +239,28 @@ func rat(n money) *big.Rat {
 	return r
 }
 
-func dec(n money) string { return rat(n).FloatString(2) }
+func dec(n money) string { return decRat(rat(n)) }
+
+// decRat writes an amount with at least two decimals and as many more as it
+// has, up to four: a currency with three decimals (KWD, BHD) keeps them, so
+// a balance of 10.125 isn't shown, or paid, as 10.13.
+func decRat(r *big.Rat) string {
+	s := r.FloatString(4)
+	for strings.HasSuffix(s, "0") && len(s)-strings.IndexByte(s, '.') > 3 {
+		s = s[:len(s)-1]
+	}
+	return s
+}
 
 type contact struct {
+	ID        string `json:"id"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Email     string `json:"email"`
 	Phone     string `json:"phone"`
 	IsPrimary bool   `json:"is_primary"`
 	SendEmail *bool  `json:"send_email"`
+	IsLocked  bool   `json:"is_locked"`
 }
 
 type client struct {
@@ -280,15 +294,39 @@ func (c client) label() string {
 	return "client " + c.ID
 }
 
-// recipients are the contacts an invoice email goes to.
-func (c client) recipients() []string {
+// recipients are the contacts an invoice email goes to. Invoice Ninja
+// emails the invoice's invitations (made for the contacts set to receive
+// email when the invoice was created), each whose contact has an email
+// address and isn't locked, whatever the contact's send_email says now. An
+// invitation whose contact is no longer on the client can't be named, so
+// it's refused rather than left out of the preview. Without invitations in
+// the answer (older servers), the contacts set to receive email are used.
+func (c client) recipients(inv invoice) ([]string, error) {
 	out := []string{}
+	if inv.Invitations == nil {
+		for _, ct := range c.Contacts {
+			if ct.Email != "" && !ct.IsLocked && (ct.SendEmail == nil || *ct.SendEmail) {
+				out = append(out, ct.Email)
+			}
+		}
+		return out, nil
+	}
+	byID := map[string]contact{}
 	for _, ct := range c.Contacts {
-		if ct.Email != "" && (ct.SendEmail == nil || *ct.SendEmail) {
+		byID[ct.ID] = ct
+	}
+	seen := map[string]bool{}
+	for _, i := range *inv.Invitations {
+		ct, ok := byID[i.ContactID]
+		if !ok || i.ContactID == "" {
+			return nil, fmt.Errorf("%s is addressed to a contact that's no longer on the client; check its contacts in Invoice Ninja", inv.label())
+		}
+		if ct.Email != "" && !ct.IsLocked && !seen[ct.Email] {
+			seen[ct.Email] = true
 			out = append(out, ct.Email)
 		}
 	}
-	return out
+	return out, nil
 }
 
 type invoice struct {
@@ -303,6 +341,10 @@ type invoice struct {
 	PONumber  string `json:"po_number"`
 	IsDeleted bool   `json:"is_deleted"`
 	Archived  int64  `json:"archived_at"`
+	// Invitations are whom an email goes to; nil when the server sent none.
+	Invitations *[]struct {
+		ContactID string `json:"client_contact_id"`
+	} `json:"invitations"`
 }
 
 func (i invoice) status() string {
@@ -686,7 +728,7 @@ func (c *conn) create(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if notes != "" {
 		body["public_notes"] = notes
 	}
-	summary := fmt.Sprintf("Create a draft invoice for %s: %d item(s), %s before tax, dated %s (nothing is sent)", cl.label(), len(lines), total.FloatString(2), date)
+	summary := fmt.Sprintf("Create a draft invoice for %s: %d item(s), %s before tax, dated %s (nothing is sent)", cl.label(), len(lines), decRat(total), date)
 	if call.DryRun {
 		return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: "invoice for " + cl.label(), Op: "create", After: mustJSON(body)}}}}, nil
 	}
@@ -797,7 +839,10 @@ func (c *conn) email(ctx context.Context, call sdk.Call, id string) (sdk.Result,
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	to := cl.recipients()
+	to, err := cl.recipients(inv)
+	if err != nil {
+		return sdk.Result{}, err
+	}
 	if len(to) == 0 {
 		return sdk.Result{}, fmt.Errorf("%s has no contact with an email address to send to", cl.label())
 	}
@@ -838,33 +883,35 @@ func (c *conn) pay(ctx context.Context, call sdk.Call, id string, p input) (sdk.
 	if err := usable(inv); err != nil {
 		return sdk.Result{}, err
 	}
+	// A draft's balance is 0 until it's sent: refuse it before saying
+	// there's nothing to pay.
+	if inv.status() == "draft" {
+		return sdk.Result{}, fmt.Errorf("%s is a draft; mark it sent first", inv.label())
+	}
 	bal := rat(inv.Balance)
 	if bal.Sign() <= 0 {
 		return sdk.JSON(map[string]any{"id": id, "status": inv.status(), "balance": dec(inv.Balance), "note": "nothing to change: nothing is left to pay"})
-	}
-	if inv.status() == "draft" {
-		return sdk.Result{}, fmt.Errorf("%s is a draft; mark it sent first", inv.label())
 	}
 	amt := bal
 	if amount != "" {
 		amt = rat(money(amount))
 		if amt.Cmp(bal) > 0 {
-			return sdk.Result{}, fmt.Errorf("the amount is more than the balance (%s)", bal.FloatString(2))
+			return sdk.Result{}, fmt.Errorf("the amount is more than the balance (%s)", decRat(bal))
 		}
 	}
 	cl, err := c.client(ctx, inv.ClientID)
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	a := amt.FloatString(2)
+	a := decRat(amt)
 	body := map[string]any{"client_id": inv.ClientID, "amount": json.Number(a), "date": date, "invoices": []map[string]any{{"invoice_id": id, "amount": json.Number(a)}}}
 	if ref != "" {
 		body["transaction_reference"] = ref
 	}
 	if call.DryRun {
 		left := new(big.Rat).Sub(bal, amt)
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Record a payment of %s from %s on %s against %s (balance %s, then %s)", a, cl.label(), date, inv.label(), bal.FloatString(2), left.FloatString(2)),
-			Changes: []sdk.Change{{Target: inv.label(), Op: "record payment", Before: mustJSON(map[string]string{"balance": bal.FloatString(2)}), After: mustJSON(map[string]string{"balance": left.FloatString(2)})}}}}, nil
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Record a payment of %s from %s on %s against %s (balance %s, then %s)", a, cl.label(), date, inv.label(), decRat(bal), decRat(left)),
+			Changes: []sdk.Change{{Target: inv.label(), Op: "record payment", Before: mustJSON(map[string]string{"balance": decRat(bal)}), After: mustJSON(map[string]string{"balance": decRat(left)})}}}}, nil
 	}
 	var d struct {
 		Data struct {

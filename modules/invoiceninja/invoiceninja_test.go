@@ -19,6 +19,7 @@ import (
 type inv struct {
 	status, amount, balance, number string
 	deleted                         bool
+	invitations                     string // JSON; the first contact's by default
 }
 
 type fakeNinja struct {
@@ -30,12 +31,16 @@ type fakeNinja struct {
 	next     int
 }
 
-const clientJSON = `{"id":"Wpmbk5ezJn","number":"0001","name":"Acme Ltd","balance":1200,"paid_to_date":300.5,"address1":"1 Main St","city":"Springfield","postal_code":"12345","custom_value1":"LEAKME","contacts":[{"first_name":"Ada","last_name":"Lovelace","email":"ada@acme.test","phone":"LEAKME","is_primary":true,"send_email":true},{"first_name":"Bob","email":"bob@acme.test","send_email":false}]}`
+const clientJSON = `{"id":"Wpmbk5ezJn","number":"0001","name":"Acme Ltd","balance":1200,"paid_to_date":300.5,"address1":"1 Main St","city":"Springfield","postal_code":"12345","custom_value1":"LEAKME","contacts":[{"id":"c1","first_name":"Ada","last_name":"Lovelace","email":"ada@acme.test","phone":"LEAKME","is_primary":true,"send_email":true},{"id":"c2","first_name":"Bob","email":"bob@acme.test","send_email":false},{"id":"c3","first_name":"Cy","email":"cy@acme.test","send_email":true},{"id":"c4","first_name":"Lu","email":"lu@acme.test","send_email":true,"is_locked":true}]}`
 
 func (f *fakeNinja) invoice(id string) string {
 	i := f.invoices[id]
-	return fmt.Sprintf(`{"id":%q,"number":%q,"client_id":"Wpmbk5ezJn","status_id":%q,"date":"2026-11-01","due_date":"2026-11-15","amount":%s,"balance":%s,"is_deleted":%t,"private_notes":"LEAKME","invitations":[{"key":"LEAKME"}]}`,
-		id, i.number, i.status, i.amount, i.balance, i.deleted)
+	invs := i.invitations
+	if invs == "" {
+		invs = `[{"key":"LEAKME","client_contact_id":"c1"}]`
+	}
+	return fmt.Sprintf(`{"id":%q,"number":%q,"client_id":"Wpmbk5ezJn","status_id":%q,"date":"2026-11-01","due_date":"2026-11-15","amount":%s,"balance":%s,"is_deleted":%t,"private_notes":"LEAKME","invitations":%s}`,
+		id, i.number, i.status, i.amount, i.balance, i.deleted, invs)
 }
 
 func (f *fakeNinja) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +132,11 @@ func setup(t *testing.T, tok string) (*Module, *fakeNinja) {
 	f := &fakeNinja{invoices: map[string]*inv{
 		"Inv1":   {status: "2", amount: "1200", balance: "899.5", number: "0041"},
 		"Draft1": {status: "1", amount: "500.25", balance: "0"},
+		"Draft2": {status: "1", amount: "80", balance: "0"},
 		"Paid1":  {status: "4", amount: "50", balance: "0", number: "0040"},
+		// Invited when Bob still took email and before Cy was added; Lu is locked.
+		"Inv2":  {status: "2", amount: "10.125", balance: "10.125", number: "0043", invitations: `[{"client_contact_id":"c1"},{"client_contact_id":"c2"},{"client_contact_id":"c4"}]`},
+		"Gone1": {status: "2", amount: "1", balance: "1", number: "0044", invitations: `[{"client_contact_id":"c9"}]`},
 	}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
@@ -234,6 +243,11 @@ func TestInvoiceNinja(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A draft has no balance yet: it's refused, not "nothing to pay".
+	if r, err := invoke(m, "record_payment", `{"invoice":"Draft2"}`, true); err == nil || !strings.Contains(err.Error(), "mark it sent first") {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+
 	risk := map[string]sdk.Risk{"create_invoice": sdk.RiskWrite, "delete_invoice": sdk.RiskDestructive, "mark_sent": sdk.RiskDestructive, "email_invoice": sdk.RiskDestructive, "record_payment": sdk.RiskDestructive}
 	for _, a := range m.Manifest().Actions {
 		if !a.Sensitive {
@@ -242,6 +256,41 @@ func TestInvoiceNinja(t *testing.T) {
 		if want, ok := risk[a.Name]; ok && a.Risk != want {
 			t.Fatalf("%s is %s", a.Name, a.Risk)
 		}
+	}
+}
+
+// The preview names whom Invoice Ninja emails: the invoice's invitations
+// (whatever send_email says now), not the client's current contacts.
+func TestInvoiceNinjaEmailRecipientsAreTheInvitations(t *testing.T) {
+	m, f := setup(t, "secret://n")
+	r, err := invoke(m, "email_invoice", `{"invoice":"Inv2"}`, true)
+	if err != nil || r.Plan == nil || !strings.HasSuffix(r.Plan.Summary, "to Acme Ltd: ada@acme.test, bob@acme.test") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if r, err := invoke(m, "email_invoice", `{"invoice":"Inv2"}`, false); err != nil || !strings.Contains(string(r.Output), `"emailedTo":["ada@acme.test","bob@acme.test"]`) {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	if _, err := invoke(m, "email_invoice", `{"invoice":"Gone1"}`, false); err == nil || !strings.Contains(err.Error(), "no longer on the client") || len(f.emailed) != 1 {
+		t.Fatalf("%v %v", err, f.emailed)
+	}
+}
+
+// Amounts keep their decimals: a three-decimal currency's balance is paid
+// exactly, and an amount is sent as given rather than rounded.
+func TestInvoiceNinjaPaymentKeepsDecimals(t *testing.T) {
+	m, f := setup(t, "secret://n")
+	r, err := invoke(m, "record_payment", `{"invoice":"Inv2"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Record a payment of 10.125 from Acme Ltd on 2026-11-04 against invoice 0043 (balance 10.125, then 0.00)" {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv2"}`, false); err != nil || fmt.Sprint(f.payments[0]["amount"]) != "10.125" {
+		t.Fatalf("%v %v", f.payments, err)
+	}
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","amount":"0.0049"}`, false); err != nil || fmt.Sprint(f.payments[1]["amount"]) != "0.0049" {
+		t.Fatalf("%v %v", f.payments, err)
+	}
+	if r, _ := invoke(m, "invoices", `{}`, false); !strings.Contains(string(r.Output), `"balance":"10.125"`) {
+		t.Fatal(string(r.Output))
 	}
 }
 
@@ -269,6 +318,8 @@ func TestInvoiceNinjaValidation(t *testing.T) {
 		{"record_payment", `{"invoice":"Inv1","amount":"0"}`},
 		{"record_payment", `{"invoice":"Inv1","amount":"NaN"}`},
 		{"record_payment", `{"invoice":"Inv1","amount":"1.23456"}`},
+		{"record_payment", `{"invoice":"Inv1","amount":"0100"}`},
+		{"create_invoice", `{"client":"Wpmbk5ezJn","items":[{"description":"x","cost":"1","quantity":"01"}]}`},
 		{"record_payment", `{"invoice":"Inv1","date":"tomorrow"}`},
 	} {
 		if _, err := invoke(m, c.action, c.in, false); err == nil {

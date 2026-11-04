@@ -18,12 +18,14 @@ self-signed certificate, set `fingerprint`.
 | `create_invoice` | write | A draft for `client` from `items` (`description`, `cost`, optional `quantity` and `product`), with optional `date`, `dueDate`, `poNumber` and `publicNotes`. The preview names the client and the total before tax. Nothing is sent. Undo deletes the draft. |
 | `delete_invoice` | destructive | Deletes a draft invoice. Anything past draft is refused, so a sent invoice is never removed here. |
 | `mark_sent` | destructive | Marks a draft sent without emailing it: it gets its number, counts toward the client's balance and becomes due. The preview names the client and amount. |
-| `email_invoice` | destructive | Emails the invoice to the client's contacts with your invoice template (a draft is marked sent). The preview names the client, the recipients, the amount and the balance. |
+| `email_invoice` | destructive | Emails the invoice with your invoice template (a draft is marked sent). Invoice Ninja sends it to the invoice's invitations (the contacts set to receive email when it was created, with an email address and not locked), so those are the recipients the preview names, with the client, amount and balance. An invitation to a contact no longer on the client is refused. |
 | `record_payment` | destructive | Records a payment against an invoice: the whole balance by default, or `amount`, with an optional `date` and `reference`. The preview shows the balance before and after. |
 
 Every action is sensitive: client names, contacts and amounts stay out of
 the audit log, approvals and events. Amounts go in as decimal strings such as `120.00` and are
-computed exactly, never as floating point. Marking sent when the invoice is
+computed exactly, never as floating point; they keep up to four decimals
+(a three-decimal currency's balance is shown and paid as is, not rounded to
+two). Recording a payment on a draft is refused: mark it sent first. Marking sent when the invoice is
 already sent, recording a payment on a paid invoice, and deleting a deleted
 draft each report that there's nothing to change.
 

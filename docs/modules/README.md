@@ -189,6 +189,10 @@ recommended policies.
 | Freshdesk | [freshdesk.md](freshdesk.md) | team |
 | Chatwoot | [chatwoot.md](chatwoot.md) | team |
 | Zammad | [zammad.md](zammad.md) | team |
+| Intercom | [intercom.md](intercom.md) | team |
+| Crisp | [crisp.md](crisp.md) | team |
+| Help Scout | [helpscout.md](helpscout.md) | team |
+| FreeScout | [freescout.md](freescout.md) | team, homelab |
 | Ghost | [ghost.md](ghost.md) | team |
 | BookStack | [bookstack.md](bookstack.md) | homelab, team |
 | Outline | [outline.md](outline.md) | team, developer |
@@ -254,6 +258,10 @@ recommended policies.
 | Directus | [directus.md](directus.md) | developer, team |
 | Strapi | [strapi.md](strapi.md) | developer, team |
 | NocoDB | [nocodb.md](nocodb.md) | developer, team, homelab |
+| Seafile | [seafile.md](seafile.md) | homelab, team |
+| File Browser | [filebrowser.md](filebrowser.md) | homelab |
+| ownCloud Infinite Scale | [ocis.md](ocis.md) | homelab, team |
+| rclone | [rclone.md](rclone.md) | homelab, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

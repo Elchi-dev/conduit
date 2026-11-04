@@ -165,6 +165,11 @@ var sensitiveUndo = map[string]string{
 	"directus.create_item":     "delete_item",
 	"strapi.create_entry":      "delete_entry",
 	"nocodb.create_record":     "delete_record",
+
+	// Self-hosted file shares: the token names the link by a one-way id
+	// (a hash of the link's secret part), never the link itself.
+	"seafile.create_share_link": "revoke_share_link",
+	"filebrowser.create_share":  "delete_share",
 }
 
 // sensitiveUndoByID lists the entries of sensitiveUndo whose undo action is
@@ -179,6 +184,8 @@ var sensitiveUndoByID = map[string]bool{
 	"zammad.add_note":            true, // delete_note's preview quotes the note
 
 	"dropbox.create_shared_link": true, // revoke_shared_link takes a link; the token holds the file id alone
+	"seafile.create_share_link":  true, // revoke_share_link's preview names the path; the token holds the link's hashed id alone
+	"filebrowser.create_share":   true, // delete_share's preview names the path; the token holds the link's hashed id alone
 
 	"invoiceninja.create_invoice": true, // delete_invoice's preview shows the draft's amount
 }

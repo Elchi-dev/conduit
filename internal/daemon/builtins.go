@@ -42,6 +42,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/containerregistry"
 	"github.com/elchi-dev/conduit/modules/coolify"
 	"github.com/elchi-dev/conduit/modules/crafty"
+	"github.com/elchi-dev/conduit/modules/crisp"
 	"github.com/elchi-dev/conduit/modules/database"
 	"github.com/elchi-dev/conduit/modules/datadog"
 	"github.com/elchi-dev/conduit/modules/deluge"
@@ -58,10 +59,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/elevenlabs"
 	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/fastmail"
+	"github.com/elchi-dev/conduit/modules/filebrowser"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/firefly"
 	"github.com/elchi-dev/conduit/modules/flagsmith"
 	"github.com/elchi-dev/conduit/modules/fly"
+	"github.com/elchi-dev/conduit/modules/freescout"
 	"github.com/elchi-dev/conduit/modules/freshdesk"
 	"github.com/elchi-dev/conduit/modules/freshrss"
 	"github.com/elchi-dev/conduit/modules/frigate"
@@ -84,6 +87,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/hashivault"
 	"github.com/elchi-dev/conduit/modules/headscale"
 	"github.com/elchi-dev/conduit/modules/healthchecks"
+	"github.com/elchi-dev/conduit/modules/helpscout"
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
 	"github.com/elchi-dev/conduit/modules/homebox"
@@ -93,6 +97,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/immich"
 	"github.com/elchi-dev/conduit/modules/infisical"
 	"github.com/elchi-dev/conduit/modules/influxdb"
+	"github.com/elchi-dev/conduit/modules/intercom"
 	"github.com/elchi-dev/conduit/modules/invoiceninja"
 	"github.com/elchi-dev/conduit/modules/ionos"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
@@ -151,6 +156,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/nut"
 	"github.com/elchi-dev/conduit/modules/nzbget"
 	"github.com/elchi-dev/conduit/modules/obs"
+	"github.com/elchi-dev/conduit/modules/ocis"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/omada"
 	"github.com/elchi-dev/conduit/modules/onepassword"
@@ -179,6 +185,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/pterodactyl"
 	"github.com/elchi-dev/conduit/modules/qbittorrent"
 	"github.com/elchi-dev/conduit/modules/railway"
+	"github.com/elchi-dev/conduit/modules/rclone"
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/render"
 	"github.com/elchi-dev/conduit/modules/replicate"
@@ -191,6 +198,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/sabnzbd"
 	"github.com/elchi-dev/conduit/modules/scaleway"
 	"github.com/elchi-dev/conduit/modules/scrutiny"
+	"github.com/elchi-dev/conduit/modules/seafile"
 	"github.com/elchi-dev/conduit/modules/seerr"
 	"github.com/elchi-dev/conduit/modules/sendgrid"
 	"github.com/elchi-dev/conduit/modules/sentry"
@@ -424,6 +432,10 @@ func builtins(app *App) []sdk.Module {
 		freshdesk.New(),
 		chatwoot.New(),
 		zammad.New(),
+		intercom.New(),
+		crisp.New(),
+		helpscout.New(),
+		freescout.New(),
 		ghost.New(),
 		bookstack.New(),
 		outline.New(),
@@ -522,6 +534,10 @@ func builtins(app *App) []sdk.Module {
 		directus.New(),
 		strapi.New(),
 		nocodb.New(),
+		seafile.New(),
+		filebrowser.New(),
+		ocis.New(),
+		rclone.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

@@ -183,17 +183,35 @@ func (b bookmark) title() string {
 			return t
 		}
 	}
-	return b.URL
+	return bareURL(b.URL)
 }
 
-// summary is what listings and previews show: no notes (they're private).
+// bareURL is a link without its user part, query and fragment ("?…" says
+// one was there): outputs and previews end up in the audit log, events and
+// webhooks, and a query or fragment often holds a token, a session or
+// something personal (a reset link, a search).
+func bareURL(s string) string {
+	u, err := url.Parse(strings.TrimSpace(s))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return rest.ShortURL(s)
+	}
+	out := u.Scheme + "://" + u.Host + u.EscapedPath()
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(s, "#") {
+		out += "?…"
+	}
+	return out
+}
+
+// summary is what listings and previews show: no notes (they're private),
+// and links without their query and fragment.
 func (c *conn) summary(b bookmark) map[string]any {
 	tags := b.TagNames
 	if tags == nil {
 		tags = []string{}
 	}
-	out := map[string]any{"id": b.ID, "title": b.title(), "url": b.URL, "tags": tags, "added": b.DateAdded,
-		"open": c.origin + "/bookmarks?q=" + url.QueryEscape(b.URL)}
+	link := bareURL(b.URL)
+	out := map[string]any{"id": b.ID, "title": b.title(), "url": link, "tags": tags, "added": b.DateAdded,
+		"open": c.origin + "/bookmarks?q=" + url.QueryEscape(strings.TrimSuffix(link, "?…"))}
 	if b.IsArchived {
 		out["archived"] = true
 	}
@@ -415,7 +433,14 @@ func (c *conn) add(ctx context.Context, call sdk.Call, p input) (sdk.Result, err
 		body["description"] = d
 	}
 	if call.DryRun {
-		return sdk.Result{Plan: &sdk.Plan{Summary: "Save " + u.String(), Changes: []sdk.Change{{Target: u.String(), Op: "create", After: mustJSON(body)}}}}, nil
+		// The preview shows the link without its query and fragment.
+		link := bareURL(u.String())
+		shown := map[string]any{}
+		for k, v := range body {
+			shown[k] = v
+		}
+		shown["url"] = link
+		return sdk.Result{Plan: &sdk.Plan{Summary: "Save " + link, Changes: []sdk.Change{{Target: link, Op: "create", After: mustJSON(shown)}}}}, nil
 	}
 	var b bookmark
 	if err := c.do(ctx, http.MethodPost, "/bookmarks/", nil, body, &b); err != nil {

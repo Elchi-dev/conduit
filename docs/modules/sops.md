@@ -27,4 +27,12 @@ dotenv file, or a `[sops]` section in an INI file.
 it (`..`, an absolute path, a symlink pointing out) is refused. Files are
 parsed only far enough to find their keys and SOPS metadata, with a parser
 for the block YAML SOPS writes (no anchors expanded, nesting capped); a
-value is looked at only to see whether it starts with `ENC[`.
+value is looked at only to see whether it starts with `ENC[`. Parsing is
+linear in the file's size and bounded: a value may span at most 10,000
+lines, a dotenv or INI file's flattened `sops_…` keys at most 64 levels,
+list indexes below 64 and 10,000 nodes in all (a file over them is
+ignored), each file gets 2 seconds of parsing, and a scan reads at most
+64 MiB in 20 seconds (then reports `truncated`); a cancelled call stops
+parsing. Files are opened non-blocking and checked to be regular files once
+open, so one swapped for a FIFO or device after it was listed is never
+waited on.

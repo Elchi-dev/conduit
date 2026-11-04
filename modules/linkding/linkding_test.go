@@ -296,3 +296,34 @@ func TestLinkdingRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v", h)
 	}
 }
+
+// Outputs and previews end up in the audit log: links lose their query and
+// fragment there, while linkding still gets the whole link.
+func TestLinkdingDropsQueryFromOutputs(t *testing.T) {
+	m, f := setup(t, "secret://k")
+	f.marks[2] = &mark{url: "https://example.com/reset?token=s3cr3t#frag"}
+	f.marks[3] = &mark{url: "https://example.com/doc#access_token=s3cr3t"}
+	r, err := invoke(m, "recent", `{}`, false)
+	out := string(r.Output)
+	if err != nil || strings.Contains(out, "s3cr3t") || strings.Contains(out, "frag") || !strings.Contains(out, `"url":"https://example.com/reset?…"`) || !strings.Contains(out, `"url":"https://example.com/doc?…"`) {
+		t.Fatalf("%s %v", out, err)
+	}
+	link := "https://example.org/a?session=s3cr3t#x"
+	r, err = invoke(m, "add_bookmark", `{"url":"`+link+`"}`, true)
+	if err != nil || r.Plan == nil {
+		t.Fatal(err)
+	}
+	if plan, _ := json.Marshal(r.Plan); strings.Contains(string(plan), "s3cr3t") || !strings.Contains(string(plan), "https://example.org/a?…") {
+		t.Fatalf("preview: %s", plan)
+	}
+	r, err = invoke(m, "add_bookmark", `{"url":"`+link+`"}`, false)
+	if err != nil || strings.Contains(string(r.Output), "s3cr3t") {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	if !strings.Contains(f.seen[len(f.seen)-1], "session=s3cr3t") {
+		t.Fatalf("linkding didn't get the whole link: %v", f.seen[len(f.seen)-1])
+	}
+	if got := bareURL("https://u:p@example.com/a/b"); got != "https://example.com/a/b" {
+		t.Fatal(got)
+	}
+}

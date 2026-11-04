@@ -372,7 +372,8 @@ func TestGrocyStockAndChores(t *testing.T) {
 func TestGrocyValidation(t *testing.T) {
 	m, f := setup(t, "secret://k")
 	for _, a := range m.Manifest().Actions {
-		if strings.HasPrefix(a.Name, "remove") && a.Risk != sdk.RiskDestructive {
+		// Reverting a booking or execution reaches any past one, for good.
+		if (strings.HasPrefix(a.Name, "remove") || strings.HasPrefix(a.Name, "undo_")) && a.Risk != sdk.RiskDestructive {
 			t.Fatalf("%s isn't destructive", a.Name)
 		}
 	}
@@ -399,6 +400,10 @@ func TestGrocyValidation(t *testing.T) {
 		{"add_stock", `{"product":["x"],"amount":1}`},
 		{"undo_stock_transaction", `{"id":"../../system/info"}`},
 		{"undo_stock_transaction", `{}`},
+		{"undo_stock_transaction", `{"id":".."}`},
+		{"undo_stock_transaction", `{"id":"."}`},
+		{"undo_stock_transaction", `{"id":"-x"}`},
+		{"undo_stock_transaction", `{"id":"_tx"}`},
 		{"undo_chore_execution", `{"id":"1/../../x"}`},
 		{"undo_chore_execution", `{"id":0}`},
 		{"complete_chore", `{}`},

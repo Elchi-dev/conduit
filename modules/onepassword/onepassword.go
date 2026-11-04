@@ -327,7 +327,8 @@ func (c *conn) item(ctx context.Context, vaultID, s string) (fullItem, error) {
 }
 
 // hosts returns the hosts of an item's URLs: a URL can carry a token in its
-// path, query or user info, so only the host leaves the module.
+// path, query or user info, so only the host leaves the module, and only
+// when it has a dot and is a host name.
 func hosts(us []urlInfo) []string {
 	out := []string{}
 	for _, u := range us {
@@ -342,12 +343,17 @@ func hosts(us []urlInfo) []string {
 				h = q.Hostname()
 			}
 		}
-		if h != "" {
+		if h = strings.TrimSuffix(h, "."); hostNameRe.MatchString(h) && len(h) <= 253 {
 			out = append(out, h)
 		}
 	}
 	return out
 }
+
+// hostNameRe is a host name of two or more labels (or an IPv4 address).
+// Anything else a URL field holds (an otpauth:// secret's "totp", a bare
+// word or a password typed into the field) isn't output.
+var hostNameRe = regexp.MustCompile(`^(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?$`)
 
 func summary(it itemSummary) map[string]any {
 	e := map[string]any{"id": it.ID, "title": it.Title, "category": it.Category, "version": it.Version, "created": it.CreatedAt, "updated": it.UpdatedAt}

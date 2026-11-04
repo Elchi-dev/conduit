@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/elchi-dev/conduit/internal/fakehost"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -261,5 +263,87 @@ func TestSopsConfig(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "s"); h.Status != "down" {
 		t.Fatalf("%+v", h)
+	}
+}
+
+// A dotenv file whose flattened sops_… keys would build a huge tree (deep
+// nesting, big list indexes, many nodes) is ignored, cheaply.
+func TestSopsDotenvBombIgnored(t *testing.T) {
+	deep := func(levels, index int) []byte {
+		var b strings.Builder
+		b.WriteString("sops_version=3.9.0\nsops_a")
+		for i := 0; i < levels; i++ {
+			b.WriteString("__list_" + strconv.Itoa(index) + "__map_x")
+		}
+		b.WriteString("=v\n")
+		return []byte(b.String())
+	}
+	wide := func() []byte {
+		var b strings.Builder
+		b.WriteString("sops_version=3.9.0\n")
+		for i := 0; i < 400; i++ {
+			for j := 0; j < 60; j++ {
+				b.WriteString("sops_k" + strconv.Itoa(i) + "__list_" + strconv.Itoa(j) + "__map_x=v\n")
+			}
+		}
+		return []byte(b.String())
+	}
+	for name, b := range map[string][]byte{"deep": deep(3000, 10), "index": deep(1, 64), "nodes": wide()} {
+		start := time.Now()
+		if _, ok := inspect("x.env", b); ok {
+			t.Errorf("%s: read a file over the caps", name)
+		}
+		if d := time.Since(start); d > time.Second {
+			t.Errorf("%s: took %v", name, d)
+		}
+	}
+	for _, b := range [][]byte{deep(3, 63), []byte("sops_version=3.9.0\nsops_age__list_0__map_recipient=age1abc\n")} {
+		if _, ok := inspect("x.env", b); !ok {
+			t.Errorf("refused a file within the caps: %s", b)
+		}
+	}
+	if _, meta := parseINI([]byte("[sops]\nversion=3.9.0\nk__list_64__map_x=v\n"), nil); meta != nil {
+		t.Error("INI over the list cap read")
+	}
+}
+
+// Long quoted and plain multi-line scalars parse in linear time.
+func TestSopsYAMLLongScalars(t *testing.T) {
+	for _, c := range []struct {
+		name, first, line string
+		n                 int
+	}{
+		{"quoted", "a: \"\n", " " + strings.Repeat("b", 100) + "\n", 9000},
+		{"single", "a: '\n", " " + strings.Repeat("b", 100) + "\n", 9000},
+		{"quoted, many lines", "a: \"\n", "b\n", 100000},
+		{"plain, many lines", "a: x\n", " b\n", 100000},
+	} {
+		b := "sops:\n    version: 3.9.0\n" + c.first + strings.Repeat(c.line, c.n)
+		start := time.Now()
+		inspect("x.yaml", []byte(b))
+		if d := time.Since(start); d > time.Second {
+			t.Errorf("%s: took %v", c.name, d)
+		}
+	}
+	// The incremental quote state reads escapes and continuation lines as before.
+	docs, err := parseYAML([]byte("a: \"x \\\" y\n  z\" # c\nb: 'it''s\n  ok'\nc: 'x'\nd: \"\\\\\"\ne: plain\n  more\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := docs[0].(ymap)
+	for k, want := range map[string]string{"a": `x " y z`, "b": "it's ok", "c": "x", "d": `\`, "e": "plain more"} {
+		if d[k] != want {
+			t.Errorf("%s = %q, want %q", k, d[k], want)
+		}
+	}
+	// A scalar spanning more than maxContinuation lines makes the file unreadable.
+	if _, err := parseYAML([]byte("a: \""+strings.Repeat("x\n", maxContinuation+2)), nil); err == nil {
+		t.Error("read a scalar over the continuation cap")
+	}
+	// A cancelled call stops parsing.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := parseYAML([]byte(strings.Repeat("k: v\n", 5000)), newLimits(ctx, time.Minute)); err == nil {
+		t.Error("parsed on after the context ended")
 	}
 }

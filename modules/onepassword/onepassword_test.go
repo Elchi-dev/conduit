@@ -3,6 +3,7 @@ package onepassword
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -196,5 +197,27 @@ func TestOnePasswordRedirect(t *testing.T) {
 	}
 	if _, err := invoke(m, "vaults", `{}`); err == nil || leaked != "" {
 		t.Fatalf("followed the redirect: %v %q", err, leaked)
+	}
+}
+
+// Only real host names leave the module: a URL field can hold a TOTP
+// secret's otpauth:// link, a word or a password.
+func TestOnePasswordHostsOnlyHostNames(t *testing.T) {
+	got := hosts([]urlInfo{
+		{Href: "https://db.example.com:5432/x?token=t"},
+		{Href: "example.org/login"},
+		{Href: "http://10.0.0.5/"},
+		{Href: "https://münchen.de/"},
+		{Href: "otpauth://totp/Issuer:alice?secret=JBSWY3DPEHPK3PXP"},
+		{Href: "hunter2"},
+		{Href: "https://intranet/"},
+		{Href: "http://[::1]:8080/"},
+		{Href: "https://a..b/"},
+		{Href: "https://-x.example.com/"},
+		{Href: "https://x_y.example.com/"},
+		{Href: "my secret.value"},
+	})
+	if fmt.Sprint(got) != "[db.example.com example.org 10.0.0.5 münchen.de]" {
+		t.Fatal(got)
 	}
 }

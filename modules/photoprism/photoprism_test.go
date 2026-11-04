@@ -115,7 +115,7 @@ func TestPhotoPrism(t *testing.T) {
 		}
 	}
 	for _, a := range m.Manifest().Actions {
-		if (a.Name == "photo_places") != a.Sensitive {
+		if (a.Name == "photo_places" || a.Name == "folders") != a.Sensitive {
 			t.Fatalf("%s sensitive=%v", a.Name, a.Sensitive)
 		}
 		if strings.Contains(a.Name, "share") {
@@ -129,6 +129,11 @@ func TestPhotoPrism(t *testing.T) {
 
 	r, err = invoke(m, "albums", `{}`, false)
 	if err != nil || !strings.Contains(string(r.Output), `{"favorite":true,"photos":42,"title":"Holidays","uid":"a1","updated":"2026-10-01T00:00:00Z"}`) {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+
+	r, err = invoke(m, "folders", `{"query":"Italy"}`, false)
+	if err != nil || !strings.Contains(string(r.Output), `"folders":[`) || !strings.Contains(f.seen[len(f.seen)-1], "type=folder") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
 
@@ -165,6 +170,7 @@ func TestPhotoPrismValidation(t *testing.T) {
 		{"recent_photos", `{"query":"` + strings.Repeat("x", 501) + `"}`},
 		{"albums", `{"type":"state"}`},
 		{"albums", `{"type":"moment"}`},
+		{"albums", `{"type":"folder"}`},
 		{"start_index", `{"path":"../../etc"}`},
 		{"start_index", `{"path":"2026/../.."}`},
 		{"start_index", `{"path":".hidden"}`},
@@ -209,5 +215,51 @@ func TestPhotoPrismRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "k"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// recent_photos reads a search the way PhotoPrism does and takes only
+// filters that can't find photos by place; albums takes no filters.
+func TestPhotoPrismRecentQuery(t *testing.T) {
+	f := &fakePhotoPrism{}
+	m := setup(t, "secret://k", f)
+	for _, c := range []struct{ action, q string }{
+		{"recent_photos", "label:cat\vcountry:de"},      // \v: a space to PhotoPrism
+		{"recent_photos", "label:cat\u00a0near:p1"},     // no-break space
+		{"recent_photos", "label:cat\u2003city:Berlin"}, // em space
+		{"recent_photos", `c\"ountry\":de`},             // PhotoPrism drops quotes from keys
+		{"recent_photos", `\"lat\":52.5 \"lng\":13.4`},
+		{"recent_photos", "COUNTRY:de"},
+		{"recent_photos", "alt:30-40"},
+		{"recent_photos", "category:airport"},
+		{"recent_photos", "keywords:berlin"},
+		{"recent_photos", "path:2026/Italy-trip"},
+		{"recent_photos", "title:Berlin"},
+		{"recent_photos", "Berlin"},
+		{"recent_photos", "label:cat Berlin"},
+		{"recent_photos", "label:"},
+		{"recent_photos", "label:cat\u200bcountry:de"}, // zero-width space (format character)
+		{"recent_photos", "label:cat\u0085year:2025"},
+		{"photo_places", "near:p1\u202e"},
+		{"albums", "type:moment"},
+		{"albums", `\"type\":moment`},
+		{"albums", "title:x"},
+		{"albums", "Rome\u200d"},
+	} {
+		if _, err := invoke(m, c.action, `{"query":"`+c.q+`"}`, false); err == nil {
+			t.Errorf("%s accepted %q", c.action, c.q)
+		}
+	}
+	if len(f.seen) != 0 {
+		t.Fatalf("refused searches reached the server: %v", f.seen)
+	}
+	if _, err := invoke(m, "recent_photos", `{"query":" Label:cat   YEAR:2025 \"favorite\":true type:video|live"}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.seen[len(f.seen)-1]; !strings.Contains(got, "q=label%3Acat+year%3A2025+favorite%3Atrue+type%3Avideo%7Clive") {
+		t.Fatalf("sent %s", got)
+	}
+	if _, err := invoke(m, "albums", `{"query":"Summer holidays"}`, false); err != nil {
+		t.Fatal(err)
 	}
 }

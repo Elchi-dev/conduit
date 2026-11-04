@@ -17,8 +17,11 @@ such as `https://links.example.com` (with its context path, if it has one).
 | `unarchive_bookmark` | write | With a preview. Brings it back; undo archives it again. |
 | `delete_bookmark` | destructive | With a preview. Deletes the bookmark with its notes and snapshots; linkding can't bring it back. |
 
-Listings return titles, links, tags and dates, not your notes. Sharing
-bookmarks isn't offered: shared bookmarks can be public, and publishing is
+Listings return titles, links, tags and dates, not your notes. Links in
+listings, results and previews lose their user part, query and fragment
+(shown as `https://example.com/reset?…`), since they go to the audit log,
+events and webhooks and a query often holds a token or a session; linkding
+itself still gets and keeps the whole link. Sharing bookmarks isn't offered: shared bookmarks can be public, and publishing is
 destructive in Conduit.
 
 **Security.** The token goes in the `Authorization` header and the client

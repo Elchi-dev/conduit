@@ -17,7 +17,7 @@ self-signed certificate, enter its SHA-256 `fingerprint`.
 | --- | --- | --- |
 | `health` | read | The Connect server's name, version and the state of its sync and database dependencies. |
 | `vaults` | read | Name, id, description, type, item count and dates of each vault the token can read. |
-| `items` | read | Items of a `vault` (name or id), optionally only those with exactly a `title`: id, title, category, tags, favorite, version, state, dates, and the hosts of their URLs (a URL's path, query and user info can carry a token, so only the host is shown). Never field values. |
+| `items` | read | Items of a `vault` (name or id), optionally only those with exactly a `title`: id, title, category, tags, favorite, version, state, dates, and the hosts of their URLs (a URL's path, query and user info can carry a token, so only the host is shown, and only when it's a host name with a dot or an IPv4 address: an `otpauth://` link, a single word or anything else typed into a URL field is left out). Never field values. |
 | `item` | read | One item (title or id): its sections and each field's label, id, type, purpose and section, whether a field is empty, and its files' names and sizes. Never values. |
 | `reveal_field` | destructive, sensitive | The values of the `fields` named (labels or field ids, 1 to 10) of one item, and no others, with the ones that aren't there listed as `missing`. A label that more than one field has is refused with the fields' ids to choose from; a title that more than one item has, with the items' ids. Revealing a credential can't be taken back, so it's destructive, like Conduit's own `vault.reveal`. |
 

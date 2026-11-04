@@ -59,7 +59,7 @@ const (
 var (
 	pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
 	// Grocy's transaction ids are PHP uniqid() values.
-	txRe   = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	txRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 	digits = regexp.MustCompile(`^[1-9][0-9]{0,9}$`)
 )
 
@@ -90,17 +90,17 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + product + `,"amount":{"type":"number","exclusiveMinimum":0,"maximum":100000,"default":1},"note":{"type":"string","maxLength":500},` + list + `}}`)},
 			{Name: "remove_from_shopping_list", Title: "Remove from the shopping list", Description: "Removes a line by its id, or takes an amount of a product off the list (the line goes when nothing's left). Undo adds it back.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"item":{"type":"integer","minimum":1,"description":"Shopping list line id (see shopping_list)"},` + product + `,` + amount + `,` + list + `}}`)},
-			{Name: "consume_product", Title: "Consume a product", Description: "Takes an amount of a product out of stock, as used or spoiled. Undo reverts the booking, putting the same stock entries back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "consume_product", Title: "Consume a product", Description: "Takes an amount of a product out of stock, as used or spoiled. Undo reverts the booking, putting the same stock entries back (through undo_stock_transaction, so it's destructive).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["product","amount"],"properties":{` + product + `,` + amount + `,"spoiled":{"type":"boolean","default":false}}}`)},
-			{Name: "add_stock", Title: "Add stock", Description: "Books a purchase of a product, with an optional due date. Undo reverts the booking.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_stock", Title: "Add stock", Description: "Books a purchase of a product, with an optional due date. Undo reverts the booking (through undo_stock_transaction, so it's destructive).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["product","amount"],"properties":{` + product + `,` + amount + `,"bestBefore":{"type":"string","format":"date"}}}`)},
-			{Name: "undo_stock_transaction", Title: "Revert a stock booking", Description: "Reverts a purchase or consume booking by its transaction id, as Grocy's own undo does.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "undo_stock_transaction", Title: "Revert a stock booking", Description: "Reverts a purchase or consume booking by its transaction id, as Grocy's own undo does. It can revert any past booking and can't be taken back, so it's destructive.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Transaction id"}}}`)},
 			{Name: "chores_due", Title: "Chores due", Description: "Chores due within some days, overdue first.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"days":{"type":"integer","minimum":0,"maximum":365,"default":7}}}`)},
-			{Name: "complete_chore", Title: "Mark a chore done", Description: "Tracks a chore as done now. Undo reverts that execution.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "complete_chore", Title: "Mark a chore done", Description: "Tracks a chore as done now. Undo reverts that execution (through undo_chore_execution, so it's destructive).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["chore"],"properties":{` + chore + `}}`)},
-			{Name: "undo_chore_execution", Title: "Revert a chore execution", Description: "Reverts one tracked chore execution by its id.", Risk: sdk.RiskWrite,
+			{Name: "undo_chore_execution", Title: "Revert a chore execution", Description: "Reverts one tracked chore execution by its id. It can revert any past execution and can't be taken back, so it's destructive.", Risk: sdk.RiskDestructive,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"integer","minimum":1}}}`)},
 		},
 	}

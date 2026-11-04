@@ -3,6 +3,7 @@ package sops
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // A parsed document is a tree of map[string]any (with its keys' order in
@@ -51,16 +53,62 @@ type yline struct {
 	raw    bool   // blank or comment
 }
 
-const maxDepth = 64
+const (
+	maxDepth = 64
+	// maxContinuation caps the lines one quoted or plain scalar may span.
+	maxContinuation = 10000
+	// maxListLen and maxNodes bound what a dotenv or INI file's flattened
+	// sops_… keys may build: a list index, and the maps, lists and values
+	// of the whole file. A file over them is ignored.
+	maxListLen = 64
+	maxNodes   = 10000
+)
 
-var errYAML = errors.New("not YAML this module can read")
+var (
+	errYAML   = errors.New("not YAML this module can read")
+	errBudget = errors.New("too much work to read")
+)
 
-func parseYAML(b []byte) ([]any, error) {
+// limits bound the time spent parsing one file and stop it when the call's
+// context ends. A nil *limits never stops.
+type limits struct {
+	ctx   context.Context
+	until time.Time
+	steps int
+}
+
+func newLimits(ctx context.Context, d time.Duration) *limits {
+	return &limits{ctx: ctx, until: time.Now().Add(d)}
+}
+
+// step is called in every parsing loop; every 256 steps it checks the
+// context and the deadline.
+func (l *limits) step() error {
+	if l == nil {
+		return nil
+	}
+	l.steps++
+	if l.steps&255 != 0 {
+		return nil
+	}
+	if err := l.ctx.Err(); err != nil {
+		return err
+	}
+	if time.Now().After(l.until) {
+		return errBudget
+	}
+	return nil
+}
+
+func parseYAML(b []byte, lim *limits) ([]any, error) {
 	var docs [][]yline
 	var cur []yline
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
+		if err := lim.step(); err != nil {
+			return nil, err
+		}
 		l := strings.TrimRight(sc.Text(), " \t\r")
 		if l == "---" || strings.HasPrefix(l, "--- ") {
 			docs = append(docs, cur)
@@ -86,7 +134,7 @@ func parseYAML(b []byte) ([]any, error) {
 	docs = append(docs, cur)
 	var out []any
 	for _, d := range docs {
-		p := &yparser{lines: d}
+		p := &yparser{lines: d, lim: lim}
 		p.skip()
 		if p.i >= len(p.lines) {
 			continue
@@ -107,6 +155,7 @@ func parseYAML(b []byte) ([]any, error) {
 type yparser struct {
 	lines []yline
 	i     int
+	lim   *limits
 }
 
 func (p *yparser) skip() {
@@ -135,6 +184,9 @@ func (p *yparser) block(indent, depth int) (any, error) {
 func (p *yparser) seq(indent, depth int) (any, error) {
 	list := []any{}
 	for {
+		if err := p.lim.step(); err != nil {
+			return nil, err
+		}
 		p.skip()
 		if p.i >= len(p.lines) || p.lines[p.i].indent != indent || !isSeq(p.lines[p.i].text) {
 			return list, nil
@@ -183,6 +235,9 @@ func isMapLine(t string) bool { return keyRe.MatchString(t) }
 func (p *yparser) mapping(indent, depth int) (any, error) {
 	m := ymap{}
 	for {
+		if err := p.lim.step(); err != nil {
+			return nil, err
+		}
 		p.skip()
 		if p.i >= len(p.lines) || p.lines[p.i].indent != indent {
 			if p.i < len(p.lines) && p.lines[p.i].indent > indent {
@@ -241,11 +296,17 @@ func (p *yparser) mapping(indent, depth int) (any, error) {
 
 // scalarAt reads the value after "key:" (or "- ") on the current line,
 // with a block scalar's lines (indented beyond indent) when it's | or >.
+// Continuation lines are appended to a builder, and a quoted scalar's
+// quote state is carried from line to line, so a long value costs time in
+// proportion to its length.
 func (p *yparser) scalarAt(indent int, v string) (any, error) {
 	p.i++
 	if strings.HasPrefix(v, "|") || strings.HasPrefix(v, ">") {
 		var b strings.Builder
 		for p.i < len(p.lines) && (p.lines[p.i].raw || p.lines[p.i].indent > indent) {
+			if err := p.lim.step(); err != nil {
+				return nil, err
+			}
 			b.WriteString(p.lines[p.i].text)
 			b.WriteByte('\n')
 			p.i++
@@ -260,38 +321,81 @@ func (p *yparser) scalarAt(indent int, v string) (any, error) {
 	}
 	if strings.HasPrefix(v, `"`) || strings.HasPrefix(v, "'") {
 		// A quoted scalar may continue on the next lines.
-		q := v[0]
-		for !closedQuote(v, q) && p.i < len(p.lines) {
-			v += " " + p.lines[p.i].text
+		qs := quoteState{q: v[0]}
+		qs.feed(v[1:])
+		if qs.closed {
+			return unquote(stripQuotedComment(v)), nil
+		}
+		var b strings.Builder
+		b.WriteString(v)
+		for n := 0; !qs.closed && p.i < len(p.lines); n++ {
+			if n >= maxContinuation {
+				return nil, fmt.Errorf("%w (value too long)", errYAML)
+			}
+			if err := p.lim.step(); err != nil {
+				return nil, err
+			}
+			t := p.lines[p.i].text
+			b.WriteByte(' ')
+			b.WriteString(t)
+			qs.feed(" ")
+			qs.feed(t)
 			p.i++
 		}
-		return unquote(stripQuotedComment(v)), nil
+		return unquote(stripQuotedComment(b.String())), nil
 	}
 	if i := strings.Index(v, " #"); i >= 0 {
 		v = strings.TrimSpace(v[:i])
 	}
 	// A plain scalar may continue on more-indented lines.
-	for p.i < len(p.lines) && !p.lines[p.i].raw && p.lines[p.i].indent > indent && !isMapLine(p.lines[p.i].text) && !isSeq(p.lines[p.i].text) {
-		v += " " + p.lines[p.i].text
+	var b strings.Builder
+	b.WriteString(v)
+	for n := 0; p.i < len(p.lines) && !p.lines[p.i].raw && p.lines[p.i].indent > indent && !isMapLine(p.lines[p.i].text) && !isSeq(p.lines[p.i].text); n++ {
+		if n >= maxContinuation {
+			return nil, fmt.Errorf("%w (value too long)", errYAML)
+		}
+		if err := p.lim.step(); err != nil {
+			return nil, err
+		}
+		b.WriteByte(' ')
+		b.WriteString(p.lines[p.i].text)
 		p.i++
 	}
-	return v, nil
+	return b.String(), nil
 }
 
-func closedQuote(v string, q byte) bool {
-	for i := 1; i < len(v); i++ {
+// quoteState follows a quoted scalar after its opening quote, a chunk at
+// a time: closed once the closing quote is seen.
+type quoteState struct {
+	q       byte
+	esc     bool // after a backslash in a double-quoted scalar
+	pending bool // after a ' that may start a '' escape
+	closed  bool
+}
+
+func (s *quoteState) feed(t string) {
+	for i := 0; i < len(t) && !s.closed; i++ {
+		c := t[i]
 		switch {
-		case q == '"' && v[i] == '\\':
-			i++
-		case v[i] == q:
-			if q == '\'' && i+1 < len(v) && v[i+1] == '\'' {
-				i++
-				continue
+		case s.q == '"' && s.esc:
+			s.esc = false
+		case s.q == '"' && c == '\\':
+			s.esc = true
+		case s.q == '"' && c == '"':
+			s.closed = true
+		case s.q == '\'' && s.pending:
+			s.pending = false
+			if c != '\'' {
+				s.closed = true
 			}
-			return true
+		case s.q == '\'' && c == '\'':
+			s.pending = true
 		}
 	}
-	return false
+	// A ' ending the chunk is followed by a space or the end: it closes.
+	if s.pending {
+		s.pending, s.closed = false, true
+	}
 }
 
 func stripQuotedComment(v string) string {
@@ -326,16 +430,20 @@ func unquote(s string) string {
 
 // --- JSON ---
 
-func parseJSON(b []byte) (any, error) {
+func parseJSON(b []byte, lim *limits) (any, error) {
 	d := json.NewDecoder(bytes.NewReader(b))
 	d.UseNumber()
 	var v any
 	if err := d.Decode(&v); err != nil {
 		return nil, err
 	}
+	if err := lim.step(); err != nil {
+		return nil, err
+	}
 	return fromJSON(v, 0), nil
 }
 
+// fromJSON is linear in the decoded value, which is at most the file's size.
 func fromJSON(v any, depth int) any {
 	if depth > maxDepth {
 		return ""
@@ -369,11 +477,17 @@ func fromJSON(v any, depth int) any {
 // --- dotenv and INI: SOPS flattens its metadata into keys like
 // sops_age__list_0__map_recipient. ---
 
-func parseDotenv(b []byte) (ymap, ymap) {
+// parseDotenv returns the file's data and SOPS metadata, or nil for both
+// when its sops_… keys go over the caps or the limits stop it.
+func parseDotenv(b []byte, lim *limits) (ymap, ymap) {
 	data, meta := ymap{}, ymap{}
+	nodes := 0
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
+		if lim.step() != nil {
+			return nil, nil
+		}
 		l := strings.TrimSpace(sc.Text())
 		if l == "" || strings.HasPrefix(l, "#") {
 			continue
@@ -385,7 +499,9 @@ func parseDotenv(b []byte) (ymap, ymap) {
 		}
 		k = strings.TrimSpace(k)
 		if strings.HasPrefix(k, "sops_") {
-			unflatten(meta, strings.TrimPrefix(k, "sops_"), v)
+			if !unflatten(meta, strings.TrimPrefix(k, "sops_"), v, &nodes) {
+				return nil, nil
+			}
 			continue
 		}
 		data.set(k, v)
@@ -393,12 +509,17 @@ func parseDotenv(b []byte) (ymap, ymap) {
 	return data, meta
 }
 
-func parseINI(b []byte) (ymap, ymap) {
+// parseINI is parseDotenv for INI files, with the metadata in [sops].
+func parseINI(b []byte, lim *limits) (ymap, ymap) {
 	data, meta := ymap{}, ymap{}
 	section := ""
+	nodes := 0
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
+		if lim.step() != nil {
+			return nil, nil
+		}
 		l := strings.TrimSpace(sc.Text())
 		if l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, ";") {
 			continue
@@ -413,7 +534,9 @@ func parseINI(b []byte) (ymap, ymap) {
 		}
 		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
 		if section == "sops" {
-			unflatten(meta, k, v)
+			if !unflatten(meta, k, v, &nodes) {
+				return nil, nil
+			}
 			continue
 		}
 		sec, _ := data[section].(ymap)
@@ -427,9 +550,19 @@ func parseINI(b []byte) (ymap, ymap) {
 }
 
 // unflatten puts "age__list_0__map_recipient" = v into m as
-// m["age"][0]["recipient"] = v.
-func unflatten(m ymap, key, v string) {
+// m["age"][0]["recipient"] = v. nodes counts the maps, list items and
+// values made for the file so far. It returns false, and the file is to be
+// ignored, when the key nests deeper than maxDepth, a list index is
+// maxListLen or more, or the file would hold more than maxNodes.
+func unflatten(m ymap, key, v string, nodes *int) bool {
+	if strings.Count(key, "__") >= maxDepth {
+		return false
+	}
 	parts := strings.Split(key, "__")
+	add := func(n int) bool {
+		*nodes += n
+		return *nodes <= maxNodes
+	}
 	var cur any = m
 	for i, part := range parts {
 		last := i == len(parts)-1
@@ -443,15 +576,21 @@ func unflatten(m ymap, key, v string) {
 		switch c := cur.(type) {
 		case ymap:
 			if isList {
-				return
+				return true // not something SOPS writes: skip the key
 			}
 			if last {
+				if _, ok := c[name]; !ok && !add(1) {
+					return false
+				}
 				c.set(name, v)
-				return
+				return true
 			}
 			nextIsList := strings.HasPrefix(parts[i+1], "list_")
 			child, ok := c[name]
 			if !ok {
+				if !add(1) {
+					return false
+				}
 				if nextIsList {
 					child = &[]any{}
 				} else {
@@ -462,27 +601,36 @@ func unflatten(m ymap, key, v string) {
 			cur = child
 		case *[]any:
 			if !isList {
-				return
+				return true
 			}
 			n, err := strconv.Atoi(strings.TrimPrefix(part, "list_"))
-			if err != nil || n < 0 || n > 1000 {
-				return
+			if err != nil || n < 0 {
+				return true
 			}
-			for len(*c) <= n {
-				*c = append(*c, ymap{})
+			if n >= maxListLen {
+				return false
+			}
+			if grow := n + 1 - len(*c); grow > 0 {
+				if !add(grow) {
+					return false
+				}
+				for len(*c) <= n {
+					*c = append(*c, ymap{})
+				}
 			}
 			if last {
 				(*c)[n] = v
-				return
+				return true
 			}
 			if _, ok := (*c)[n].(ymap); !ok {
 				(*c)[n] = ymap{}
 			}
 			cur = (*c)[n]
 		default:
-			return
+			return true
 		}
 	}
+	return true
 }
 
 // derefLists turns the *[]any unflatten builds into []any.

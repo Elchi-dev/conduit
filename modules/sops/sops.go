@@ -52,6 +52,12 @@ const (
 	maxFiles    = 1000
 	maxWalk     = 8 // folder levels below the root
 	maxKeys     = 1000
+	// A scan reads at most scanBytes and spends at most scanTime; one file
+	// gets at most fileTime of parsing. Past them the file is skipped, or
+	// the scan stops and says it's truncated.
+	scanBytes = 64 << 20
+	scanTime  = 20 * time.Second
+	fileTime  = 2 * time.Second
 )
 
 // skipDirs are never descended into.
@@ -188,17 +194,23 @@ func format(name string, b []byte) string {
 }
 
 // inspect reads one file's SOPS metadata; ok is false for a file SOPS
-// didn't encrypt.
+// didn't encrypt, or one too costly to read.
 func inspect(rel string, b []byte) (fileInfo, bool) {
+	return inspectCtx(context.Background(), rel, b)
+}
+
+// inspectCtx is inspect stopping when ctx ends or after fileTime.
+func inspectCtx(ctx context.Context, rel string, b []byte) (fileInfo, bool) {
 	if !bytes.Contains(b, []byte("sops")) {
 		return fileInfo{}, false
 	}
+	lim := newLimits(ctx, fileTime)
 	fi := fileInfo{Path: rel, Format: format(rel, b)}
 	var docs []ymap
 	var meta ymap
 	switch fi.Format {
 	case "yaml":
-		vs, err := parseYAML(b)
+		vs, err := parseYAML(b, lim)
 		if err != nil {
 			return fileInfo{}, false
 		}
@@ -208,7 +220,7 @@ func inspect(rel string, b []byte) (fileInfo, bool) {
 			}
 		}
 	case "json":
-		v, err := parseJSON(b)
+		v, err := parseJSON(b, lim)
 		if err != nil {
 			return fileInfo{}, false
 		}
@@ -218,9 +230,12 @@ func inspect(rel string, b []byte) (fileInfo, bool) {
 	case "dotenv", "ini":
 		var d ymap
 		if fi.Format == "dotenv" {
-			d, meta = parseDotenv(b)
+			d, meta = parseDotenv(b, lim)
 		} else {
-			d, meta = parseINI(b)
+			d, meta = parseINI(b, lim)
+		}
+		if meta == nil {
+			return fileInfo{}, false
 		}
 		meta = derefLists(meta).(ymap)
 		docs = append(docs, d)
@@ -355,6 +370,9 @@ func recipients(m ymap, group *int) []recipient {
 }
 
 // read opens a regular file inside the root, refusing symlinks and big files.
+// The file is opened non-blocking (openFlags) and checked again once open,
+// so one swapped for a FIFO or device after the Lstat is never waited on
+// or read.
 func read(r *os.Root, rel string) ([]byte, fs.FileInfo, error) {
 	st, err := r.Lstat(rel)
 	if err != nil {
@@ -366,14 +384,24 @@ func read(r *os.Root, rel string) ([]byte, fs.FileInfo, error) {
 	if st.Size() > maxFileSize {
 		return nil, nil, fmt.Errorf("%s is over %d MiB", rel, maxFileSize>>20)
 	}
-	f, err := r.Open(rel)
+	f, err := r.OpenFile(rel, openFlags, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("can't open %s", rel)
 	}
 	defer f.Close()
+	st, err = f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("%s isn't a regular file", rel)
+	}
+	if st.Size() > maxFileSize {
+		return nil, nil, fmt.Errorf("%s is over %d MiB", rel, maxFileSize>>20)
+	}
 	b, err := io.ReadAll(io.LimitReader(f, maxFileSize+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("can't read %s", rel)
+	}
+	if len(b) > maxFileSize {
+		return nil, nil, fmt.Errorf("%s is over %d MiB", rel, maxFileSize>>20)
 	}
 	return b, st, nil
 }
@@ -387,6 +415,7 @@ func (in *instance) scan(ctx context.Context) ([]fileInfo, bool, error) {
 	defer r.Close()
 	var files []fileInfo
 	entries, truncated := 0, false
+	bytesRead, until := 0, time.Now().Add(scanTime)
 	err = fs.WalkDir(r.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if p == "." {
@@ -398,7 +427,7 @@ func (in *instance) scan(ctx context.Context) ([]fileInfo, bool, error) {
 			return ctx.Err()
 		}
 		entries++
-		if entries > maxEntries || len(files) >= maxFiles {
+		if entries > maxEntries || len(files) >= maxFiles || bytesRead >= scanBytes || time.Now().After(until) {
 			truncated = true
 			return fs.SkipAll
 		}
@@ -415,7 +444,8 @@ func (in *instance) scan(ctx context.Context) ([]fileInfo, bool, error) {
 		if err != nil {
 			return nil
 		}
-		if fi, ok := inspect(p, b); ok {
+		bytesRead += len(b)
+		if fi, ok := inspectCtx(ctx, p, b); ok {
 			fi.Size, fi.FileModified = st.Size(), st.ModTime()
 			files = append(files, fi)
 		}
@@ -512,7 +542,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		fi, ok := inspect(rel, b)
+		fi, ok := inspectCtx(ctx, rel, b)
 		if !ok {
 			return sdk.Result{}, fmt.Errorf("%s isn't a SOPS-encrypted file (no sops metadata)", rel)
 		}
@@ -581,7 +611,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if name == "" {
 			return sdk.Result{}, errors.New("the folder has no .sops.yaml")
 		}
-		docs, err := parseYAML(b)
+		docs, err := parseYAML(b, newLimits(ctx, fileTime))
 		if err != nil || len(docs) == 0 {
 			return sdk.Result{}, fmt.Errorf("%s isn't YAML this module can read", name)
 		}

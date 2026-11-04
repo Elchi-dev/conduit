@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -57,13 +58,49 @@ var (
 	pathRe = regexp.MustCompile(`^[A-Za-z0-9/._~-]*$`)
 	// An index path is a folder under originals: plain names, no "..".
 	indexPathRe = regexp.MustCompile(`^[\p{L}\p{N} _.,()&+@'-]+(/[\p{L}\p{N} _.,()&+@'-]+)*$`)
-	// Search filters that find photos by where they were taken.
-	placeFilterRe = regexp.MustCompile(`(?i)(^|\s)(near|s2|olc|lat|lng|dist|latlng|place|places|country|state|city|geo|location|cell)\s*:`)
 )
+
+// recentFilters are the search filters recent_photos accepts: none of them
+// finds photos by where they were taken. Everything else (place, keyword,
+// path, title and free-text search, which matches keywords made from
+// place names) is refused there.
+var recentFilters = map[string]bool{"label": true, "year": true, "month": true, "day": true, "before": true, "after": true,
+	"favorite": true, "type": true, "video": true, "photo": true, "live": true}
+
+// hasControl reports Unicode control and format characters (newlines,
+// NUL, zero-width and direction marks), which have no place in a search.
+func hasControl(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) })
+}
+
+// recentQuery checks a recent_photos search and returns it as PhotoPrism
+// will read it. It splits the search the way PhotoPrism does (on any
+// Unicode space, quotes dropped, keys lower-cased) and requires every term
+// to be key:value with a key from recentFilters. What's sent is rebuilt
+// from the checked terms, so PhotoPrism can't read it differently.
+func recentQuery(q string) (string, error) {
+	var terms []string
+	for _, t := range strings.FieldsFunc(strings.ReplaceAll(q, `"`, ""), unicode.IsSpace) {
+		k, v, ok := strings.Cut(t, ":")
+		k = strings.ToLower(k)
+		if !ok {
+			return "", errors.New("recent_photos takes only filters such as label:cat year:2025 favorite:true; free-text search can match places, so use photo_places for that")
+		}
+		if !recentFilters[k] {
+			return "", fmt.Errorf("recent_photos doesn't take %s: (it may find photos by where they were taken); use photo_places for that", k)
+		}
+		if v == "" {
+			return "", fmt.Errorf("%s: needs a value", k)
+		}
+		terms = append(terms, k+":"+v)
+	}
+	return strings.Join(terms, " "), nil
+}
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
-	photos := `{"type":"object","properties":{"query":{"type":"string","maxLength":500,"description":"PhotoPrism search, e.g. label:cat year:2025 favorite:true"},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}}}`
+	photos := `{"type":"object","properties":{"query":{"type":"string","maxLength":500,"description":"PhotoPrism search, e.g. near:… country:de label:cat"},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}}}`
+	recent := `{"type":"object","properties":{"query":{"type":"string","maxLength":500,"description":"Filters only: label, year, month, day, before, after, favorite, type, video, photo, live, e.g. label:cat year:2025 favorite:true"},"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}}}`
 	return sdk.Manifest{
 		ID: "photoprism", Name: "PhotoPrism", Version: "0.1.0", Category: "Media", Icon: "photo",
 		Description: "Your PhotoPrism library: counts, recent photos and albums, and indexing new files. Where photos were taken stays out unless asked.",
@@ -75,12 +112,14 @@ func (m *Module) Manifest() sdk.Manifest {
 			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "library_stats", Title: "Library", Description: "How many photos, videos, albums, people and labels the library has, and what's waiting for review.", Risk: sdk.RiskRead},
-			{Name: "recent_photos", Title: "Recent photos", Description: "The newest photos with when they were taken, type and favourite. No places, coordinates or file names; titles that name a place are left out. Filters by place are refused here (use photo_places).", Risk: sdk.RiskRead,
+			{Name: "recent_photos", Title: "Recent photos", Description: "The newest photos with when they were taken, type and favourite. No places, coordinates or file names; titles that name a place are left out. The search takes only label, year, month, day, before, after, favorite, type, video, photo and live filters; free text and place filters are refused here (use photo_places).", Risk: sdk.RiskRead,
+				Input: sdk.Schema(recent)},
+			{Name: "photo_places", Title: "Where photos were taken", Description: "The newest photos with their place, coordinates, full title and caption, with any PhotoPrism search (near:, country:, free text). Private, so it's kept out of logs.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(photos)},
-			{Name: "photo_places", Title: "Where photos were taken", Description: "The newest photos with their place, coordinates, full title and caption. Private, so it's kept out of logs.", Risk: sdk.RiskRead, Sensitive: true,
-				Input: sdk.Schema(photos)},
-			{Name: "albums", Title: "Albums", Description: "Albums (or folders, or months) with how many photos each has.", Risk: sdk.RiskRead,
-				Input: sdk.Schema(`{"type":"object","properties":{"type":{"type":"string","enum":["album","folder","month"],"default":"album"},"query":{"type":"string","maxLength":200},"limit":{"type":"integer","minimum":1,"maximum":200,"default":50}}}`)},
+			{Name: "albums", Title: "Albums", Description: "Albums (or months) with how many photos each has. The query matches titles; filters (key:value) aren't taken. Folders are in folders.", Risk: sdk.RiskRead,
+				Input: sdk.Schema(`{"type":"object","properties":{"type":{"type":"string","enum":["album","month"],"default":"album"},"query":{"type":"string","maxLength":200,"description":"Words in the title"},"limit":{"type":"integer","minimum":1,"maximum":200,"default":50}}}`)},
+			{Name: "folders", Title: "Folders", Description: "Folders of originals with how many photos each has. Folder names often name places (2026/Italy-trip), so it's kept out of logs.", Risk: sdk.RiskRead, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","properties":{"query":{"type":"string","maxLength":200,"description":"Words in the folder's name"},"limit":{"type":"integer","minimum":1,"maximum":200,"default":50}}}`)},
 			{Name: "start_index", Title: "Index new files", Description: "Has PhotoPrism index the originals folder (or a subfolder), adding new and changed files; a full rescan re-reads every file. It runs in the background on the server and can take long. Needs a user allowed to update the library.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"path":{"type":"string","description":"Subfolder of originals, e.g. 2026/11 (default: everything)"},"rescan":{"type":"boolean","default":false}}}`)},
 		},
@@ -228,11 +267,17 @@ func taken(p photo) string {
 
 func (c *conn) photos(ctx context.Context, p input, places bool) (sdk.Result, error) {
 	q := strings.TrimSpace(p.Query)
-	if len([]rune(q)) > 500 || strings.ContainsAny(q, "\r\n\x00") {
+	if len([]rune(q)) > 500 {
 		return sdk.Result{}, errors.New("the query is too long")
 	}
-	if !places && placeFilterRe.MatchString(q) {
-		return sdk.Result{}, errors.New("searching by place shows where photos were taken; use photo_places for that")
+	if hasControl(q) {
+		return sdk.Result{}, errors.New("the query has control characters")
+	}
+	if !places {
+		var err error
+		if q, err = recentQuery(q); err != nil {
+			return sdk.Result{}, err
+		}
 	}
 	limit := p.Limit
 	if limit <= 0 || limit > 100 {
@@ -323,17 +368,31 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	case "photo_places":
 		return c.photos(ctx, p, true)
 
-	case "albums":
+	case "albums", "folders":
 		typ := p.Type
-		if typ == "" {
+		if call.Action == "folders" {
+			typ = "folder"
+		} else if typ == "" {
 			typ = "album"
 		}
+		if typ == "folder" && call.Action == "albums" {
+			return sdk.Result{}, errors.New("folder names can name places; use folders for them")
+		}
 		if typ != "album" && typ != "folder" && typ != "month" {
-			return sdk.Result{}, errors.New("the type is album, folder or month")
+			return sdk.Result{}, errors.New("the type is album or month")
 		}
 		q := strings.TrimSpace(p.Query)
-		if len([]rune(q)) > 200 || strings.ContainsAny(q, "\r\n\x00") {
+		if len([]rune(q)) > 200 {
 			return sdk.Result{}, errors.New("the query is too long")
+		}
+		if hasControl(q) {
+			return sdk.Result{}, errors.New("the query has control characters")
+		}
+		// PhotoPrism reads key:value in an album search as filters, which
+		// could ask for another type (type:moment) or more; only words in
+		// the title are taken.
+		if strings.Contains(q, ":") {
+			return sdk.Result{}, errors.New("the query is words in the title; filters (key:value) aren't taken")
 		}
 		limit := p.Limit
 		if limit <= 0 || limit > 200 {
@@ -365,6 +424,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				r["private"] = true
 			}
 			out = append(out, r)
+		}
+		if call.Action == "folders" {
+			return sdk.JSON(map[string]any{"folders": out})
 		}
 		return sdk.JSON(map[string]any{"type": typ, "albums": out})
 

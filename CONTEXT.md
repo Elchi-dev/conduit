@@ -12,26 +12,28 @@ owner and a company equally; never tailor it to one setup.
 
 ## Current state
 
-- **Released:** v0.1.0 and v0.2.0 (3 Nov), v0.3.0 and v0.3.1 (the first
-  signed release), and **v1.0.0 (Wed 4 Nov, 05:49 CET)** with 105 modules
-  and signed builds for every platform (39 files).
-  https://github.com/Elchi-dev/conduit/releases
+- **Public since 4 Nov, 23:14 CET.** The owner deleted and recreated
+  the repository so it starts public with a clean history: every commit is
+  by Elchi <github@elchi.dev>, and fake test tokens were reshaped so GitHub's
+  push protection doesn't mistake them for real keys. The earlier releases
+  (v0.1.0 to v1.0.0) and their Actions secrets went with the old
+  repository; the build environment can't push tags, so the old release
+  tags exist only in local clones made before the recreation.
 - **Ready for v1.1.0 (on main, not released):** 331 built-in modules,
   security reviews 8–47 and two sweeps of every module fixed (see
   docs/BUILD_LOG.md). Notes are in `docs/releases/v1.1.0.md`. Main passes the
   full local check (Go race tests, web and site builds with i18n, 51
   browser tests, upgrades from every release including v1.0.0).
-- **To release v1.1.0:** GitHub Actions has started no jobs since 06:43 CET
-  on 4 Nov (every job ends with zero steps; the repository is private, so
-  almost certainly its Actions minutes). Make the repository public or
-  raise the Actions spending limit, then run the release workflow by hand
-  with tag `v1.1.0` (it tags the commit it runs on). Notes come from
-  `docs/releases/v1.1.0.md`. There is no separate v1.0.1: its fix (nested
-  calls run as the caller, review 12) is in 1.1.
-- **Until Actions works:** verify locally before pushing: `gofmt -l .`,
-  `go vet ./...`, `go test -race ./...`, `pnpm build` and `pnpm test:i18n`
-  in web and site, `CI=true make daemon && cd web && pnpm test:e2e`, and
-  `scripts/upgrade_test.sh`.
+- **To release v1.1.0:** add the seven signing secrets to the new
+  repository again (the same values as before, so installed apps keep
+  trusting updates), then run the release workflow by hand with tag
+  `v1.1.0`. It tags the commit it runs on and takes its notes from
+  `docs/releases/v1.1.0.md`.
+- **Checks:** CI runs on every push now that the repository is public.
+  Locally: `gofmt -l .`, `go vet ./...`, `go test -race ./...`,
+  `pnpm build` and `pnpm test:i18n` in web and site,
+  `CI=true make daemon && cd web && pnpm test:e2e`, and
+  `scripts/upgrade_test.sh` (it skips when there are no release tags).
 - **Releasing:** push a `v*` tag, or run the release workflow by hand with
   a tag name. The F-Droid step is allowed to fail (its repo_url must end in
   /repo).

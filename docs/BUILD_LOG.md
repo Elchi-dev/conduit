@@ -5,6 +5,27 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
+
+## 2026-11-04 · Going public (23:14 CET)
+
+- **Docs in the owner's style** (Orbit, Alloy): a README that leads with
+  what Conduit does, screenshots of the real app from
+  `scripts/screenshots.mjs` (made-up data), CHANGELOG, CONTRIBUTING,
+  SECURITY, ARCHITECTURE, DECISIONS, ROADMAP and Ori from Orbit on each
+  entry page.
+- **AI-assisted:** a "Built with AI" section and badge in the README, and
+  a footer link on the website.
+- **Identity:** every commit is by Elchi <github@elchi.dev>.
+- **Fresh public repository:** the owner recreated it so the history
+  starts public. GitHub's push protection flagged fake test tokens shaped
+  like Mailgun, Shopify, HubSpot, PlanetScale, Supabase, Mailchimp, Stripe,
+  GitLab and Twilio keys; they were reshaped (still accepted by each
+  module's checks) in every commit, so no real-looking key is in the
+  history.
+- **Releases:** the old releases went with the old repository; v1.1.0 is
+  the first release of the public repository once the signing secrets are
+  added again.
+
 ## 2026-11-04 · Last hours before the deadline (331 modules, reviews 45–47, two sweeps)
 
 - **Review 45 (wikis):** restoring a page guests can read is its own

@@ -76,7 +76,8 @@ func (f *fakeOVH) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/auth/currentCredential":
 		io.WriteString(w, `{"status":"validated","expiration":"2099-01-01T00:00:00+01:00","rules":[{"method":"GET","path":"/*"}],"credentialId":1}`)
 	case p == "/dedicated/server":
-		io.WriteString(w, `["ns1.ip-1-2-3.eu"]`)
+		// A name Conduit won't put in a path is skipped, not the end of the list.
+		io.WriteString(w, `["ns1.ip-1-2-3.eu","-bad/name"]`)
 	case p == "/dedicated/server/ns1.ip-1-2-3.eu":
 		io.WriteString(w, `{"name":"ns1.ip-1-2-3.eu","ip":"1.2.3.4","reverse":"ns1.ip-1-2-3.eu","datacenter":"gra3","state":"ok","powerState":"poweron","commercialRange":"rise","os":"debian12_64","rootDevice":"LEAKME"}`)
 	case p == "/dedicated/server/ns1.ip-1-2-3.eu/reboot" && r.Method == "POST":

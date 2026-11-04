@@ -40,7 +40,11 @@ included, and escaped in paths. The client never follows a redirect to
 another host or from https to http. Instance metadata (startup scripts,
 SSH keys), service accounts and Cloud Run environment variables and secret
 references are never shown; `set_traffic` sends the service back with
-only its traffic changed.
+only its traffic changed and asks Google to apply only the traffic
+(`updateMask=traffic`), so a deploy that lands in between isn't reverted,
+and the service's etag goes with it, so a write to a service that changed
+is refused ("changed or is busy"). The undo is offered only for a split
+`set_traffic` can express.
 
 **Notes.** Cloud Run lists across all regions with the `-` location; give a
 `region` if your project restricts that. Projects come from Resource

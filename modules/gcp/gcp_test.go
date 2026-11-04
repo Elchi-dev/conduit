@@ -263,7 +263,11 @@ func TestGCP(t *testing.T) {
 	if err != nil || !strings.Contains(f.traffic, `"percent":10,"revision":"hello-00001-abc"`) || r.Undo == nil {
 		t.Fatalf("%s %v %s", r.Output, err, f.traffic)
 	}
-	// The rest of the service went back unchanged.
+	// Only traffic is applied, so a deploy between the read and the write
+	// isn't reverted; the rest of the service went back unchanged.
+	if !strings.Contains(f.seen[len(f.seen)-1], "updateMask=traffic") {
+		t.Fatal(f.seen)
+	}
 	if tpl, _ := json.Marshal(f.patched["template"]); !strings.Contains(string(tpl), "DB_PASSWORD") || f.patched["etag"] != `"abc"` {
 		t.Fatal(string(tpl))
 	}
@@ -351,5 +355,51 @@ func TestParseKeyPKCS1(t *testing.T) {
 	b, _ := json.Marshal(map[string]string{"type": "service_account", "private_key": pk, "client_email": "a@b"})
 	if _, got, err := parseKey(string(b)); err != nil || !got.Equal(k) {
 		t.Fatal(err)
+	}
+}
+
+// A service answer Conduit can't use, or a write Google refuses because
+// the service changed, is an error, not a panic or a silent overwrite.
+func TestGCPSetTrafficOddAnswers(t *testing.T) {
+	var get string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/token":
+			io.WriteString(w, `{"access_token":"ya29.fake-token","expires_in":3599}`)
+		case r.Method == "GET":
+			io.WriteString(w, get)
+		default:
+			w.WriteHeader(409)
+			io.WriteString(w, `{"error":{"code":409,"message":"etag mismatch","status":"ABORTED"}}`)
+		}
+	}))
+	defer srv.Close()
+	m := New()
+	m.Base, m.TokenURL = srv.URL, srv.URL+"/token"
+	raw, _ := json.Marshal(Config{Key: "secret://gcp", Project: "demo-project"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://gcp": keyJSON(t, "")}), "g", raw); err != nil {
+		t.Fatal(err)
+	}
+	in := `{"region":"europe-west1","service":"hello","revision":"hello-00001-abc"}`
+	for _, body := range []string{"", "null", "{}"} {
+		get = body
+		if _, err := invoke(m, "set_traffic", in, false); err == nil || !strings.Contains(err.Error(), "without the service") {
+			t.Fatalf("%q: %v", body, err)
+		}
+	}
+	get = `{"name":"projects/demo-project/locations/europe-west1/services/hello","traffic":[{"type":"TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST","percent":100}]}`
+	if _, err := invoke(m, "set_traffic", in, false); err == nil || !strings.Contains(err.Error(), "changed or is busy") {
+		t.Fatal(err)
+	}
+}
+
+// A split set_traffic can't express (an entry with neither a revision nor
+// latest) gets no undo that would then fail.
+func TestGCPSetTrafficUndoOnlyWhenValid(t *testing.T) {
+	m, f := setup(t, "secret://gcp")
+	f.traffic = `[{"type":"TRAFFIC_TARGET_ALLOCATION_TYPE_UNSPECIFIED","percent":100}]`
+	r, err := invoke(m, "set_traffic", `{"region":"europe-west1","service":"hello","revision":"hello-00001-abc"}`, false)
+	if err != nil || r.Undo != nil {
+		t.Fatalf("%+v %v", r.Undo, err)
 	}
 }

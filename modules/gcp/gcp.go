@@ -219,6 +219,8 @@ func friendly(err error, what string) error {
 		return errors.New("the service account isn't allowed to do this (check its IAM roles)")
 	case rest.IsStatus(err, http.StatusNotFound):
 		return fmt.Errorf("there's no %s", what)
+	case rest.IsStatus(err, http.StatusConflict), rest.IsStatus(err, http.StatusPreconditionFailed):
+		return fmt.Errorf("Google refused: %s changed or is busy (nothing was changed); read it again and retry", what)
 	case rest.IsStatus(err, http.StatusTooManyRequests):
 		return errors.New("Google's rate limit was hit; try again in a moment")
 	}
@@ -739,10 +741,16 @@ func (c *conn) setTraffic(ctx context.Context, call sdk.Call, proj string, p inp
 	path := servicePath(proj, p)
 	what := "Cloud Run service " + p.Service + " in " + p.Region
 	// The whole service is read and sent back with only traffic changed,
-	// so nothing else about it moves; it's never shown.
+	// so nothing else about it moves; it's never shown. updateMask=traffic
+	// makes Google apply only the traffic, so a deploy that lands between
+	// the read and the write isn't reverted to the template read here, and
+	// the etag sent back refuses the write if the service changed.
 	var raw map[string]json.RawMessage
 	if err := c.do(ctx, "run", http.MethodGet, path, nil, nil, &raw, what); err != nil {
 		return sdk.Result{}, err
+	}
+	if _, ok := raw["name"]; !ok {
+		return sdk.Result{}, errors.New("Cloud Run answered without the service")
 	}
 	var cur []apiTraffic
 	if t, ok := raw["traffic"]; ok {
@@ -757,7 +765,7 @@ func (c *conn) setTraffic(ctx context.Context, call sdk.Call, proj string, p inp
 	}
 	nt, _ := json.Marshal(toAPI(p.Traffic))
 	raw["traffic"] = nt
-	q := url.Values{}
+	q := url.Values{"updateMask": {"traffic"}}
 	if call.DryRun {
 		q.Set("validateOnly", "true")
 	}
@@ -771,7 +779,9 @@ func (c *conn) setTraffic(ctx context.Context, call sdk.Call, proj string, p inp
 			Changes: []sdk.Change{{Target: target, Op: "update", Before: b, After: a}}}}, nil
 	}
 	res, err := sdk.JSON(map[string]any{"service": target, "was": before, "traffic": p.Traffic})
-	if len(before) > 0 {
+	// The undo is offered only when the split it would restore is one
+	// set_traffic accepts (an entry Conduit can't express has no undo).
+	if _, verr := wantTraffic(input{Traffic: append([]traffic(nil), before...)}); len(before) > 0 && verr == nil {
 		res.Undo = sdk.UndoWith("set_traffic", map[string]any{"project": proj, "region": p.Region, "service": p.Service, "traffic": before}, "Restore the traffic split of "+p.Service)
 	}
 	return res, err

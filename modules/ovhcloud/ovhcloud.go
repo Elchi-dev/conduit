@@ -294,9 +294,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
-		for i, n := range ns {
-			if i == maxDetails || !validService(n) {
+		for _, n := range ns {
+			if len(out) == maxDetails {
 				break
+			}
+			if !validService(n) {
+				continue // a name Conduit won't put in a path
 			}
 			var s struct {
 				Name       string `json:"name"`
@@ -344,9 +347,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
-		for i, n := range ns {
-			if i == maxDetails || !validService(n) {
+		for _, n := range ns {
+			if len(out) == maxDetails {
 				break
+			}
+			if !validService(n) {
+				continue // a name Conduit won't put in a path
 			}
 			v, err := c.vps(ctx, n)
 			if err != nil {
@@ -369,9 +375,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		out := []map[string]any{}
-		for i, n := range ns {
-			if i == maxDetails || !projectRe.MatchString(n) {
+		for _, n := range ns {
+			if len(out) == maxDetails {
 				break
+			}
+			if !projectRe.MatchString(n) {
+				continue // a name Conduit won't put in a path
 			}
 			var pr struct {
 				ID          string `json:"project_id"`

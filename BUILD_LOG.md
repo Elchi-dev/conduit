@@ -24,7 +24,7 @@ and why.
   addresses and names.
 - **Review 24:** LaunchDarkly toggles compare-and-set with JSON Patch;
   Flagsmith hides environment keys in errors.
-- **Full local check at 15:50 UTC:** race tests, web and site builds and
+- **Full local check at 15:45 CET:** race tests, web and site builds and
   i18n, 51 browser tests and upgrades from every release all pass.
 - **Note:** `make daemon` in a fresh worktree with linked node_modules
   needs `CI=true` (pnpm refuses a non-interactive install otherwise).

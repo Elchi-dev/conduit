@@ -3,6 +3,8 @@
 One summary of what needs you: systems that are down or degraded, approvals
 waiting, unread mail per account (latest five), today's events, actions that
 failed in the last 24 hours and API keys expiring within a week.
+With a [weather](weather.md) instance set up, it also has a line per place:
+now, today's low and high, and the chance of rain in the next 12 hours.
 
 | Action | Risk | Notes |
 | --- | --- | --- |

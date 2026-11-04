@@ -27,7 +27,7 @@ type briefConfig struct {
 func (b *briefModule) Manifest() sdk.Manifest {
 	return sdk.Manifest{
 		ID: "brief", Name: "Daily brief", Version: "0.1.0", Category: "Conduit", Icon: "sun",
-		Description: "Unread mail, today's events, anything down, approvals waiting and keys expiring, in one summary.",
+		Description: "Unread mail, today's events and weather, anything down, approvals waiting and keys expiring, in one summary.",
 		Presets:     []string{"developer", "gamer", "homelab", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{
 			"channels":{"type":"array","items":{"type":"string"},"description":"Notification channels (their IDs) to send the brief to"}}}`),
@@ -58,6 +58,7 @@ type Brief struct {
 	Approvals int          `json:"approvalsWaiting"`
 	Failures  []string     `json:"failuresLast24h"`
 	Keys      []string     `json:"keysExpiringSoon"`
+	Weather   []string     `json:"weather"`
 }
 
 type briefMail struct {
@@ -83,7 +84,7 @@ func (b *briefModule) read(ctx context.Context, instance, action string, input a
 
 func (b *briefModule) build(ctx context.Context) Brief {
 	e := b.app.Engine
-	br := Brief{Date: time.Now().Format("Monday 2 January"), Attention: []string{}, Mail: []briefMail{}, Agenda: []briefEvent{}, Failures: []string{}, Keys: []string{}}
+	br := Brief{Date: time.Now().Format("Monday 2 January"), Attention: []string{}, Mail: []briefMail{}, Agenda: []briefEvent{}, Failures: []string{}, Keys: []string{}, Weather: []string{}}
 
 	for _, in := range e.Instances("") {
 		if !in.Enabled || in.Module == "brief" {
@@ -118,6 +119,20 @@ func (b *briefModule) build(ctx context.Context) Brief {
 					m.Latest = append(m.Latest, from+": "+x.Subject)
 				}
 				br.Mail = append(br.Mail, m)
+			}
+		case "weather":
+			var w struct {
+				Places []struct {
+					Place   string `json:"place"`
+					Summary string `json:"summary"`
+				} `json:"places"`
+			}
+			if b.read(ctx, in.ID, "today", nil, &w) == nil {
+				for _, p := range w.Places {
+					if p.Summary != "" {
+						br.Weather = append(br.Weather, p.Place+": "+p.Summary)
+					}
+				}
 			}
 		case "calendar":
 			var evs []struct {
@@ -176,6 +191,12 @@ func (br Brief) text() string {
 		fmt.Fprintf(&sb, "\n%s: %d unread\n", m.Account, m.Unread)
 		for _, l := range m.Latest {
 			sb.WriteString("  " + l + "\n")
+		}
+	}
+	if len(br.Weather) > 0 {
+		sb.WriteString("\nWeather\n")
+		for _, w := range br.Weather {
+			sb.WriteString("  " + w + "\n")
 		}
 	}
 	if len(br.Agenda) > 0 {

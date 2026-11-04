@@ -58,6 +58,8 @@ const paths: Record<string, string> = {
   plug: "M9 3.5V8M15 3.5V8M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5v4",
   bookmark: "M6.5 3.5h11v17L12 16l-5.5 4.5z",
   headset: "M4.5 14v-2a7.5 7.5 0 0 1 15 0v2M4.5 14h3v5h-2a1 1 0 0 1-1-1zM19.5 14h-3v5h2a1 1 0 0 0 1-1zM18.5 19c0 1.2-2 2-5 2",
+  rss: "M5 4.5A14.5 14.5 0 0 1 19.5 19M5 10.5a8.5 8.5 0 0 1 8.5 8.5M6 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z",
+  weather: "M8.5 3.5V5M3.5 8.5H5M4.9 4.9l1 1M12.1 4.9l-1 1M6.2 10.6a3 3 0 1 1 5.4-2.4M8 19.5a3.5 3.5 0 0 1-.3-7A5 5 0 0 1 17.2 13a3.25 3.25 0 0 1-.2 6.5Z",
 };
 
 /** Synonyms a module author might reasonably use for a glyph above. */
@@ -108,6 +110,11 @@ const aliases: Record<string, string> = {
   sound: "music",
   support: "headset",
   helpdesk: "headset",
+  feed: "rss",
+  feeds: "rss",
+  news: "rss",
+  forecast: "weather",
+  comics: "book",
 };
 
 /** The glyph for each category, for icon names the set doesn't know. */

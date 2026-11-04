@@ -35,6 +35,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/firefly"
 	"github.com/elchi-dev/conduit/modules/fly"
 	"github.com/elchi-dev/conduit/modules/freshdesk"
+	"github.com/elchi-dev/conduit/modules/freshrss"
 	"github.com/elchi-dev/conduit/modules/frigate"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
@@ -57,8 +58,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/karakeep"
 	"github.com/elchi-dev/conduit/modules/keycloak"
 	"github.com/elchi-dev/conduit/modules/kodi"
+	"github.com/elchi-dev/conduit/modules/komga"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/linear"
+	"github.com/elchi-dev/conduit/modules/linode"
 	"github.com/elchi-dev/conduit/modules/listmonk"
 	"github.com/elchi-dev/conduit/modules/litellm"
 	"github.com/elchi-dev/conduit/modules/mail"
@@ -69,6 +72,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/mikrotik"
 	"github.com/elchi-dev/conduit/modules/milanote"
+	"github.com/elchi-dev/conduit/modules/miniflux"
 	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
 	"github.com/elchi-dev/conduit/modules/navidrome"
@@ -93,6 +97,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/pihole"
 	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
+	"github.com/elchi-dev/conduit/modules/porkbun"
 	"github.com/elchi-dev/conduit/modules/portainer"
 	"github.com/elchi-dev/conduit/modules/posthog"
 	"github.com/elchi-dev/conduit/modules/powerdns"
@@ -103,6 +108,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/redis"
 	"github.com/elchi-dev/conduit/modules/render"
 	"github.com/elchi-dev/conduit/modules/s3"
+	"github.com/elchi-dev/conduit/modules/scaleway"
 	"github.com/elchi-dev/conduit/modules/scrutiny"
 	"github.com/elchi-dev/conduit/modules/seerr"
 	"github.com/elchi-dev/conduit/modules/sentry"
@@ -134,12 +140,16 @@ import (
 	"github.com/elchi-dev/conduit/modules/umami"
 	"github.com/elchi-dev/conduit/modules/unifi"
 	"github.com/elchi-dev/conduit/modules/unraid"
+	"github.com/elchi-dev/conduit/modules/upcloud"
 	"github.com/elchi-dev/conduit/modules/uptimekuma"
 	"github.com/elchi-dev/conduit/modules/uptimerobot"
 	vaultmod "github.com/elchi-dev/conduit/modules/vault"
 	"github.com/elchi-dev/conduit/modules/vaultwarden"
 	"github.com/elchi-dev/conduit/modules/vercel"
 	"github.com/elchi-dev/conduit/modules/vikunja"
+	"github.com/elchi-dev/conduit/modules/vultr"
+	"github.com/elchi-dev/conduit/modules/wallabag"
+	"github.com/elchi-dev/conduit/modules/weather"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
@@ -198,6 +208,10 @@ func builtins(app *App) []sdk.Module {
 		tailscale.New(),
 		hetzner.New(),
 		digitalocean.New(),
+		linode.New(),
+		vultr.New(),
+		scaleway.New(),
+		upcloud.New(),
 		vercel.New(),
 		fly.New(),
 		database.New(),
@@ -289,10 +303,16 @@ func builtins(app *App) []sdk.Module {
 		vikunja.New(),
 		firefly.New(),
 		karakeep.New(),
+		wallabag.New(),
+		miniflux.New(),
+		freshrss.New(),
+		weather.New(),
+		komga.New(),
 		mikrotik.New(),
 		netbox.New(),
 		caddy.New(),
 		powerdns.New(),
+		porkbun.New(),
 		technitium.New(),
 		pterodactyl.New(),
 		crafty.New(),

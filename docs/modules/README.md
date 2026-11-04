@@ -39,6 +39,10 @@ recommended policies.
 | Tailscale | [tailscale.md](tailscale.md) | homelab, developer, team |
 | Hetzner Cloud | [hetzner.md](hetzner.md) | developer, homelab |
 | DigitalOcean | [digitalocean.md](digitalocean.md) | developer |
+| Linode (Akamai Cloud) | [linode.md](linode.md) | developer, homelab |
+| Vultr | [vultr.md](vultr.md) | developer, homelab |
+| Scaleway | [scaleway.md](scaleway.md) | developer, homelab |
+| UpCloud | [upcloud.md](upcloud.md) | developer, homelab |
 | Vercel | [vercel.md](vercel.md) | developer |
 | Fly.io | [fly.md](fly.md) | developer |
 | Databases (PostgreSQL, MySQL) | [database.md](database.md) | developer, team |
@@ -135,10 +139,16 @@ recommended policies.
 | Vikunja | [vikunja.md](vikunja.md) | homelab |
 | Firefly III | [firefly.md](firefly.md) | homelab |
 | Karakeep | [karakeep.md](karakeep.md) | homelab |
+| wallabag | [wallabag.md](wallabag.md) | homelab |
+| Miniflux | [miniflux.md](miniflux.md) | homelab, developer |
+| FreshRSS | [freshrss.md](freshrss.md) | homelab |
+| Weather (Open-Meteo) | [weather.md](weather.md) | homelab, team |
+| Komga | [komga.md](komga.md) | homelab, gamer |
 | MikroTik | [mikrotik.md](mikrotik.md) | homelab |
 | NetBox | [netbox.md](netbox.md) | homelab, team |
 | Caddy | [caddy.md](caddy.md) | homelab, developer |
 | PowerDNS | [powerdns.md](powerdns.md) | homelab, team |
+| Porkbun | [porkbun.md](porkbun.md) | developer, homelab |
 | Technitium DNS | [technitium.md](technitium.md) | homelab |
 | Pterodactyl (Pelican) | [pterodactyl.md](pterodactyl.md) | gamer, homelab |
 | Crafty Controller | [crafty.md](crafty.md) | gamer, homelab |

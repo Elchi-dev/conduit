@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, ok, type S } from "../api/client";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type Settings = S["OIDCSettings"];
 
@@ -107,7 +108,7 @@ export function SsoSection({ admin }: { admin: boolean }) {
             <input type="checkbox" checked={!!f.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
             <span>{t("Show \"Sign in with {label}\" on the sign-in page", { label: f.label || t("single sign-on") })}</span>
           </label>
-          {save.error && <div className="error">{save.error.message}</div>}
+          <ErrorNote error={save.error} />
           {save.isSuccess && <p className="small muted">{t("Saved.")}</p>}
           <div className="inline">
             <button type="button" className="btn quiet" onClick={() => setOpen(false)}>

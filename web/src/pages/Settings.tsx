@@ -12,6 +12,7 @@ import { TwoFactorSection } from "./TwoFactor";
 import { Webhooks } from "./Webhooks";
 import { languages, t, useLang } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 function useTheme() {
   const [theme, setTheme] = useState<string>(() => {
@@ -64,7 +65,7 @@ export function Settings() {
       <div className="page-head">
         <h1>{t("Settings")}</h1>
         <p>
-          {t("Signed in as")}{" "}{me.data?.user.name} ({me.data?.user.email}), {me.data?.user.role}.
+          {t("Signed in as {name} ({email}) with the {role} role.", { name: me.data?.user.name, email: me.data?.user.email, role: ({ owner: t("Owner"), admin: t("Admin"), member: t("Member"), viewer: t("Viewer") } as Record<string, string>)[me.data?.user.role ?? ""] ?? me.data?.user.role })}
         </p>
       </div>
 
@@ -139,7 +140,7 @@ export function Settings() {
             <input type="password" minLength={10} value={pw.new} onChange={(e) => setPw({ ...pw, new: e.target.value })} autoComplete="new-password" required />
             <small>{t("Changing it signs out every other device.")}</small>
           </label>
-          {changePw.error && <div className="error">{changePw.error.message}</div>}
+          <ErrorNote error={changePw.error} />
           {changePw.isSuccess && <p className="small muted">{t("Password changed.")}</p>}
           <div>
             <button className="btn">{t("Change password")}</button>

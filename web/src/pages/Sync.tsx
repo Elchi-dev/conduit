@@ -4,6 +4,7 @@ import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
 import { t, tn } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type Coll = "vault" | "policy" | "automations";
 
@@ -68,7 +69,7 @@ export function SyncSection({ admin }: { admin: boolean }) {
         <small className="muted" key={f.url}>
           {t("Found")}{" "}{f.name} {t("at")}{" "}<span className="data">{f.url}</span>{t(", key fingerprint")}{" "}<span className="data">{f.fingerprint}</span>{t(". Check it matches the one that computer shows under Remote access.")}</small>
       ))}
-      {find.error && <div className="error">{find.error.message}</div>}
+      <ErrorNote error={find.error} />
     </div>
   );
   if (!admin || !st.data) return null;
@@ -147,7 +148,7 @@ export function SyncSection({ admin }: { admin: boolean }) {
             <small>{t("To sync without a hub. The other computer has to listen on your network.")}</small>
           </label>
           {finder((urls) => setPeers(urls.join(" ")), peerList())}
-          {(start.error || join.error) && <div className="error">{(start.error || join.error)!.message}</div>}
+          <ErrorNote error={start.error || join.error} />
           <div className="inline">
             <button type="button" className="btn quiet" onClick={() => setMode("idle")}>
               {t("Cancel")}</button>
@@ -188,7 +189,7 @@ export function SyncSection({ admin }: { admin: boolean }) {
             />
           </label>
           {finder((urls) => save.mutate({ peers: urls }), s.peers)}
-          {save.error && <div className="error">{save.error.message}</div>}
+          <ErrorNote error={save.error} />
           {s.lastRun && (
             <div className="stack" style={{ gap: 4 }}>
               <span className="xs muted">{t("Last synced")}{" "}{ago(s.lastRun)}</span>

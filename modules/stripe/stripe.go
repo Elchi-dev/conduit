@@ -73,7 +73,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	list := `"limit":{"type":"integer","default":20,"maximum":100},"after":{"type":"string","description":"Id of the last item of the previous page"}`
 	cust := `"customer":{"type":"string","description":"Only this customer (cus_…)"}`
 	return sdk.Manifest{
-		ID: "stripe", Name: "Stripe", Version: "0.1.0", Category: "Business", Icon: "credit-card",
+		ID: "stripe", Name: "Stripe", Version: "0.1.0", Category: "Productivity", Icon: "credit-card",
 		Description: "A Stripe account: balance, payments, customers, subscriptions, payouts, disputes, invoices; refunds and cancellations with a preview.",
 		Presets:     []string{"team", "developer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["key"],"properties":{

@@ -52,7 +52,7 @@ var (
 func (m *Module) Manifest() sdk.Manifest {
 	id := sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Incident id, e.g. PT4KHLK"}}}`)
 	return sdk.Manifest{
-		ID: "pagerduty", Name: "PagerDuty", Version: "0.1.0", Category: "Operations", Icon: "bell",
+		ID: "pagerduty", Name: "PagerDuty", Version: "0.1.0", Category: "Monitoring", Icon: "bell",
 		Description: "Open incidents and who's on call; acknowledge and resolve incidents, or open one from an automation.",
 		Presets:     []string{"team", "developer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{

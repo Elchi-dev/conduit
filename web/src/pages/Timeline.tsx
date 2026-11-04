@@ -5,6 +5,7 @@ import { api, ok, type AuditEntry } from "../api/client";
 import { actorLabel, ago, json, stamp } from "../lib/format";
 import { locale, t, tn } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 const statusText: Record<string, string> = {
   ok: t("Done"),
@@ -58,7 +59,7 @@ export function Timeline() {
             setSearch(q);
           }}
         >
-          <input className="input" style={{ width: 280 }} placeholder={t("Search actions and data")} value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input" style={{ width: 280, maxWidth: "100%" }} aria-label={t("Search actions and data")} placeholder={t("Search actions and data")} value={q} onChange={(e) => setQ(e.target.value)} />
           <button className="btn">{t("Search")}</button>
         </form>
         {verify.data &&
@@ -81,13 +82,24 @@ export function Timeline() {
             <button className="btn sm primary" onClick={() => record.mutate()} disabled={record.isPending}>
               {t("Make an automation")}</button>
           </div>
-          {record.error && <div className="error">{record.error.message}</div>}
+          <ErrorNote error={record.error} />
         </div>
       )}
       {entries.length === 0 && !list.isPending && (
         <div className="empty">
           <h2>{search ? t("No matches") : t("Nothing has happened yet")}</h2>
-          <p className="muted">{t("Every action, approval and change appears here as it happens.")}</p>
+          <p className="muted">
+            {search
+              ? t("Nothing in the timeline matches \"{q}\". Try a module name, a person, or an action like restart.", { q: search })
+              : t("Every action, approval and change appears here as it happens.")}
+          </p>
+          {search && (
+            <div className="inline">
+              <button className="btn" onClick={() => { setSearch(""); setQ(""); }}>
+                {t("Clear search")}
+              </button>
+            </div>
+          )}
         </div>
       )}
       <ol className="timeline">
@@ -137,7 +149,7 @@ function TimelineRow({ e, picked, onPick }: { e: AuditEntry; picked: boolean; on
           </div>
         </div>
         {e.error && <p className="small" style={{ color: "var(--fault)" }}>{e.error}</p>}
-        {undo.error && <div className="error">{undo.error.message}</div>}
+        <ErrorNote error={undo.error} />
         {open && (
           <div className="tl-detail">
             <dl className="kv xs">

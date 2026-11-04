@@ -37,9 +37,10 @@ export function Home() {
   const down = list.filter((_, n) => health[n]?.data && health[n].data!.status !== "ok");
   const waiting = pending.data ?? [];
 
-  // The vault and this computer exist from the start; "nothing connected"
-  // means nothing beyond those.
-  const connected = list.filter((i) => i.id !== "vault" && i.id !== "system");
+  // Built-in modules (the vault, this computer, notes, standards) exist from
+  // the start with the module's own id; "nothing connected" means nothing
+  // beyond those.
+  const connected = list.filter((i) => i.id !== i.module);
   const summary =
     connected.length === 0 && list.length === 0
       ? t("Nothing is connected yet.")
@@ -61,7 +62,7 @@ export function Home() {
         <div className="empty start">
           <h2>{t("Connect your first system")}</h2>
           <p className="muted">
-            {t("Start with whatever you check most: your mail, a server, your PC itself. Each one gets a lamp in the top row. What will you use Conduit for?")}</p>
+            {t("What will you use Conduit for? Pick one and you get a short list to start with. Nothing is added until you connect it, and each system you connect gets a lamp in the top row.")}</p>
           <div className="inline">
             {presetNames.slice(1).map(([id, label]) => (
               <Link key={id} href={`/modules?preset=${id}`} className="btn">

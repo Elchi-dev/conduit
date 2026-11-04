@@ -56,7 +56,7 @@ const srv = `"server":{"type":"string","description":"Server name; may be left o
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "gameservers", Name: "Game servers", Version: "0.1.0", Category: "Games", Icon: "gamepad",
+		ID: "gameservers", Name: "Game servers", Version: "0.1.0", Category: "Gaming", Icon: "gamepad",
 		Description: "See who's on your Minecraft and Source game servers, and run console commands.",
 		Presets:     []string{"gamer", "homelab"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{

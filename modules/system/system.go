@@ -64,7 +64,7 @@ type Module struct {
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "system", Name: "This computer", Version: "0.1.0", Category: "Devices", Icon: "cpu",
+		ID: "system", Name: "This computer", Version: "0.1.0", Category: "Monitoring", Icon: "cpu",
 		Description: "Resources, temperatures, processes, saved launch profiles and game mode for the machine running Conduit.",
 		Presets:     []string{"developer", "gamer", "homelab", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{

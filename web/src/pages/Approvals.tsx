@@ -6,6 +6,7 @@ import { PlanView } from "../components/PlanView";
 import { actorLabel, ago, json } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 export function Approvals() {
   const [tab, setTab] = useState<"pending" | "">("pending");
@@ -25,7 +26,7 @@ export function Approvals() {
         <button role="tab" aria-selected={tab === ""} onClick={() => setTab("")}>
           {t("All")}</button>
       </div>
-      {q.error && <div className="error">{q.error.message}</div>}
+      <ErrorNote error={q.error} />
       {q.data?.length === 0 && (
         <div className="empty">
           <h2>{tab === "pending" ? t("Nothing is waiting for you") : t("No approvals yet")}</h2>
@@ -100,7 +101,7 @@ export function ApprovalCard({ a, onDecided }: { a: Approval; onDecided?: (appro
           </span>
         )}
       </footer>
-      {decide.error && <div className="error">{decide.error.message}</div>}
+      <ErrorNote error={decide.error} />
     </article>
   );
 }

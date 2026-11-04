@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ok } from "../api/client";
 import { t, tn } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 /** Settings section: two-factor sign-in with an authenticator app. */
 export function TwoFactorSection() {
@@ -76,7 +77,7 @@ export function TwoFactorSection() {
         <span>{t("Code from your app, or a recovery code")}</span>
         <input className="data" value={code} onChange={(e) => setCode(e.target.value)} required autoComplete="one-time-code" />
       </label>
-      {m.error && <div className="error">{m.error.message}</div>}
+      <ErrorNote error={m.error} />
       <div className="inline">
         <button type="button" className="btn quiet" onClick={reset}>
           {t("Cancel")}</button>
@@ -130,7 +131,7 @@ export function TwoFactorSection() {
             <span>{t("Your password")}</span>
             <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required autoFocus autoComplete="current-password" />
           </label>
-          {begin.error && <div className="error">{begin.error.message}</div>}
+          <ErrorNote error={begin.error} />
           <div className="inline">
             <button type="button" className="btn quiet" onClick={reset}>
               {t("Cancel")}</button>
@@ -160,7 +161,7 @@ export function TwoFactorSection() {
             <span>{t("Code the app shows now")}</span>
             <input className="data" value={code} onChange={(e) => setCode(e.target.value)} required inputMode="numeric" autoComplete="one-time-code" placeholder="123456" />
           </label>
-          {enable.error && <div className="error">{enable.error.message}</div>}
+          <ErrorNote error={enable.error} />
           <div className="inline">
             <button
               type="button"

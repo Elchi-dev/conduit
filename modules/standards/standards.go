@@ -61,7 +61,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	id := `"id":{"type":"string"}`
 	format := `"format":{"type":"string","enum":["markdown","json"],"default":"markdown"}`
 	return sdk.Manifest{
-		ID: "standards", Name: "Standards", Version: "0.1.0", Category: "Knowledge", Icon: "ruler",
+		ID: "standards", Name: "Standards", Version: "0.1.0", Category: "Productivity", Icon: "ruler",
 		Description: "Your standards and toolkits for AI work: design, writing, code, commits, reviews. Every connected AI gets them.",
 		Presets:     []string{"developer", "gamer", "homelab", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{

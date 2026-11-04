@@ -63,7 +63,7 @@ var (
 func (m *Module) Manifest() sdk.Manifest {
 	inst := `{"type":"object","required":["instance"],"properties":{"instance":{"type":"string","description":"Instance id, i-…"}}}`
 	return sdk.Manifest{
-		ID: "aws", Name: "AWS", Version: "0.1.0", Category: "Cloud", Icon: "cloud",
+		ID: "aws", Name: "AWS", Version: "0.1.0", Category: "Infrastructure", Icon: "cloud",
 		Description: "EC2 instances, S3 buckets and CloudWatch alarms in one AWS account and region.",
 		Presets:     []string{"developer", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["region","accessKeyId","secretAccessKey"],"properties":{

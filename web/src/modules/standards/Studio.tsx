@@ -7,6 +7,7 @@ import { Editor, undoEntry } from "./Editor";
 import { Icon, standardIcons } from "./icons";
 import { categories, categoryHue, download, run, type Row, type Toolkit } from "./model";
 import "./standards.css";
+import { ErrorNote } from "../../components/ErrorNote";
 
 export interface Library {
   standards: Row[];
@@ -49,7 +50,7 @@ export function StandardsStudio({ instance }: { instance: string }) {
   const [toast, setToast] = useState<{ text: string; seq?: number; n: number } | null>(null);
   const notify = (text: string, seq?: number) => setToast({ text, seq, n: Date.now() });
 
-  if (lib.error) return <div className="error">{lib.error.message}</div>;
+  if (lib.error) return <ErrorNote error={lib.error} retry={() => lib.refetch()} />;
   if (!lib.data) return <p className="muted small">{t("Loading standards…")}</p>;
   return (
     <div className="std-root">
@@ -128,7 +129,7 @@ function LibraryView({ instance, lib, onOpen }: { instance: string; lib: Library
           </button>
         </div>
       </div>
-      {exportAll.error && <div className="error">{exportAll.error.message}</div>}
+      <ErrorNote error={exportAll.error} />
       {panel === "import" && <ImportPanel instance={instance} onClose={() => setPanel(null)} />}
 
       <section aria-labelledby="std-kits">
@@ -308,7 +309,7 @@ function ToolkitPanel({ instance, kit, lib, onClose }: { instance: string; kit: 
           </label>
         ))}
       </fieldset>
-      {(save.error || del.error) && <div className="error">{(save.error || del.error)!.message}</div>}
+      <ErrorNote error={save.error || del.error} />
       <div className="spread">
         {kit ? (
           <button type="button" className="btn danger" onClick={() => confirm(t("Delete the toolkit {name}? Its standards stay.", { name: kit.title })) && del.mutate()}>
@@ -380,7 +381,7 @@ function ImportPanel({ instance, onClose }: { instance: string; onClose: () => v
           rows={8}
         />
       </label>
-      {(preview.error || go.error) && <div className="error">{(preview.error || go.error)!.message}</div>}
+      <ErrorNote error={preview.error || go.error} />
       {plan && (
         <ul className="std-plan">
           <li className="small">{plan.summary}</li>

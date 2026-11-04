@@ -38,6 +38,14 @@ Conduit is a control room, not a chat app.
   the command bar; small radii (4–6 px); left-aligned, dense layouts.
 - **Copy:** sentence case, plain verbs, buttons say exactly what happens
   ("Approve", "Revoke", "Lift emergency stop"). Empty states say what to do.
+  Failures render through `ErrorNote`, which adds the next step for the
+  kind of failure (sign in again, check the input, reload, check the daemon).
+- **Module icons:** `components/ModuleIcon.tsx` draws every `icon` name the
+  built-in manifests use; an unknown name falls back to its category's glyph,
+  then a box. Manifest categories are a fixed set of twelve (Conduit,
+  Development, Infrastructure, Network, Monitoring, Security, Storage,
+  Communication, Productivity, Media, Gaming, Smart home), translated in the
+  web app.
 
 ## Charts
 
@@ -73,7 +81,7 @@ Modules that need richer views can add a custom panel under `web/modules/`
 | `/` | Overview: health summary, things needing attention, approvals, activity |
 | `/approvals` | Approval inbox with plans |
 | `/timeline` | Audit log with search, undo and chain verification |
-| `/modules` | Catalog; connect a module through its config form |
+| `/modules` | Catalog: search (`/` focuses it), category chips with counts, added and available states; a preset (`?preset=`) shows a short "Start here" list first (`featured` in `Modules.tsx`), then all of its modules on request; connect a module through its config form |
 | `/i/:id` | One connected system: actions, settings, recent activity |
 | `/policy` | Agent rules: preset, rules with expiry, emergency stop status |
 | `/keys` | API keys: create (shown once), rotate, revoke, usage |
@@ -134,6 +142,8 @@ Covered, at 1280 px and at 412 px (phone):
 - first run: setup code, owner account, overview
 - the command bar (Ctrl+K) finds and opens a page
 - Modules lists modules; This computer shows its overview by itself
+- a preset on Modules starts with a short list, expands to all of its
+  modules, and category chips and search narrow the list
 - the vault: create or unlock it, save a secret through the Vault module,
   the value never shown
 - a new API key's secret is shown once

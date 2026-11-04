@@ -5,6 +5,7 @@ import { SchemaForm, type JSONSchema } from "../components/SchemaForm";
 import { ago, stamp } from "../lib/format";
 import { t, tn } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type Automation = S["Automation"];
 type Step = S["Step"];
@@ -76,7 +77,7 @@ export function Automations() {
             <button className="btn" onClick={() => quickBrief.mutate()} disabled={quickBrief.isPending}>
               {t("Turn on")}</button>
           </div>
-          {quickBrief.error && <div className="error">{quickBrief.error.message}</div>}
+          <ErrorNote error={quickBrief.error} />
         </div>
       )}
 
@@ -136,7 +137,7 @@ function AutomationRow({ a, onEdit }: { a: Automation; onEdit: () => void }) {
         <button className="btn sm quiet" onClick={onEdit}>
           {t("Edit")}</button>
       </div>
-      {(toggle.error || run.error) && <div className="error" style={{ gridColumn: "1 / -1" }}>{(toggle.error || run.error)!.message}</div>}
+      <ErrorNote error={toggle.error || run.error} style={{ gridColumn: "1 / -1" }} />
       {run.data && (
         <p className="xs" style={{ gridColumn: "1 / -1", color: run.data.status === "ok" ? "var(--ok)" : "var(--fault)" }}>
           {run.data.status === "ok" ? t("Finished.") : run.data.error}
@@ -338,7 +339,7 @@ function Editor({ initial, onDone }: { initial: Automation | null; onDone: () =>
       <label className="check">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         {t("Turn it on now")}</label>
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
       <div className="inline">
         <button type="button" className="btn quiet" onClick={onDone}>
           {t("Cancel")}</button>

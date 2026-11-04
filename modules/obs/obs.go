@@ -43,7 +43,7 @@ func New() *Module { return &Module{} }
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "obs", Name: "OBS Studio", Version: "0.1.0", Category: "Streaming", Icon: "video",
+		ID: "obs", Name: "OBS Studio", Version: "0.1.0", Category: "Gaming", Icon: "video",
 		Description: "Switch scenes, start and stop streams and recordings, and mute inputs in OBS Studio.",
 		Presets:     []string{"gamer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url"],"properties":{

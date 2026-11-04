@@ -3,6 +3,7 @@ import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
 import { checkApkUpdate, checkUpdate, installUpdate, isMobileApp, isNative, openExternal, setAutostart, shellInfo } from "../lib/native";
 import { t } from "../i18n";
+import { ErrorNote } from "../components/ErrorNote";
 
 /** Settings section for the desktop app: updates and start at login. */
 export function AppSection() {
@@ -163,7 +164,7 @@ export function DaemonUpdates({ admin }: { admin: boolean }) {
                 {apply.isSuccess ? t("Restarting…") : apply.isPending ? t("Installing…") : t("Install and restart")}
               </button>
             </div>
-            {apply.error && <div className="error">{apply.error.message}</div>}
+            <ErrorNote error={apply.error} />
           </div>
         )}
       </div>

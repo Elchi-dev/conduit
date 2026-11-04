@@ -4,6 +4,7 @@ import { api, ok, type S } from "../api/client";
 import { ago } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type User = S["User"];
 type Role = "admin" | "member" | "viewer";
@@ -46,7 +47,7 @@ export function People() {
 
       {adding && <AddPerson owner={myRole === "owner"} onDone={() => { setAdding(false); refresh(); }} />}
       {resetFor && <ResetPassword user={resetFor} onDone={() => setResetFor(null)} />}
-      {update.error && <div className="error">{update.error.message}</div>}
+      <ErrorNote error={update.error} />
 
       <div className="panel rows">
         {list.data?.map((u) => (
@@ -147,7 +148,7 @@ function AddPerson({ owner, onDone }: { owner: boolean; onDone: () => void }) {
           <small>{roleHelp[f.role]}</small>
         </label>
       </div>
-      {create.error && <div className="error">{create.error.message}</div>}
+      <ErrorNote error={create.error} />
       <div className="inline">
         <button type="button" className="btn quiet" onClick={onDone}>
           {t("Cancel")}</button>
@@ -177,7 +178,7 @@ function ResetPassword({ user, onDone }: { user: User; onDone: () => void }) {
         <input type="password" minLength={10} value={pw} onChange={(e) => setPw(e.target.value)} required autoComplete="new-password" />
         <small>{t("This signs them out everywhere.")}</small>
       </label>
-      {reset.error && <div className="error">{reset.error.message}</div>}
+      <ErrorNote error={reset.error} />
       <div className="inline">
         <button type="button" className="btn quiet" onClick={onDone}>
           {t("Cancel")}</button>
@@ -249,7 +250,7 @@ function VaultFolders({ people }: { people: User[] }) {
           </label>
         </div>
       ))}
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
       {draft && (
         <div className="inline">
           <button className="btn quiet" onClick={() => setDraft(null)}>

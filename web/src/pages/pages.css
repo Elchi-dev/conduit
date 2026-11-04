@@ -161,8 +161,245 @@
 
 /* ---------- modules ---------- */
 
+.mod-tools,
+.mod-filters {
+  min-width: 0;
+}
+.mod-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.mod-search {
+  position: relative;
+  flex: 1 1 280px;
+  max-width: 420px;
+  min-width: 0;
+}
+.mod-search > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.mod-search .input {
+  padding-left: 32px;
+  padding-right: 32px;
+  min-height: 36px;
+}
+.mod-search kbd {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  font: 500 var(--t-xs) / 1 var(--font-ui);
+  color: var(--muted);
+  pointer-events: none;
+}
+.mod-search .input:focus ~ kbd,
+.mod-search .input:not(:placeholder-shown) ~ kbd {
+  display: none;
+}
+
+/* A segmented control: one choice of a few, as a radio group. */
+.mod-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  max-width: 100%;
+}
+.mod-seg button {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--t-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mod-seg button:hover {
+  color: var(--ink);
+}
+.mod-seg button[aria-checked="true"] {
+  background: var(--ink);
+  color: var(--bg);
+}
+.mod-seg.sm button {
+  height: 24px;
+  padding: 0 9px;
+  font-size: var(--t-xs);
+}
+
+.mod-filters {
+  display: grid;
+  gap: 10px;
+  margin-top: -8px;
+}
+.mod-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mod-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: transparent;
+  font-size: var(--t-sm);
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mod-chip:hover {
+  border-color: var(--muted);
+  color: var(--ink);
+}
+.mod-chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.mod-chip .n,
+.mod-cat .n {
+  font-weight: 400;
+  color: var(--muted);
+}
+.mod-chip[aria-pressed="true"] .n {
+  color: inherit;
+  opacity: 0.7;
+}
+.mod-status {
+  gap: 8px;
+}
+.mod-picks h2 {
+  font-size: var(--t-lg);
+}
+
 .module-row {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+}
+.mod-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: var(--r-md);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.module-row[data-added] .mod-icon {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+}
+.mod-text {
+  min-width: 0;
+}
+.mod-text strong {
+  overflow-wrap: anywhere;
+}
+.mod-added {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mod-added::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.mod-act {
+  display: inline-flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+@media (max-width: 640px) {
+  /* Name and button share the first line; the description runs under both. */
+  .module-row {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    column-gap: 12px;
+    row-gap: 2px;
+    align-items: center;
+  }
+  .module-row .mod-icon {
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+  .module-row .mod-text {
+    display: contents;
+  }
+  .mod-text strong {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .mod-text > span {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+  .mod-state {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    margin-top: 4px;
+  }
+  .mod-state:empty {
+    display: none;
+  }
+  .mod-act {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .mod-search {
+    max-width: none;
+    flex-basis: 100%;
+  }
+  .mod-search kbd {
+    display: none;
+  }
+  /* On a phone, presets and categories scroll sideways in one line each,
+     so the list itself starts on the first screen. */
+  .mod-tools > .mod-seg {
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .mod-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -16px;
+    padding: 0 16px 2px;
+  }
+  .mod-tools > .mod-seg::-webkit-scrollbar,
+  .mod-chips::-webkit-scrollbar {
+    display: none;
+  }
 }
 .attention-row,
 .recent-row {

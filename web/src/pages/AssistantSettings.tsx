@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { api, ok, type S } from "../api/client";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type Provider = S["Provider"];
 
@@ -171,7 +172,7 @@ function ProviderForm({ initial, onDone }: { initial: Provider; onDone: () => vo
           </label>
         )}
       </div>
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
       <div className="inline">
         <button type="button" className="btn quiet" onClick={onDone}>
           {t("Cancel")}</button>
@@ -294,7 +295,7 @@ function OutsideServers() {
             <input type="checkbox" checked={f.trust} onChange={(e) => setF({ ...f, trust: e.target.checked })} />
             <span>{t("Trust this server's read-only labels. Otherwise every tool counts as a change and follows your approval rules.")}</span>
           </label>
-          {save.error && <div className="error">{save.error.message}</div>}
+          <ErrorNote error={save.error} />
           <div className="inline">
             <button type="button" className="btn quiet" onClick={() => setAdding(false)}>
               {t("Cancel")}</button>

@@ -31,6 +31,7 @@ import {
   type TokenKind,
 } from "./model";
 import { categoryName, type Library } from "./Studio";
+import { ErrorNote } from "../../components/ErrorNote";
 
 export function kindName(k: SectionKind): string {
   switch (k) {
@@ -148,7 +149,7 @@ export function Editor({ instance, id, library, onClose, onSaved, notify }: { in
     onSuccess: (o) => download(o.filename, o.content, o.filename.endsWith(".json") ? "application/json" : "text/markdown"),
   });
 
-  if (loaded.error) return <div className="error">{loaded.error.message}</div>;
+  if (loaded.error) return <ErrorNote error={loaded.error} retry={() => loaded.refetch()} />;
   if (!draft) return <p className="muted small">{t("Loading standards…")}</p>;
   const set = (p: Partial<Standard>) => setDraft({ ...draft, ...p });
   const close = () => (!dirty || confirm(t("Leave without saving your changes?"))) && onClose();
@@ -178,7 +179,7 @@ export function Editor({ instance, id, library, onClose, onSaved, notify }: { in
             {t("Review and save")}</button>
         </div>
       </div>
-      {(preview.error || save.error || del.error || exp.error) && <div className="error">{(preview.error || save.error || del.error || exp.error)!.message}</div>}
+      <ErrorNote error={preview.error || save.error || del.error || exp.error} />
 
       {review && (
         <section className="panel std-review" aria-labelledby="std-review-h">
@@ -968,7 +969,7 @@ function History({ instance, id, current, onRestored, dirty }: { instance: strin
       onRestored(o.audit.undo ? o.audit.seq : undefined);
     },
   });
-  if (list.error) return <div className="error">{list.error.message}</div>;
+  if (list.error) return <ErrorNote error={list.error} retry={() => list.refetch()} />;
   if (!list.data) return null;
   if (!list.data.length) return <p className="small muted std-pad">{t("No earlier versions yet. Each save keeps the one before it; the last 20 are kept.")}</p>;
   return (
@@ -993,7 +994,7 @@ function History({ instance, id, current, onRestored, dirty }: { instance: strin
             <button className="btn sm" disabled={restore.isPending} onClick={() => (!dirty || confirm(t("Restoring discards your unsaved changes. Go ahead?"))) && restore.mutate()}>
               {t("Restore this version")}</button>
           </div>
-          {restore.error && <div className="error">{restore.error.message}</div>}
+          <ErrorNote error={restore.error} />
           <Diff before={ver.data} after={current} />
         </div>
       )}

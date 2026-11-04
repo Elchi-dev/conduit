@@ -17,8 +17,8 @@ test("command bar opens and finds a page", async ({ page }) => {
 test("modules are listed, and This computer shows its overview", async ({ page }) => {
   await page.goto("/modules");
   await expect(page.getByRole("heading", { level: 1, name: "Modules" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Filter modules" })).toBeVisible();
-  await page.getByRole("textbox", { name: "Filter modules" }).fill("docker");
+  await expect(page.getByRole("searchbox", { name: "Search modules" })).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search modules" }).fill("docker");
   await expect(page.getByText("Docker", { exact: true })).toBeVisible();
 
   await page.goto("/i/system");
@@ -26,6 +26,21 @@ test("modules are listed, and This computer shows its overview", async ({ page }
   // The overview runs by itself: CPUs and hostname come from this machine.
   await expect(page.getByRole("term").filter({ hasText: "CPUs" })).toBeVisible();
   await expect(page.getByRole("term").filter({ hasText: "Hostname" })).toBeVisible();
+});
+
+test("a preset starts with a short list and shows the rest on request", async ({ page }) => {
+  await page.goto("/modules?preset=developer");
+  await expect(page.getByRole("heading", { level: 2, name: "Start here: Developer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect GitHub" })).toBeVisible();
+  await page.getByRole("button", { name: /^Show all \d+ for Developer$/ }).click();
+  await expect(page.getByRole("heading", { level: 2, name: /^Development \d+$/ })).toBeVisible();
+  // A category chip narrows the list; search finds by category too.
+  await page.getByRole("button", { name: /^Monitoring \d+$/ }).click();
+  await expect(page.getByRole("button", { name: "Connect GitHub" })).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "Search modules" }).fill("zzzz");
+  await expect(page.getByRole("heading", { level: 2, name: "No modules match" })).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(page.getByRole("button", { name: "Connect GitHub" }).first()).toBeVisible();
 });
 
 test("settings show remote access, sync and webhooks", async ({ page }) => {

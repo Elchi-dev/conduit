@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { api, ok } from "../api/client";
 import { locale, t, tn } from "../i18n";
 import "./tiles.css";
+import { ErrorNote } from "./ErrorNote";
 
 export type Tile = { id: string; instance: string; action: string; input?: unknown; label: string; field?: string; refresh: number };
 
@@ -120,7 +121,7 @@ export function TileBoard() {
           <TileView key={x.id} tile={x} editing={editing} onMove={(d) => move(i, d)} onRemove={() => save.mutate(tiles.filter((y) => y.id !== x.id))} />
         ))}
       </div>
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
     </section>
   );
 }
@@ -177,7 +178,7 @@ export function PinButton({ instance, action, title, input, output }: { instance
         {t("Pin")}</button>
       <button type="button" className="btn sm quiet" onClick={() => setOpen(false)}>
         {t("Cancel")}</button>
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
     </form>
   );
 }

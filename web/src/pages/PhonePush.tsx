@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ok } from "../api/client";
 import { isMobileApp, openExternal } from "../lib/native";
 import { t } from "../i18n";
+import { ErrorNote } from "../components/ErrorNote";
 
 /**
  * Notifications on the phone when Conduit isn't open, through the ntfy app
@@ -73,7 +74,7 @@ export function PhonePush() {
         <input type="checkbox" checked={details} onChange={(e) => setDetails(e.target.checked)} />
         <span>{t("Include what needs approval in the notification. Leave off for servers you don't run: they see every message.")}</span>
       </label>
-      {setup.error && <div className="error">{setup.error.message}</div>}
+      <ErrorNote error={setup.error} />
       <div className="inline">
         <button type="button" className="btn quiet" onClick={() => setOpen(false)}>
           {t("Cancel")}</button>

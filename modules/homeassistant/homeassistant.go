@@ -42,7 +42,7 @@ var entityRe = regexp.MustCompile(`^[a-z_]+\.[a-z0-9_]+$`)
 func (m *Module) Manifest() sdk.Manifest {
 	ent := `"entity":{"type":"string","description":"Entity id, e.g. light.desk"}`
 	return sdk.Manifest{
-		ID: "homeassistant", Name: "Home Assistant", Version: "0.1.0", Category: "Home", Icon: "home",
+		ID: "homeassistant", Name: "Home Assistant", Version: "0.1.0", Category: "Smart home", Icon: "home",
 		Description: "Lights, switches, scenes and anything else in your Home Assistant.",
 		Presets:     []string{"homelab", "gamer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","token"],"properties":{

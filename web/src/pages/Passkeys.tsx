@@ -6,6 +6,7 @@ import { ago } from "../lib/format";
 import { createPasskey, passkeyError, passkeysSupported } from "../lib/passkeys";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 /** Settings section: passkeys for signing in to this account. */
 export function PasskeysSection() {
@@ -123,8 +124,8 @@ export function PasskeysSection() {
           ))}
         </div>
       )}
-      {rename.error && <div className="error">{rename.error.message}</div>}
-      {remove.error && <div className="error">{remove.error.message}</div>}
+      <ErrorNote error={rename.error} />
+      <ErrorNote error={remove.error} />
 
       {usable && !adding && (
         <div>
@@ -152,7 +153,7 @@ export function PasskeysSection() {
             <span>{t("Passkey name")}</span>
             <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder={t("For example: Laptop")} />
           </label>
-          {add.error && <div className="error">{add.error.message}</div>}
+          <ErrorNote error={add.error} />
           <div className="inline">
             <button
               type="button"

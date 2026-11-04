@@ -5,6 +5,7 @@ import { apiFetchUrl } from "../lib/connection";
 import { ago } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 // Networks: userspace WireGuard tunnels that connections can be attached to
 // (docs/architecture/networks.md). These endpoints are newer than the
@@ -87,7 +88,7 @@ export function Networks() {
       </div>
 
       {adding && <NetworkForm onDone={() => setAdding(false)} />}
-      {list.error && <div className="error">{list.error.message}</div>}
+      <ErrorNote error={list.error} />
 
       {list.data?.length === 0 && !adding && (
         <div className="empty">
@@ -148,7 +149,7 @@ function NetworkCard({ n, onEdit }: { n: Network; onEdit: () => void }) {
             {t("Remove")}</button>
         </div>
       </div>
-      {(del.error || restart.error) && <div className="error">{(del.error || restart.error)?.message}</div>}
+      <ErrorNote error={del.error || restart.error} />
       <dl className="kv small">
         <dt>{t("Addresses")}</dt>
         <dd className="data">{n.addresses.join(", ")}</dd>
@@ -384,7 +385,7 @@ function NetworkForm({ existing, onDone }: { existing?: Network; onDone: () => v
         </>
       )}
 
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
       <div className="inline">
         <button className="btn primary" disabled={save.isPending}>
           {existing ? t("Save") : t("Add network")}</button>
@@ -437,7 +438,7 @@ export function NetworkPicker({ instance, current }: { instance: string; current
             ? t("Saved.")
             : t("Connections to the network's addresses go through its WireGuard tunnel.")}
       </small>
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
     </label>
   );
 }

@@ -12,6 +12,7 @@ import { modulePages } from "../modules";
 import { ago } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 export function InstancePage({ id }: { id: string }) {
   const search = useSearch();
@@ -54,7 +55,7 @@ export function InstancePage({ id }: { id: string }) {
     },
   });
 
-  if (inst.error) return <div className="page"><div className="error">{inst.error.message}</div></div>;
+  if (inst.error) return <div className="page"><ErrorNote error={inst.error} retry={() => inst.refetch()} /></div>;
   if (!inst.data || !mod.data) return <div className="page" />;
   const i = inst.data;
   const m = mod.data;
@@ -173,7 +174,7 @@ function ActionRunner({ instance, action }: { instance: string; action: ActionSp
         )}
         {run.isPending && <span className="xs muted">{t("Working…")}</span>}
       </div>
-      {run.error && <div className="error">{run.error.message}</div>}
+      <ErrorNote error={run.error} />
       {result?.result.plan && <PlanView plan={result.result.plan} />}
       {result && !result.result.plan && result.result.output !== undefined && <ResultView value={result.result.output} />}
       {result && action.risk === "read" && !action.sensitive && result.result.output !== undefined && (
@@ -225,7 +226,7 @@ function InstanceSettings({
       </label>
       <SchemaForm schema={schema} value={config} onChange={setConfig} idPrefix={`edit-${id}`} />
       <NetworkPicker instance={id} current={network} />
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
       <div className="spread">
         <button type="button" className="btn danger" onClick={onDelete}>
           {t("Disconnect")}</button>

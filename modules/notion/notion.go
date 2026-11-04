@@ -89,7 +89,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	db := `"database":{"type":"string","description":"Database id or link"},"dataSource":{"type":"string","description":"Data source id or name, when the database has more than one"}`
 	content := `"content":{"type":"string","description":"Text as simple Markdown: # headings, - bullets, 1. numbers, - [ ] to-dos, > quotes, --- and code fences"}`
 	return sdk.Manifest{
-		ID: "notion", Name: "Notion", Version: "0.1.0", Category: "Knowledge", Icon: "document",
+		ID: "notion", Name: "Notion", Version: "0.1.0", Category: "Productivity", Icon: "document",
 		Description: "Search Notion, read pages as Markdown, query databases, add pages and blocks, and trash pages.",
 		Presets:     []string{"team", "developer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["token"],"properties":{

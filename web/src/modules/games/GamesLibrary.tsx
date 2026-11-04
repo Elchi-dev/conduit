@@ -5,6 +5,7 @@ import { ago } from "../../lib/format";
 import { locale, t, tn } from "../../i18n";
 import { act, clock, coverURL, duration, hue, launcherLabel, type Detail, type Game, type Stats } from "./api";
 import "./games.css";
+import { ErrorNote } from "../../components/ErrorNote";
 
 type Sort = "recent" | "played" | "title";
 const sortKey = "conduit.games.sort";
@@ -134,7 +135,7 @@ export function GamesLibrary({ instance }: { instance: string }) {
           {notice}
         </p>
       )}
-      {lib.error && <div className="error">{lib.error.message}</div>}
+      <ErrorNote error={lib.error} />
 
       {games.length > 0 && (
         <div className="glib-tools">
@@ -488,7 +489,7 @@ function GameDrawer({ instance, id, fallback, onClose }: { instance: string; id:
                 {msg}
               </p>
             )}
-            {err && <div className="error">{err.message}</div>}
+            <ErrorNote error={err} />
 
             <dl className="gdrawer-stats">
               <div>
@@ -641,7 +642,7 @@ function AddGame({ instance, onDone }: { instance: string; onDone: () => void })
           <small>{t("A portrait image, 2:3.")}</small>
         </label>
       </div>
-      {add.error && <div className="error">{add.error.message}</div>}
+      <ErrorNote error={add.error} />
       <div className="inline">
         <button className="btn primary" disabled={add.isPending || !f.title.trim() || (!f.executable.trim() && !f.uri.trim())}>
           {t("Add to library")}</button>

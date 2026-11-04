@@ -92,7 +92,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	limits := `"maxMessages":{"type":"integer","minimum":1,"maximum":1000},"maxBytes":{"type":"integer","minimum":1,"maximum":1048576,"description":"Payload bytes to collect at most"}`
 	topic := `"topic":{"type":"string","description":"A topic without wildcards, inside the publishTopics setting"}`
 	return sdk.Manifest{
-		ID: "mqtt", Name: "MQTT", Version: "0.1.0", Category: "Home", Icon: "network",
+		ID: "mqtt", Name: "MQTT", Version: "0.1.0", Category: "Smart home", Icon: "network",
 		Description: "Any MQTT broker: read the messages on a topic for a few seconds, snapshot retained messages, publish to allowed topics.",
 		Presets:     []string{"homelab"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url"],"properties":{

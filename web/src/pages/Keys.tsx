@@ -4,6 +4,7 @@ import { api, ok, type ApiKey } from "../api/client";
 import { ago, stamp } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 const scopeGroups: { label: string; scopes: { id: string; text: string }[] }[] = [
   {
@@ -264,7 +265,7 @@ function CreateKey({ onDone }: { onDone: (name: string, secret?: string) => void
           </select>
         </label>
       </div>
-      {create.error && <div className="error">{create.error.message}</div>}
+      <ErrorNote error={create.error} />
       <div className="inline" style={{ justifyContent: "flex-end" }}>
         <button type="button" className="btn quiet" onClick={() => onDone("")}>
           {t("Cancel")}</button>

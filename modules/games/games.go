@@ -99,7 +99,7 @@ var idInput = `{"type":"object","required":["id"],"properties":{"id":{"type":"st
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "games", Name: "Games", Version: "0.2.0", Category: "Play", Icon: "game",
+		ID: "games", Name: "Games", Version: "0.2.0", Category: "Gaming", Icon: "game",
 		Description: "Every game on this computer in one library: Steam, Epic, GOG, Riot, Battle.net, EA, Ubisoft, Xbox, itch.io, Lutris and your own. Play, stop, and play time.",
 		Presets:     []string{"gamer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{

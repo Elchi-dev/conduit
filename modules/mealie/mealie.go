@@ -64,7 +64,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	list := `"list":{"type":"string","description":"Shopping list name or id"}`
 	item := `"item":{"type":"string","description":"Item id (see shopping_list)"}`
 	return sdk.Manifest{
-		ID: "mealie", Name: "Mealie", Version: "0.1.0", Category: "Home", Icon: "list",
+		ID: "mealie", Name: "Mealie", Version: "0.1.0", Category: "Smart home", Icon: "list",
 		Description: "Mealie recipes, the meal plan and shopping lists: search recipes, read one, see today's or this week's meals, add to a shopping list.",
 		Presets:     []string{"homelab"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","token"],"properties":{

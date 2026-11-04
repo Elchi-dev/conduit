@@ -74,7 +74,7 @@ func (m *Module) Manifest() sdk.Manifest {
 	camOnly := `{"type":"object","required":["camera"],"properties":{` + cam + `}}`
 	ev := `{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Event id (see events)"}}}`
 	return sdk.Manifest{
-		ID: "frigate", Name: "Frigate", Version: "0.1.0", Category: "Home", Icon: "video",
+		ID: "frigate", Name: "Frigate", Version: "0.1.0", Category: "Smart home", Icon: "video",
 		Description: "Frigate NVR: cameras and stats, recent events with labels and scores, detection and recording switches, keeping events.",
 		Presets:     []string{"homelab"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url"],"properties":{

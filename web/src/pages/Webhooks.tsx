@@ -4,6 +4,7 @@ import { api, ok, type S } from "../api/client";
 import { ago } from "../lib/format";
 import { t, tn } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type Webhook = S["Webhook"];
 
@@ -94,7 +95,7 @@ export function Webhooks({ admin }: { admin: boolean }) {
             <input className="data" value={f.events} onChange={(e) => setF({ ...f, events: e.target.value })} placeholder={"action.error approval.requested"} />
             <small>{t("Event types or their beginnings, separated by spaces. Leave empty for everything.")}</small>
           </label>
-          {create.error && <div className="error">{create.error.message}</div>}
+          <ErrorNote error={create.error} />
           <div className="inline">
             <button type="button" className="btn quiet" onClick={() => setAdding(false)}>
               {t("Cancel")}</button>

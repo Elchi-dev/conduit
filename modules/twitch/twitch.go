@@ -57,7 +57,7 @@ var idRe = regexp.MustCompile(`^[0-9]{1,20}$`)
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "twitch", Name: "Twitch", Version: "0.1.0", Category: "Games", Icon: "video",
+		ID: "twitch", Name: "Twitch", Version: "0.1.0", Category: "Gaming", Icon: "video",
 		Description: "See who's live, and change your stream's title and category.",
 		Presets:     []string{"gamer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["clientId","clientSecret"],"properties":{

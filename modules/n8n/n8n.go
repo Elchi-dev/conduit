@@ -53,7 +53,7 @@ var statuses = []string{"success", "error", "running", "waiting", "canceled"}
 func (m *Module) Manifest() sdk.Manifest {
 	wf := `{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Workflow id (see workflows)"}}}`
 	return sdk.Manifest{
-		ID: "n8n", Name: "n8n", Version: "0.1.0", Category: "Automation", Icon: "workflow",
+		ID: "n8n", Name: "n8n", Version: "0.1.0", Category: "Productivity", Icon: "workflow",
 		Description: "n8n workflows and their executions: what ran, what failed, and turning workflows on or off.",
 		Presets:     []string{"homelab", "developer", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","apiKey"],"properties":{

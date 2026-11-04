@@ -10,6 +10,7 @@ import { CommandBar } from "./CommandBar";
 import { LampStrip } from "./LampStrip";
 import { t } from "../i18n";
 import "./shell.css";
+import { ErrorNote } from "./ErrorNote";
 
 type Me = { user: S["User"]; actor: S["Actor"]; scopes: string[] };
 
@@ -163,7 +164,7 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
             <Link href="/policy">{t("Review and lift it")}</Link>
           </div>
         )}
-        {stop.error && <div className="error">{String(stop.error.message)}</div>}
+        <ErrorNote error={stop.error} />
         {children}
       </main>
 

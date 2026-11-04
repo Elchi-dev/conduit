@@ -54,7 +54,7 @@ const modelIn = `{"type":"object","required":["model"],"properties":{"model":{"t
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "ollama", Name: "Ollama", Version: "0.1.0", Category: "AI", Icon: "chip",
+		ID: "ollama", Name: "Ollama", Version: "0.1.0", Category: "Development", Icon: "chip",
 		Description: "Local AI models: what's installed and loaded, graphics memory, download and remove models.",
 		Presets:     []string{"developer", "gamer", "homelab"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{

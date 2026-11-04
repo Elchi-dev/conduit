@@ -4,6 +4,7 @@ import { api, ok } from "../api/client";
 import { ago } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type Schedule = { enabled: boolean; folder: string; passphrase: string; keep: number; hour: number; lastRun?: string; lastFile?: string; lastError?: string };
 
@@ -66,7 +67,7 @@ export function BackupSection({ admin }: { admin: boolean }) {
         </button>
       </form>
       <p className="xs muted">{t("Without this passphrase the backup can't be opened, by anyone. Keep it somewhere other than this computer.")}</p>
-      {download.error && <div className="error">{download.error.message}</div>}
+      <ErrorNote error={download.error} />
 
       {f && (
         <div className="panel stack remote-panel">
@@ -96,7 +97,7 @@ export function BackupSection({ admin }: { admin: boolean }) {
               </label>
             </div>
           )}
-          {(save.error || run.error) && <div className="error">{(save.error || run.error)!.message}</div>}
+          <ErrorNote error={save.error || run.error} />
           <div className="spread">
             <span className="xs muted">
               {sched.data?.lastRun

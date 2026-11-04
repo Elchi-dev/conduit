@@ -6,6 +6,7 @@ import { api, ok, type S } from "../api/client";
 import { isRelay } from "../lib/connection";
 import { ago } from "../lib/format";
 import { t, tn } from "../i18n";
+import { ErrorNote } from "../components/ErrorNote";
 
 /**
  * Settings section: link this daemon to a hub, then pair phones and other
@@ -92,7 +93,7 @@ export function RemoteAccess({ admin }: { admin: boolean }) {
               </button>
             </div>
           </form>
-          {link.error && <div className="error">{link.error.message}</div>}
+          <ErrorNote error={link.error} />
           {st.lan.length > 0 ? (
             <div className="stack lan-pair" style={{ gap: 8 }}>
               <div className="spread">
@@ -105,7 +106,7 @@ export function RemoteAccess({ admin }: { admin: boolean }) {
                     {t("Pair on this network")}</button>
                 )}
               </div>
-              {pair.error && <div className="error">{pair.error.message}</div>}
+              <ErrorNote error={pair.error} />
               {pairing && <PairingCode pairing={pairing} fingerprint={st.fingerprint} onClose={() => setPairing(null)} />}
             </div>
           ) : (
@@ -140,7 +141,7 @@ export function RemoteAccess({ admin }: { admin: boolean }) {
                 {t("Unlink")}</button>
             </div>
           </div>
-          {pair.error && <div className="error">{pair.error.message}</div>}
+          <ErrorNote error={pair.error} />
           {pairing && <PairingCode pairing={pairing} fingerprint={st.fingerprint} onClose={() => setPairing(null)} />}
           <div className="stack" style={{ gap: 4 }}>
             <span className="xs muted">

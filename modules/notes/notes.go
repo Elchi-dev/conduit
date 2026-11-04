@@ -43,7 +43,7 @@ func New(defaultDir string) *Module { return &Module{Default: defaultDir} }
 func (m *Module) Manifest() sdk.Manifest {
 	name := `"name":{"type":"string","description":"e.g. runbooks/db-failover (\".md\" is added)"}`
 	return sdk.Manifest{
-		ID: "notes", Name: "Notes", Version: "0.1.0", Category: "Knowledge", Icon: "note",
+		ID: "notes", Name: "Notes", Version: "0.1.0", Category: "Productivity", Icon: "note",
 		Description: "Markdown notes in a folder on this computer, for you and your agents. Every change can be undone.",
 		Presets:     []string{"developer", "gamer", "homelab", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","properties":{

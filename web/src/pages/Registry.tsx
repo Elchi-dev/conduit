@@ -7,6 +7,7 @@ import { ago } from "../lib/format";
 import { t, tn } from "../i18n";
 import "./pages.css";
 import "./registry.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 type Advisory = S["RegistryAdvisory"];
 type Installed = S["InstalledModule"];
@@ -128,7 +129,7 @@ export function RegistryPage() {
               </div>
             ))}
           </div>
-          {remove.error && <div className="error">{remove.error.message}</div>}
+          <ErrorNote error={remove.error} />
         </section>
       )}
 
@@ -172,7 +173,7 @@ export function RegistryPage() {
               ))}
           </div>
         )}
-        {search.error && <div className="error">{(search.error as Error).message}</div>}
+        <ErrorNote error={search.error} retry={() => search.refetch()} />
         {search.data?.length === 0 && <p className="muted">{term || category ? t("Nothing matches.") : t("Nothing is published on this hub yet.")}</p>}
         <div className="panel rows">
           {search.data?.map((p) => (
@@ -341,7 +342,7 @@ function Details({ name, installedVersion }: { name: string; installedVersion?: 
         <button className="btn sm quiet" onClick={() => setReporting(true)}>
           {t("Report")}</button>
       </div>
-      {install.error && <div className="error">{install.error.message}</div>}
+      <ErrorNote error={install.error} />
 
       {l?.screenshots && l.screenshots.length > 0 && (
         <div className="reg-shots">
@@ -362,7 +363,7 @@ function Details({ name, installedVersion }: { name: string; installedVersion?: 
 
 function Reviews({ name, version }: { name: string; version?: string }) {
   const r = useQuery({ queryKey: ["registry", "reviews", name], queryFn: () => ok(api.GET("/registry/reviews", { params: { query: { name } } })), retry: false });
-  if (r.error) return <div className="error">{(r.error as Error).message}</div>;
+  if (r.error) return <ErrorNote error={r.error} retry={() => r.refetch()} />;
   if (!r.data) return null;
   const d = r.data;
   const max = Math.max(1, ...d.histogram);
@@ -455,7 +456,7 @@ function MyReview({ name, version, mine }: { name: string; version?: string; min
           {t("Edit")}</button>
         <button className="btn sm quiet" onClick={() => withdraw.mutate()} disabled={withdraw.isPending}>
           {t("Withdraw")}</button>
-        {withdraw.error && <div className="error">{withdraw.error.message}</div>}
+        <ErrorNote error={withdraw.error} />
       </div>
     );
   }
@@ -484,7 +485,7 @@ function MyReview({ name, version, mine }: { name: string; version?: string; min
         <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={2000} rows={3} placeholder={t("What worked, what didn't, what you use it for")} />
         <small>{t("Shown with your account's name on this hub.")}</small>
       </label>
-      {save.error && <div className="error">{save.error.message}</div>}
+      <ErrorNote error={save.error} />
       <div className="inline">
         <button className="btn primary sm" disabled={!rating || save.isPending}>
           {mine ? t("Save rating") : t("Post rating")}
@@ -551,7 +552,7 @@ function ReportDialog({ name, version, onClose }: { name: string; version: strin
               <span>{reason === "other" ? t("Details") : t("Details (optional)")}</span>
               <textarea value={details} onChange={(e) => setDetails(e.target.value)} maxLength={2000} rows={4} required={reason === "other"} placeholder={t("What did you see? Links and steps help.")} />
             </label>
-            {send.error && <div className="error">{send.error.message}</div>}
+            <ErrorNote error={send.error} />
             <div className="inline" style={{ justifyContent: "flex-end" }}>
               <button type="button" className="btn quiet" onClick={onClose}>
                 {t("Cancel")}</button>

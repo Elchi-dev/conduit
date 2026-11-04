@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ok } from "../../api/client";
 import { t, tn } from "../../i18n";
+import { ErrorNote } from "../../components/ErrorNote";
 
 /** Set up, unlock or lock the vault. Shown above the vault's actions. */
 export function VaultGate() {
@@ -47,7 +48,7 @@ export function VaultGate() {
             {confirmPass && pass !== confirmPass && <small style={{ color: "var(--fault)" }}>{t("Doesn't match yet.")}</small>}
           </label>
         </div>
-        {setup.error && <div className="error">{setup.error.message}</div>}
+        <ErrorNote error={setup.error} />
         <div>
           <button className="btn primary" disabled={setup.isPending || pass !== confirmPass}>
             {t("Create vault")}</button>
@@ -74,7 +75,7 @@ export function VaultGate() {
         <label className="check">
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
           {t("Unlock automatically on this computer (uses the system keychain)")}</label>
-        {unlock.error && <div className="error">{unlock.error.message}</div>}
+        <ErrorNote error={unlock.error} />
         <div>
           <button className="btn signal" disabled={unlock.isPending}>
             {t("Unlock")}</button>

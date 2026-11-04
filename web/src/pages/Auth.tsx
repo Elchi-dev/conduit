@@ -7,6 +7,7 @@ import { isMobileApp, scanQR } from "../lib/native";
 import { getPasskey, passkeyError, passkeysSupported } from "../lib/passkeys";
 import { t } from "../i18n";
 import "../components/shell.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 export function Brand() {
   return (
@@ -70,7 +71,7 @@ export function Setup() {
             />
             <small>{t("At least 10 characters.")}</small>
           </label>
-          {m.error && <div className="error">{m.error.message}</div>}
+          <ErrorNote error={m.error} />
           <button className="btn primary" disabled={m.isPending}>
             {t("Create account")}</button>
         </form>
@@ -160,7 +161,7 @@ export function Login() {
                 placeholder="123456"
               />
             </label>
-            {second.error && <div className="error">{second.error.message}</div>}
+            <ErrorNote error={second.error} />
             <button className="btn primary" disabled={second.isPending}>
               {t("Sign in")}</button>
           </form>
@@ -208,7 +209,7 @@ export function Login() {
               autoComplete="current-password"
             />
           </label>
-          {m.error && <div className="error">{m.error.message}</div>}
+          <ErrorNote error={m.error} />
           <button className="btn primary" disabled={m.isPending}>
             {t("Sign in")}</button>
         </form>
@@ -216,7 +217,7 @@ export function Login() {
           <div className="stack" style={{ gap: 8 }}>
             <button className="btn" onClick={() => passkey.mutate()} disabled={passkey.isPending}>
               {t("Sign in with a passkey")}</button>
-            {passkey.error && <div className="error">{passkey.error.message}</div>}
+            <ErrorNote error={passkey.error} />
           </div>
         )}
         {!relay && sso.data?.enabled && (
@@ -277,7 +278,7 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
             <button className="btn primary scan-btn" onClick={() => scan.mutate()} disabled={scan.isPending || m.isPending}>
               {scan.isPending ? t("Opening the camera…") : t("Scan the pairing code")}
             </button>
-            {scan.error && <div className="error">{String(scan.error)}</div>}
+            <ErrorNote error={scan.error} />
           </div>
         )}
         <form
@@ -300,7 +301,7 @@ export function Connect({ onBack, reason }: { onBack?: () => void; reason?: stri
             />
             <small>{t("Single use, valid for 10 minutes.")}</small>
           </label>
-          {m.error && <div className="error">{m.error.message}</div>}
+          <ErrorNote error={m.error} />
           <button className={`btn ${isMobileApp() ? "" : "primary"}`} disabled={m.isPending}>
             {m.isPending ? t("Connecting…") : t("Connect")}
           </button>

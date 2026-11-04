@@ -4,6 +4,7 @@ import { api, ok, type Rule } from "../api/client";
 import { ago } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
+import { ErrorNote } from "../components/ErrorNote";
 
 const presets: Record<string, { name: string; text: string }> = {
   "read-only": { name: t("Look only"), text: t("Agents can read anything and change nothing.") },
@@ -38,7 +39,7 @@ export function PolicyPage() {
           <h2>{t("Emergency stop is on")}</h2>
           <p className="small">
             {t("Every agent, key and automation is frozen and agent keys were revoked. Lift it once you know what happened; check the timeline first. Revoked agent keys stay revoked; create new ones for agents you trust.")}</p>
-          {lift.error && <div className="error">{lift.error.message}</div>}
+          <ErrorNote error={lift.error} />
           <div>
             <button className="btn" onClick={() => lift.mutate()} disabled={lift.isPending}>
               {t("Lift emergency stop")}</button>
@@ -62,7 +63,7 @@ export function PolicyPage() {
             </button>
           ))}
         </div>
-        {setPreset.error && <div className="error">{setPreset.error.message}</div>}
+        <ErrorNote error={setPreset.error} />
       </section>
 
       <Rules rules={p?.rules ?? []} />
@@ -168,7 +169,7 @@ function Rules({ rules }: { rules: Rule[] }) {
             </select>
           </label>
         </div>
-        {save.error && <div className="error">{save.error.message}</div>}
+        <ErrorNote error={save.error} />
         <div>
           <button className="btn primary" disabled={save.isPending}>
             {t("Add rule")}</button>

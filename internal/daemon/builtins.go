@@ -14,6 +14,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/backblaze"
 	"github.com/elchi-dev/conduit/modules/betterstack"
 	"github.com/elchi-dev/conduit/modules/bitbucket"
+	"github.com/elchi-dev/conduit/modules/bluesky"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/consul"
@@ -29,6 +30,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/frigate"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/gameservers"
+	"github.com/elchi-dev/conduit/modules/ghost"
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
@@ -47,8 +49,10 @@ import (
 	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/linear"
+	"github.com/elchi-dev/conduit/modules/listmonk"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/mastodon"
+	"github.com/elchi-dev/conduit/modules/matrix"
 	"github.com/elchi-dev/conduit/modules/mattermost"
 	"github.com/elchi-dev/conduit/modules/mealie"
 	"github.com/elchi-dev/conduit/modules/metrics"
@@ -84,6 +88,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/shelly"
+	"github.com/elchi-dev/conduit/modules/signal"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/sonarqube"
 	"github.com/elchi-dev/conduit/modules/speedtest"
@@ -244,6 +249,11 @@ func builtins(app *App) []sdk.Module {
 		esphome.New(),
 		zigbee2mqtt.New(),
 		tasmota.New(),
+		bluesky.New(),
+		matrix.New(),
+		signal.New(),
+		listmonk.New(),
+		ghost.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

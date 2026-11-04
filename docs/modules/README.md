@@ -115,6 +115,11 @@ recommended policies.
 | ESPHome | [esphome.md](esphome.md) | homelab |
 | Zigbee2MQTT | [zigbee2mqtt.md](zigbee2mqtt.md) | homelab |
 | Tasmota | [tasmota.md](tasmota.md) | homelab |
+| Bluesky | [bluesky.md](bluesky.md) | team, gamer |
+| Matrix | [matrix.md](matrix.md) | homelab, team |
+| Signal (signal-cli-rest-api) | [signal.md](signal.md) | homelab |
+| listmonk | [listmonk.md](listmonk.md) | team, homelab |
+| Ghost | [ghost.md](ghost.md) | team |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

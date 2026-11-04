@@ -10,13 +10,13 @@ agents can drive all of it, under rules you set.
 
 ## What's in it
 
-- **115 modules**: vault, this computer, servers over SSH, Docker, mail,
+- **120 modules**: vault, this computer, servers over SSH, Docker, mail,
   calendar, notifications (ntfy, Telegram, Discord, Slack, Matrix, Gotify,
   email), Prometheus, Grafana, uptime checks, Uptime Kuma, UptimeRobot, Healthchecks.io, Better Stack Uptime, GitHub,
   GitLab, Gitea and Forgejo, Bitbucket, Azure DevOps, Woodpecker CI, Jenkins, container registries, Cloudflare (DNS and tunnels), Kubernetes, Argo CD, HCP Terraform, Nomad, Consul, HashiCorp Vault and OpenBao, Harbor, SonarQube and SonarCloud, Portainer, Proxmox VE, TrueNAS, Unraid, Synology DSM, Scrutiny, Network UPS Tools, OPNsense, AWS, S3 storage, Backblaze B2, Hetzner Cloud,
   DigitalOcean, Vercel, Netlify, Fly.io, Render, Railway, Supabase, PostgreSQL and MySQL, Redis, Tailscale, wg-easy, Syncthing, Speedtest Tracker,
-  UniFi, Sentry, Datadog, PagerDuty, Plausible Analytics, Umami, Stripe, Slack, Mattermost, Jira, Linear, Todoist, Trello, Notion, Nextcloud, Milanote, Paperless-ngx, Mealie, n8n, Home Assistant, MQTT brokers, Zigbee2MQTT, Philips Hue, Shelly, ESPHome, Tasmota,
-  Pi-hole, AdGuard Home, Nginx Proxy Manager, Traefik, authentik, Keycloak, Vaultwarden, Jellyfin, Plex, Tautulli, Overseerr and Jellyseerr, Kodi, Navidrome and Subsonic servers, Audiobookshelf, Immich, Frigate, Sonarr, Radarr, Lidarr, Readarr and Prowlarr, qBittorrent, Ollama, Discord, Telegram, Mastodon, Twitch, OBS Studio,
+  UniFi, Sentry, Datadog, PagerDuty, Plausible Analytics, Umami, Stripe, listmonk, Ghost, Slack, Mattermost, Jira, Linear, Todoist, Trello, Notion, Nextcloud, Milanote, Paperless-ngx, Mealie, n8n, Home Assistant, MQTT brokers, Zigbee2MQTT, Philips Hue, Shelly, ESPHome, Tasmota,
+  Pi-hole, AdGuard Home, Nginx Proxy Manager, Traefik, authentik, Keycloak, Vaultwarden, Jellyfin, Plex, Tautulli, Overseerr and Jellyseerr, Kodi, Navidrome and Subsonic servers, Audiobookshelf, Immich, Frigate, Sonarr, Radarr, Lidarr, Readarr and Prowlarr, qBittorrent, Ollama, Discord, Telegram, Signal, Matrix, Mastodon, Bluesky, Twitch, OBS Studio,
   Spotify, game servers (Minecraft, Source), files and backups, a game
   library (Steam, Epic, GOG, Riot, Battle.net, EA, Ubisoft, Xbox, itch.io, Lutris), AI standards and toolkits, notes, automations, the daily brief and ambient status. Any MCP
   server mounts as a module; write your own in any language

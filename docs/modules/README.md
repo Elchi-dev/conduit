@@ -238,6 +238,9 @@ recommended policies.
 | Ghost | [ghost.md](ghost.md) | team |
 | BookStack | [bookstack.md](bookstack.md) | homelab, team |
 | Outline | [outline.md](outline.md) | team, developer |
+| Wiki.js | [wikijs.md](wikijs.md) | homelab, team |
+| MediaWiki | [mediawiki.md](mediawiki.md) | homelab, team |
+| HedgeDoc | [hedgedoc.md](hedgedoc.md) | homelab, team, developer |
 | Vikunja | [vikunja.md](vikunja.md) | homelab |
 | Firefly III | [firefly.md](firefly.md) | homelab |
 | Ghostfolio | [ghostfolio.md](ghostfolio.md) | homelab |

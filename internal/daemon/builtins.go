@@ -107,6 +107,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/hashivault"
 	"github.com/elchi-dev/conduit/modules/headscale"
 	"github.com/elchi-dev/conduit/modules/healthchecks"
+	"github.com/elchi-dev/conduit/modules/hedgedoc"
 	"github.com/elchi-dev/conduit/modules/helpscout"
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
@@ -162,6 +163,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/matrix"
 	"github.com/elchi-dev/conduit/modules/mattermost"
 	"github.com/elchi-dev/conduit/modules/mealie"
+	"github.com/elchi-dev/conduit/modules/mediawiki"
 	"github.com/elchi-dev/conduit/modules/meilisearch"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/microsoft365"
@@ -312,6 +314,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/weather"
 	"github.com/elchi-dev/conduit/modules/web"
 	"github.com/elchi-dev/conduit/modules/wgeasy"
+	"github.com/elchi-dev/conduit/modules/wikijs"
 	"github.com/elchi-dev/conduit/modules/woocommerce"
 	"github.com/elchi-dev/conduit/modules/woodpecker"
 	"github.com/elchi-dev/conduit/modules/xenorchestra"
@@ -533,6 +536,9 @@ func builtins(app *App) []sdk.Module {
 		ghost.New(),
 		bookstack.New(),
 		outline.New(),
+		wikijs.New(),
+		mediawiki.New(),
+		hedgedoc.New(),
 		vikunja.New(),
 		firefly.New(),
 		ghostfolio.New(),

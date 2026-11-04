@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -214,6 +215,7 @@ func TestEpicWindows(t *testing.T) {
 }
 
 func TestLegendaryAndHeroicLinux(t *testing.T) {
+	skipOnWindows(t)
 	e := emptyEnv(t, "linux")
 	write(t, filepath.Join(e.ConfigHome, "heroic", "legendaryConfig", "legendary", "installed.json"), fixture(t, "legendary_installed.json"))
 	write(t, filepath.Join(e.ConfigHome, "heroic", "store_cache", "legendary_library.json"), fixture(t, "heroic_legendary_library.json"))
@@ -403,6 +405,7 @@ func TestWindowsRegistryLaunchers(t *testing.T) {
 }
 
 func TestItchAndLutris(t *testing.T) {
+	skipOnWindows(t)
 	e := emptyEnv(t, "linux")
 	sqliteFrom(t, filepath.Join(e.ConfigHome, "itch", "db", "butler.db"), "itch_butler.sql")
 	sqliteFrom(t, filepath.Join(e.DataHome, "lutris", "pga.db"), "lutris_pga.sql")
@@ -477,6 +480,7 @@ func TestMatcher(t *testing.T) {
 }
 
 func TestSessionsEventsAndResume(t *testing.T) {
+	skipOnWindows(t)
 	steam := t.TempDir()
 	write(t, filepath.Join(steam, "steamapps", "appmanifest_570.acf"), `"AppState" { "appid" "570" "name" "Dota 2" "installdir" "dota 2 beta" }`)
 	e := emptyEnv(t, "linux")
@@ -589,6 +593,7 @@ func TestStats(t *testing.T) {
 }
 
 func TestStopPlanAndClose(t *testing.T) {
+	skipOnWindows(t)
 	steam := t.TempDir()
 	write(t, filepath.Join(steam, "steamapps", "appmanifest_570.acf"), `"AppState" { "appid" "570" "name" "Dota 2" "installdir" "dota 2 beta" }`)
 	e := emptyEnv(t, "linux")
@@ -762,5 +767,14 @@ func TestOwned(t *testing.T) {
 	}
 	if strings.Contains(string(r.Output), "k") && strings.Contains(string(r.Output), "key") {
 		t.Fatal("key leaked")
+	}
+}
+
+// skipOnWindows skips tests whose fixtures use Linux paths (Heroic, Lutris,
+// /proc-style process paths); Windows separators change how they match.
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses Linux paths")
 	}
 }

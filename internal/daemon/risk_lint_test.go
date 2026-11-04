@@ -100,12 +100,21 @@ func TestRiskLintPattern(t *testing.T) {
 // isn't sensitive itself (its input is logged in the clear whenever it runs,
 // so it carries no secret: a key to delete, a version number, a share id).
 // An undo that would replay a secret value can't be kept, so such an action
-// mustn't claim to be reversible.
+// mustn't claim to be reversible. The engine also keeps a token holding
+// nothing but an identifier ("id", "name", "names") when the action it calls
+// is sensitive; those are listed in sensitiveUndoByID.
 var sensitiveUndo = map[string]string{
 	"consul.kv_create":           "kv_delete",          // deletes the key it created
 	"firefly.create_transaction": "delete_transaction", // deletes the transaction it recorded, by id
 	"hashivault.write_secret":    "restore_version",    // restores the version that was current
 	"nextcloud.share":            "unshare",            // removes the link by its id
+}
+
+// sensitiveUndoByID lists the entries of sensitiveUndo whose undo action is
+// sensitive itself, which the engine keeps only because the token is
+// {"id": …} alone (see keepUndo in internal/core).
+var sensitiveUndoByID = map[string]bool{
+	"firefly.create_transaction": true, // delete_transaction's preview shows the transaction
 }
 
 // TestSensitiveUndo fails when a sensitive action claims an undo the audit
@@ -133,8 +142,10 @@ func TestSensitiveUndo(t *testing.T) {
 			switch {
 			case !ok:
 				t.Errorf("%s: its undo action %s doesn't exist", key, undo)
-			case target.Sensitive:
-				t.Errorf("%s: its undo action %s is sensitive, so the engine drops the undo", key, undo)
+			case target.Sensitive && !sensitiveUndoByID[key]:
+				t.Errorf("%s: its undo action %s is sensitive, so the engine drops the undo (unless its token is an id alone: list it in sensitiveUndoByID)", key, undo)
+			case !target.Sensitive && sensitiveUndoByID[key]:
+				t.Errorf("%s: its undo action %s isn't sensitive; drop it from sensitiveUndoByID", key, undo)
 			}
 		}
 	}

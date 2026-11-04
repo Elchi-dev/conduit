@@ -12,8 +12,8 @@ store it in the vault. It acts as you. Enter Karakeep's address, such as
 | `search` | read | Karakeep's search with its qualifiers (`#tag`, `list:name`, `is:fav`, `after:2026-01-01`), most relevant first. |
 | `recent` | read | The newest bookmarks, everywhere or in a `list` (id), optionally only `favourited`; archived ones only with `archived`. |
 | `lists` | read | Your lists, nested ones with their parent, smart lists with their query. |
-| `bookmark` | read | One bookmark with its description, your note and Karakeep's summary. |
-| `add_bookmark` | write | Saves an http(s) `url`, with an optional `title` and `note`; Karakeep fetches the page and tags it in the background. Undo deletes the bookmark, unless the link was already saved (then nothing was created and there's no undo). |
+| `bookmark` | read, sensitive | One bookmark with its description, your note and Karakeep's summary. Notes are private, so it's kept out of the audit log, approvals and events. |
+| `add_bookmark` | write | Saves an http(s) `url`, with an optional `title` and `note`; Karakeep fetches the page and tags it in the background. Links to your own network are refused: loopback, private, link-local, carrier-grade NAT and other reserved IP addresses (also in numeric forms like `2130706433` or `127.1`), `localhost`, single-label names (`http://nas/`) and `.local`, `.internal`, `.localhost`, `.home.arpa` and `.lan` names, because Karakeep's crawler would fetch them from inside it. Undo deletes the bookmark, unless the link was already saved (then nothing was created and there's no undo). |
 | `tag` | write | Attaches `tags` by name (new ones are created). The preview lists only the tags it adds; undo removes those. |
 | `untag` | write | Detaches `tags` (the tags themselves stay); undo attaches them again. |
 | `delete_bookmark` | destructive | With a preview. Deletes the bookmark with its archived copy, note and highlights; Karakeep can't bring it back. |

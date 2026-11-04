@@ -36,7 +36,11 @@ type Module struct {
 // New returns the Mastodon module.
 func New() *Module { return &Module{} }
 
-var idRe = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+var (
+	idRe = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+	// mentionRe finds @user and @user@domain mentions, as Mastodon does.
+	mentionRe = regexp.MustCompile(`(?:^|[^\w/@.])@([A-Za-z0-9_]+(?:[.-]+[A-Za-z0-9_]+)*(?:@[A-Za-z0-9.-]+[A-Za-z0-9])?)`)
+)
 
 var visibilities = map[string]bool{"public": true, "unlisted": true, "private": true, "direct": true}
 
@@ -50,7 +54,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			"instance":{"type":"string","description":"Your server, e.g. https://mastodon.social"},
 			"token":{"type":"string","x-secret":true,"description":"Access token (Preferences, Development, New application; scopes read and write:statuses)"}}}`),
 		Actions: []sdk.ActionSpec{
-			{Name: "post", Title: "Post", Risk: sdk.RiskWrite, Reversible: true,
+			{Name: "post", Title: "Post", Description: "Posts (or, with replyTo, replies) as you. Public by default, and every @mention is notified whatever the visibility, so it can reach strangers: destructive. The preview names the visibility, the accounts it mentions and the author it replies to. Undo deletes the post.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["text"],"properties":{
 					"text":{"type":"string","maxLength":5000},
 					"visibility":{"type":"string","enum":["public","unlisted","private","direct"],"default":"public","description":"public, unlisted (not in public timelines), private (followers only) or direct (mentioned people only)"},
@@ -222,6 +226,36 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			body["in_reply_to_id"] = p.ReplyTo
 		}
+		if call.DryRun {
+			mentions := []string{}
+			seen := map[string]bool{}
+			for _, mm := range mentionRe.FindAllStringSubmatch(text, 50) {
+				if h := strings.ToLower(mm[1]); !seen[h] {
+					seen[h] = true
+					mentions = append(mentions, "@"+mm[1])
+				}
+			}
+			after := map[string]any{"text": text, "visibility": vis, "mentions": mentions}
+			if p.Warning != "" {
+				after["warning"] = p.Warning
+			}
+			summary := fmt.Sprintf("Post (%s): %q", vis, clip(text, 80))
+			target := "your " + vis + " posts"
+			if p.ReplyTo != "" {
+				var parent status
+				if _, err := c.api.Do(ctx, http.MethodGet, "/statuses/"+p.ReplyTo, nil, nil, &parent); err != nil {
+					return sdk.Result{}, err
+				}
+				after["replyTo"] = map[string]string{"id": p.ReplyTo, "author": "@" + parent.Account.Acct, "url": parent.URL}
+				summary = fmt.Sprintf("Reply (%s) to @%s: %q", vis, parent.Account.Acct, clip(text, 80))
+				target = "status " + p.ReplyTo
+			}
+			if len(mentions) > 0 {
+				summary += "; notifies " + strings.Join(mentions, ", ")
+			}
+			b, _ := json.Marshal(after)
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: target, Op: "create", After: b}}}}, nil
+		}
 		var st status
 		if _, err := c.api.Do(ctx, http.MethodPost, "/statuses", nil, body, &st); err != nil {
 			return sdk.Result{}, err
@@ -292,4 +326,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(out)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
+}
+
+// clip shortens s to n runes for a preview.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }

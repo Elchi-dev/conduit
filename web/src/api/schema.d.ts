@@ -2603,6 +2603,8 @@ export interface components {
             risk: components["schemas"]["Risk"];
             input: unknown;
             plan?: components["schemas"]["Plan"];
+            /** @description The plan is shown in full only to people who can decide approvals; everyone else gets it redacted (a sensitive action's, or one asked for by a caller denied some of the module's reads) */
+            planPrivate?: boolean;
             /** @enum {string} */
             status: "pending" | "approved" | "denied" | "expired";
             decidedBy?: string;

@@ -303,3 +303,30 @@ func TestBlueskyRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v", h)
 	}
 }
+
+// Publishing to a public feed reaches strangers (mentions notify them, a
+// reply lands in their thread), so post and reply are destructive, and the
+// preview names everyone they reach.
+func TestBlueskyPublicPostingIsDestructive(t *testing.T) {
+	for _, a := range New().Manifest().Actions {
+		if (a.Name == "post" || a.Name == "reply") && a.Risk != sdk.RiskDestructive {
+			t.Errorf("%s is %s; publishing publicly is destructive", a.Name, a.Risk)
+		}
+	}
+	m, f := setup(t, appPw)
+	p, err := invoke(m, "post", `{"text":"hi @bob.test and @nobody.test"}`, true)
+	if err != nil || p.Plan == nil || len(f.created) != 0 {
+		t.Fatalf("%+v %v", p.Plan, err)
+	}
+	after := string(p.Plan.Changes[0].After)
+	if !strings.Contains(p.Plan.Summary, "notifies @bob.test") || !strings.Contains(after, `{"did":"`+bob+`","handle":"bob.test"}`) || strings.Contains(after, "nobody.test\"}") {
+		t.Fatalf("preview doesn't list the resolved mentions: %s / %s", p.Plan.Summary, after)
+	}
+	p, err = invoke(m, "reply", `{"uri":"`+bobURI+`","text":"agreed"}`, true)
+	if err != nil || p.Plan == nil || len(f.created) != 0 {
+		t.Fatalf("%+v %v", p.Plan, err)
+	}
+	if after := string(p.Plan.Changes[0].After); !strings.Contains(p.Plan.Summary, "@bob.test") || !strings.Contains(after, `"replyTo":{"did":"`+bob+`","handle":"bob.test","uri":"`+bobURI+`"}`) {
+		t.Fatalf("preview doesn't name the reply's author: %s / %s", p.Plan.Summary, after)
+	}
+}

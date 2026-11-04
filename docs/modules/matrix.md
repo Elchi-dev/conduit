@@ -21,13 +21,13 @@ certificate, enter its SHA-256 `fingerprint`.
 | `rooms` | read, sensitive | Joined rooms with their names (looked up for the first 50) and whether each is allowed. |
 | `messages` | read, sensitive | Recent messages in an allowed `room` (`limit` default 20, at most 100), oldest first: sender, time, type, text; redacted messages are marked. End-to-end encrypted messages can't be read (Conduit holds no device keys) and are counted instead. |
 | `send_message` | write | Sends `text` to an allowed `room`, as `m.notice` with `notice` (what bots should use) or `m.text`. The preview shows the text; undo redacts the message. |
-| `redact` | destructive | Removes a message's content (`event`) for everyone in an allowed `room`, with an optional `reason`. The preview quotes the message. Can't be undone. |
+| `redact` | destructive, sensitive | Removes a message's content (`event`) for everyone in an allowed `room`, with an optional `reason`. The preview quotes the message, so it's redacted in the audit log and events, and shown in an approval only to people who can decide it. Can't be undone. |
 | `members` | read | How many members have joined an allowed `room` (the count only). |
 
 **Security.** The token is sent as a bearer token and the client won't follow
 a redirect to another host. Room and event ids are checked and escaped
 before a request is made, and rooms outside `allowedRooms` are refused
-before anything is sent. `rooms` and `messages` are sensitive: their content
-stays out of the audit log, approvals and events.
+before anything is sent. `rooms`, `messages` and `redact` are sensitive:
+their content stays out of the audit log, approvals and events.
 
 **Presets.** homelab, team.

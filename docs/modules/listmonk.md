@@ -17,8 +17,8 @@ For a self-signed certificate, enter its SHA-256 `fingerprint`.
 | `campaigns` | read | Campaigns, newest first (`status` to narrow, `limit` default 20), with lists, sent and to-send counts, views, clicks and bounces. |
 | `campaign` | read | One campaign's status and stats, with the send rate while it runs. |
 | `create_campaign` | write | Creates a **draft** `name` with `subject`, `lists` (ids), `body` and `contentType` (`markdown` by default, or `richtext`, `html`, `plain`), optional `fromEmail`, `templateId` and `tags`. Nothing is sent. The preview names the lists with their reach; undo deletes the draft. |
-| `send_campaign` | destructive | Starts a draft, scheduled or paused campaign: it emails every subscriber on its lists, which can't be recalled. A draft with a future send time is scheduled instead. The preview shows the subject, each list's reach and the total. |
-| `pause_campaign` | write | Pauses a running or scheduled campaign; emails already sent stay sent. Undo resumes it through `send_campaign` (which asks again, since it sends the rest). |
+| `send_campaign` | destructive | Starts a draft, scheduled or paused campaign: it emails every subscriber on its lists, which can't be recalled. A draft with a future send time is scheduled instead, and so is a paused campaign given `sendAt` (its unchanged, still future send time). The preview shows the subject, each list's reach and the total. |
+| `pause_campaign` | write | Pauses a running or scheduled campaign; emails already sent stay sent. Undo goes through `send_campaign` (which asks again): a running campaign resumes (sending the rest), a scheduled one is scheduled again for its original send time rather than sent now. |
 | `delete_campaign` | destructive | Deletes a campaign that isn't running, with its stats. The preview names it. |
 
 **Security.** The token goes in the `Authorization` header and the client

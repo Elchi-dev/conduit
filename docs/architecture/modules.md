@@ -25,23 +25,50 @@ action becomes an agent tool automatically.
 | --- | --- | --- |
 | `read` | Never changes state | list mail, query metrics |
 | `write` | Changes state, usually reversible | create DNS record, send draft |
-| `destructive` | May lose data or disrupt service | delete, restart, kill, reveal secret |
+| `destructive` | May lose data or disrupt service, or can't be contained | delete, restart, kill, reveal secret, post publicly |
 
 Risk is the coarsest input to the permission engine; policies can be as
 specific as a single action on a single instance.
 
+An agent approved only for `write` must not reach people or places beyond
+what the owner set up: **publishing publicly** (a Bluesky or Mastodon post or
+reply, a Ghost post), **notifying strangers** (mentions, replies in someone
+else's thread, a mailing list send) and **changing access** (moving a
+document into another collection, sharing, roles) are `destructive`. Sending
+to a room, chat or channel the instance's settings allow (Matrix
+`allowedRooms`, Telegram's allowed chats, a configured Discord or Slack
+channel) stays `write`. Previews of such actions name everyone they reach:
+the accounts mentioned, the author replied to, the destination collection.
+
 ## Sensitive actions
 
-Actions marked `sensitive` carry secret material. Conduit never writes their
-input or output to the audit log, approvals or events: field names and the
-`name` field are kept, every other value becomes `"[redacted]"`.
+Actions marked `sensitive` carry secret or private material. Conduit never
+writes their input or output to the audit log, approvals or events: field
+names and the `name` field are kept, every other value becomes
+`"[redacted]"`. Their dry-run plans are redacted the same way (the summary
+becomes "Change to `<action>` (details hidden)", each change keeps only its
+`op`), except in an approval shown to someone who can decide it, who needs
+the diff: see [core](core.md#plans-of-sensitive-actions). So an action whose
+preview quotes private content (a message being redacted, a transaction
+being deleted) is `sensitive` even when its input is just an id.
+
+The same goes for undo tokens of actions that aren't sensitive themselves:
+they're kept in the clear, so they must not carry private content. An edit
+whose old content is private undoes through an id (Outline restores the
+revision that was current) or, when the service keeps no such id, has no
+undo for the content (BookStack's revision history and Vikunja's
+descriptions); the old title or tags can still be put back.
 
 An undo token never holds secret material either. The log keeps a sensitive
 action's undo only when it calls an action of the same module that isn't
 sensitive itself (that action's input is logged in the clear whenever it
 runs, so it carries no secret): creating a key undone by deleting it, a
 secret write undone by restoring a version number, a share removed by its
-id. An undo that would replay a value (put the old value back) is dropped,
+id. A token that holds nothing but an identifier (`id`, `name` or `names`
+with plain values) is kept even when the action it calls is sensitive: a
+recorded Firefly transaction is deleted by its id, though
+`delete_transaction`'s preview is private. An undo that would replay a value
+(put the old value back) is dropped,
 so such an action must not declare itself `reversible` or promise an undo;
 when the old value is lost, the action is `destructive`. The daemon's risk
 lint (`internal/daemon/risk_lint_test.go`) checks every sensitive,
@@ -80,7 +107,10 @@ servers). Each configuration is an *instance* with its own id.
 
 - Actions marked `dryRun` accept `Call.DryRun` and return a `Plan` — a list of
   concrete changes the UI renders as a diff. Agents use this to show you what
-  they intend before you approve.
+  they intend before you approve. A dry run needs the policy's decision for
+  the action to be allow or ask (not deny). Because a preview can quote what
+  the module's reads return, a caller the policy denies any read action of
+  the module gets the plan redacted (see [core](core.md#invoke)).
 - Actions marked `reversible` return an `Undo` with the action and input that
   reverse them. The audit log keeps it, so any entry with an undo token gets an
   Undo button.

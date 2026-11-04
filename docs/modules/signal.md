@@ -19,19 +19,23 @@ arrive over its websocket, so `receive` doesn't work (health says so).
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `accounts` | read, sensitive | Numbers registered or linked on the server, marking this instance's. |
-| `receive` | read, sensitive | Fetches new messages for the number and shows the recent ones (`limit` default 20, at most 200), oldest first: sender, name, text, group, attachment count, and messages you sent from another device. Receipts and typing notices are skipped; attachments and stories aren't downloaded; no read receipts are sent. |
+| `receive` | write, sensitive | A write because it takes messages off the server's queue (see below). Fetches new messages for the number and shows the recent ones (`limit` default 20, at most 200), oldest first: sender, name, text, group, attachment count, and messages you sent from another device. Receipts and typing notices are skipped; attachments and stories aren't downloaded; no read receipts are sent. |
+| `buffered` | read, sensitive | The messages this instance already received (`limit` default 20, at most 200), oldest first, from memory; it doesn't touch the server's queue. |
 | `send` | write | Sends `text` (up to 4000 characters) to 1 to 20 `recipients`, each of which must be in `allowedRecipients`. The preview lists the recipients. Can't be undone from here. |
 | `groups` | read, sensitive | Groups the number is in, with id, name, member count and whether each is allowed. |
 
 **Receiving consumes messages.** signal-cli-rest-api hands each message out
 once: after `receive`, nothing else polling this number gets it. The module
 keeps the last 200 received messages in memory so reading again still shows
-them (`new` says how many arrived this time); they're gone when the daemon
-restarts. Don't give Conduit a number another program reads.
+them (`new` says how many arrived this time, and `buffered` reads them
+without fetching); they're gone when the daemon restarts. Because receiving
+takes messages away from anything else polling the number, `receive` is a
+`write`: an agent limited to reads gets `buffered` only. Don't give Conduit a
+number another program reads.
 
 **Security.** The client won't follow a redirect to another host, so
 credentials only go to the configured API. Recipients outside the allow-list
-are refused before anything is sent. `accounts`, `receive` and `groups` are
-sensitive: their content stays out of the audit log, approvals and events.
+are refused before anything is sent. `accounts`, `receive`, `buffered` and
+`groups` are sensitive: their content stays out of the audit log, approvals and events.
 
 **Presets.** homelab.

@@ -146,19 +146,22 @@ func TestBookStack(t *testing.T) {
 		t.Fatal(err, f.pages)
 	}
 
-	// Update, then undo puts the previous Markdown and name back.
+	// A content change has no undo: the old content would sit in the audit
+	// log. BookStack's revisions keep it.
 	r, err = invoke(m, "update_page", `{"id":10,"markdown":"New text"}`, true)
 	if err != nil || r.Plan == nil || string(r.Plan.Changes[0].Before) != `{"chars":19}` || f.pages[10]["markdown"] != "Run restic restore." {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	r, err = invoke(m, "update_page", `{"id":10,"name":"Restore v2","markdown":"New text"}`, false)
-	if err != nil || r.Undo == nil || r.Undo.Action != "update_page" || f.pages[10]["markdown"] != "New text" {
+	if err != nil || r.Undo != nil || f.pages[10]["markdown"] != "New text" || !strings.Contains(string(r.Output), "revisions") || strings.Contains(string(r.Output), "restic") {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if string(r.Undo.Input) != `{"id":10,"markdown":"Run restic restore.","name":"Restore"}` {
-		t.Fatal(string(r.Undo.Input))
+	// Name (and tags) alone: undo puts the old ones back.
+	r, err = invoke(m, "update_page", `{"id":10,"name":"Restore v3"}`, false)
+	if err != nil || r.Undo == nil || r.Undo.Action != "update_page" || string(r.Undo.Input) != `{"id":10,"name":"Restore v2"}` {
+		t.Fatalf("%+v %v", r.Undo, err)
 	}
-	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.pages[10]["markdown"] != "Run restic restore." || f.pages[10]["name"] != "Restore" {
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.pages[10]["name"] != "Restore v2" {
 		t.Fatal(err, f.pages[10])
 	}
 

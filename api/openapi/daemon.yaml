@@ -2334,6 +2334,7 @@ components:
         risk: { $ref: "#/components/schemas/Risk" }
         input: {}
         plan: { $ref: "#/components/schemas/Plan" }
+        planPrivate: { type: boolean, description: "The plan is shown in full only to people who can decide approvals; everyone else gets it redacted (a sensitive action's, or one asked for by a caller denied some of the module's reads)" }
         status: { type: string, enum: [pending, approved, denied, expired] }
         decidedBy: { type: string }
         decidedAt: { type: string, format: date-time }

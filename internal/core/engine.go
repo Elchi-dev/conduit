@@ -347,15 +347,26 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 	base.Decision = decision.Effect
 	out := Outcome{Decision: decision}
 
-	// Dry runs never change anything, so they only need "not denied".
+	// Dry runs never change anything, so they only need "not denied"
+	// (allow or ask). A preview can quote what the module's reads would
+	// return, though, so a caller denied any of them gets it redacted.
 	if decision.Effect == Deny {
 		base.Status, base.Error = "denied", decision.Reason
 		out.Audit, _ = e.Audit.Append(ctx, base)
 		return out, fmt.Errorf("%w: %s", ErrForbidden, decision.Reason)
 	}
 
-	if !call.DryRun && decision.Effect == Ask {
+	if call.DryRun {
+		readDenied, err := e.deniesAnyRead(ctx, actor, m.Manifest(), in.ID)
+		if err != nil {
+			return Outcome{}, err
+		}
+		return e.run(ctx, m, spec, in, call, base, out, "", readDenied)
+	}
+
+	if decision.Effect == Ask {
 		var plan *sdk.Plan
+		private := spec.Sensitive
 		if spec.DryRun {
 			dry := call
 			dry.DryRun = true
@@ -365,12 +376,19 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 					plan.Changes = []sdk.Change{}
 				}
 			}
+			if plan != nil && !private {
+				if private, err = e.deniesAnyRead(ctx, actor, m.Manifest(), in.ID); err != nil {
+					return out, err
+				}
+			}
 		}
-		appr, err := e.Approvals.Request(ctx, Approval{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, Input: redact(spec, call.Input), Plan: plan})
+		appr, err := e.Approvals.Request(ctx, Approval{Actor: actor, Module: in.Module, Instance: in.ID, Action: spec.Name, Risk: spec.Risk, Input: redact(spec, call.Input), Plan: plan, PlanPrivate: private})
 		if err != nil {
 			return out, err
 		}
-		out.Approval = &appr
+		// The caller gets the approval as everyone who can't decide sees it.
+		view := appr.View()
+		out.Approval = &view
 		if opt.NoWait {
 			go e.runWhenApproved(actor, m, spec, in, call, base, appr)
 			return out, ErrPending
@@ -380,9 +398,29 @@ func (e *Engine) Invoke(ctx context.Context, actor Actor, call sdk.Call, opt Inv
 			out.Audit, _ = e.Audit.Append(ctx, base)
 			return out, err
 		}
-		return e.run(ctx, m, spec, in, call, base, out, appr.ID)
+		return e.run(ctx, m, spec, in, call, base, out, appr.ID, false)
 	}
-	return e.run(ctx, m, spec, in, call, base, out, "")
+	return e.run(ctx, m, spec, in, call, base, out, "", false)
+}
+
+// deniesAnyRead says whether the policy denies actor any read action of
+// the module on this instance. Such a caller's dry runs get their plans
+// redacted: a preview often quotes the very data those reads return (the
+// message a redact removes, the transaction a delete drops).
+func (e *Engine) deniesAnyRead(ctx context.Context, actor Actor, mf sdk.Manifest, instance string) (bool, error) {
+	for _, a := range mf.Actions {
+		if a.Risk != sdk.RiskRead {
+			continue
+		}
+		d, err := e.Policy.Decide(ctx, actor, mf.ID, instance, a.Name, a.Risk)
+		if err != nil {
+			return false, err
+		}
+		if d.Effect == Deny {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // runWhenApproved waits for a person's decision on a call whose caller
@@ -417,14 +455,19 @@ func (e *Engine) runWhenApproved(actor Actor, m sdk.Module, spec sdk.ActionSpec,
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	_, _ = e.run(cctx, m, spec, cur, call, base, Outcome{Decision: d}, appr.ID)
+	_, _ = e.run(cctx, m, spec, cur, call, base, Outcome{Decision: d}, appr.ID, false)
 }
 
-// run calls the module and audits the result.
-func (e *Engine) run(ctx context.Context, m sdk.Module, spec sdk.ActionSpec, in Instance, call sdk.Call, base Entry, out Outcome, approval string) (Outcome, error) {
+// run calls the module and audits the result. hidePlan redacts a dry
+// run's plan for the caller too (it is denied some of the module's reads);
+// a sensitive action's plan is always redacted in the log and events.
+func (e *Engine) run(ctx context.Context, m sdk.Module, spec sdk.ActionSpec, in Instance, call sdk.Call, base Entry, out Outcome, approval string, hidePlan bool) (Outcome, error) {
 	res, err := m.Invoke(ctx, call)
 	if res.Plan != nil && res.Plan.Changes == nil {
 		res.Plan.Changes = []sdk.Change{}
+	}
+	if hidePlan && res.Plan != nil {
+		res.Plan = RedactPlan(spec.Name, res.Plan)
 	}
 	out.Result = res
 	switch {
@@ -433,7 +476,11 @@ func (e *Engine) run(ctx context.Context, m sdk.Module, spec sdk.ActionSpec, in 
 	case call.DryRun:
 		base.Status = "planned"
 		if res.Plan != nil {
-			base.Output, _ = json.Marshal(res.Plan)
+			plan := res.Plan
+			if spec.Sensitive {
+				plan = RedactPlan(spec.Name, plan)
+			}
+			base.Output, _ = json.Marshal(plan)
 		}
 	default:
 		base.Status = "ok"
@@ -533,19 +580,81 @@ func redact(spec sdk.ActionSpec, b json.RawMessage) json.RawMessage {
 	return out
 }
 
+// RedactPlan returns a copy of a plan with nothing but its shape: the
+// summary becomes "Change to <action> (details hidden)", and every change
+// keeps its op while its target, before and after become "[redacted]".
+// It's what the audit log, events and approvals (for anyone who can't
+// decide them) hold for a sensitive action, and what a caller denied some of
+// a module's reads gets from a dry run.
+func RedactPlan(action string, p *sdk.Plan) *sdk.Plan {
+	if p == nil {
+		return nil
+	}
+	out := &sdk.Plan{Summary: "Change to " + action + " (details hidden)", Changes: make([]sdk.Change, 0, len(p.Changes))}
+	for _, c := range p.Changes {
+		r := sdk.Change{Target: "[redacted]", Op: c.Op}
+		if len(c.Before) > 0 {
+			r.Before = redacted
+		}
+		if len(c.After) > 0 {
+			r.After = redacted
+		}
+		out.Changes = append(out.Changes, r)
+	}
+	return out
+}
+
 // keepUndo says whether an action's undo token may go in the audit log. A
 // sensitive action's token is kept only when it reverses through an action
 // of the same module that isn't sensitive itself: that action's input is
 // logged in the clear whenever it runs, so its contract is that it carries
-// no secret (kv_delete takes a key, restore_version a version number). An
-// undo that would replay a secret value (put the old value back) is dropped,
-// and such actions don't declare themselves reversible.
+// no secret (kv_delete takes a key, restore_version a version number). The
+// one exception is a token that holds nothing but an identifier ("id",
+// "name" or "names" with scalar values), which is no secret even when the
+// action it calls is sensitive (a transaction deleted by its id). An undo
+// that would replay a secret value (put the old value back) is dropped, and
+// such actions don't declare themselves reversible.
 func keepUndo(m sdk.Module, spec sdk.ActionSpec, u *sdk.Undo) bool {
 	if u == nil || !spec.Sensitive {
 		return true
 	}
 	target, ok := findAction(m.Manifest(), u.Action)
-	return ok && !target.Sensitive
+	return ok && (!target.Sensitive || idOnly(u.Input))
+}
+
+// idOnly says whether an undo input is an object holding only identifiers:
+// the keys "id", "name" and "names", with numbers or short strings.
+func idOnly(b json.RawMessage) bool {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(b, &m) != nil || len(m) == 0 {
+		return false
+	}
+	scalar := func(v json.RawMessage) bool {
+		var n json.Number
+		var s string
+		return json.Unmarshal(v, &n) == nil || (json.Unmarshal(v, &s) == nil && len(s) <= 200)
+	}
+	for k, v := range m {
+		switch k {
+		case "id", "name":
+			if !scalar(v) {
+				return false
+			}
+		case "names":
+			var list []json.RawMessage
+			if json.Unmarshal(v, &list) != nil {
+				return false
+			}
+			for _, x := range list {
+				if !scalar(x) {
+					return false
+				}
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func findAction(m sdk.Manifest, name string) (sdk.ActionSpec, bool) {

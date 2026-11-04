@@ -797,11 +797,25 @@ func (s *Server) undo(w http.ResponseWriter, r *http.Request) {
 
 // --- approvals ---------------------------------------------------------------
 
+// canDecide says whether the caller may decide approvals: a signed-in
+// person with approvals:*:decide. Only they see a private plan (a sensitive
+// action's, or one a caller denied some reads asked for) in full; everyone
+// else gets Approval.View.
+func canDecide(r *http.Request) bool {
+	p, ok := principal(r)
+	return ok && p.Actor.Kind == core.ActorUser && auth.Allows(p.Scopes, "approvals:*:decide")
+}
+
 func (s *Server) listApprovals(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Engine.Approvals.List(r.Context(), r.URL.Query().Get("status"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if !canDecide(r) {
+		for i := range list {
+			list[i] = list[i].View()
+		}
 	}
 	writeJSON(w, http.StatusOK, nonNil(list))
 }
@@ -811,6 +825,9 @@ func (s *Server) getApproval(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "no such approval")
 		return
+	}
+	if !canDecide(r) {
+		a = a.View()
 	}
 	writeJSON(w, http.StatusOK, a)
 }

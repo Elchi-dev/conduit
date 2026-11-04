@@ -108,9 +108,9 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + limit + `}}`)},
 			{Name: "notifications", Title: "Notifications", Description: "Likes, reposts, follows, mentions, replies and quotes, newest first.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + limit + `}}`)},
-			{Name: "post", Title: "Post", Description: "Posts to your public feed. Undo deletes the post.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "post", Title: "Post", Description: "Posts to your public feed, for anyone to see; mentioned accounts are notified. Destructive because it publishes and reaches strangers. The preview lists the accounts it mentions. Undo deletes the post.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["text"],"properties":{` + text + `}}`)},
-			{Name: "reply", Title: "Reply", Description: "Replies to a post, in its thread. Undo deletes the reply.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "reply", Title: "Reply", Description: "Replies publicly to a post, in its thread; its author and mentioned accounts are notified. Destructive because it publishes and reaches strangers. The preview names the author and the accounts it mentions. Undo deletes the reply.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["uri","text"],"properties":{"uri":{"type":"string","description":"at:// URI of the post to reply to"},` + text + `}}`)},
 			{Name: "delete", Title: "Delete a post", Description: "Deletes one of your posts for good, with its likes and reposts. The preview quotes it.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["uri"],"properties":{"uri":{"type":"string","description":"at:// URI of your post"}}}`)},
@@ -612,19 +612,38 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				return sdk.Result{}, errors.New("unexpected answer from the server")
 			}
 		}
-		if call.DryRun {
-			summary := fmt.Sprintf("Post publicly: %q", clip(text, 80))
-			target := "your feed"
-			if call.Action == "reply" {
-				summary = fmt.Sprintf("Reply publicly to @%s: %q", parent.Author.Handle, clip(text, 80))
-				target = p.URI
-			}
-			after, _ := json.Marshal(map[string]any{"text": text, "characters": graphemes(text)})
-			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: target, Op: "create", After: after}}}}, nil
-		}
 		fs, err := c.facets(ctx, text)
 		if err != nil {
 			return sdk.Result{}, err
+		}
+		if call.DryRun {
+			// Everyone the post reaches beyond its readers: the accounts
+			// its mentions notify and, for a reply, the author it answers.
+			mentions := []map[string]string{}
+			for _, f := range fs {
+				for _, ft := range f.Features {
+					if ft["$type"] == "app.bsky.richtext.facet#mention" {
+						mentions = append(mentions, map[string]string{"handle": text[f.Index["byteStart"]+1 : f.Index["byteEnd"]], "did": fmt.Sprint(ft["did"])})
+					}
+				}
+			}
+			summary := fmt.Sprintf("Post publicly: %q", clip(text, 80))
+			target := "your public feed"
+			after := map[string]any{"text": text, "characters": graphemes(text), "visibility": "public", "mentions": mentions}
+			if call.Action == "reply" {
+				summary = fmt.Sprintf("Reply publicly to @%s: %q", parent.Author.Handle, clip(text, 80))
+				target = p.URI
+				after["replyTo"] = map[string]string{"handle": parent.Author.Handle, "did": parent.Author.DID, "uri": parent.URI}
+			}
+			if len(mentions) > 0 {
+				hs := make([]string, len(mentions))
+				for i, mm := range mentions {
+					hs[i] = "@" + mm["handle"]
+				}
+				summary += "; notifies " + strings.Join(hs, ", ")
+			}
+			b, _ := json.Marshal(after)
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: target, Op: "create", After: b}}}}, nil
 		}
 		rec := map[string]any{"$type": postCollection, "text": text, "createdAt": m.now().UTC().Format("2006-01-02T15:04:05.000Z")}
 		if len(fs) > 0 {

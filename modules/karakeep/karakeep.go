@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"sort"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elchi-dev/conduit/internal/netguard"
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
 	"github.com/elchi-dev/conduit/modules/internal/tlspin"
@@ -76,9 +78,9 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "recent", Title: "Recent bookmarks", Description: "The newest bookmarks, everywhere or in one list; archived ones only when asked.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"list":{"type":"string","description":"List id (see lists)"},"favourited":{"type":"boolean"},"archived":{"type":"boolean","default":false},` + limit + `}}`)},
 			{Name: "lists", Title: "Lists", Description: "Your bookmark lists, nested ones with their parent.", Risk: sdk.RiskRead},
-			{Name: "bookmark", Title: "Bookmark details", Description: "One bookmark: link, title, description, tags, your note and Karakeep's summary.", Risk: sdk.RiskRead,
+			{Name: "bookmark", Title: "Bookmark details", Description: "One bookmark: link, title, description, tags, your note and Karakeep's summary. Notes are private, so it's kept out of logs.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["bookmark"],"properties":{` + bm + `}}`)},
-			{Name: "add_bookmark", Title: "Save a link", Description: "Bookmarks a URL; Karakeep fetches the page and tags it in the background. Undo deletes it (not when the link was already saved).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_bookmark", Title: "Save a link", Description: "Bookmarks a URL; Karakeep fetches the page and tags it in the background. Links to local or private addresses (localhost, private and reserved IPs, single-label, .local and .internal names) are refused, since Karakeep would fetch them from inside your network. Undo deletes it (not when the link was already saved).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["url"],"properties":{"url":{"type":"string","format":"uri"},"title":{"type":"string"},"note":{"type":"string"}}}`)},
 			{Name: "tag", Title: "Tag a bookmark", Description: "Attaches tags (made if new). Undo removes the ones it added.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["bookmark","tags"],"properties":{` + bm + `,` + tags + `}}`)},
@@ -400,6 +402,9 @@ func (c *conn) add(ctx context.Context, call sdk.Call, p input) (sdk.Result, err
 	if u.User != nil {
 		return sdk.Result{}, errors.New("the link has a user name or password in it; leave those out")
 	}
+	if err := localHost(u.Hostname()); err != nil {
+		return sdk.Result{}, err
+	}
 	if len([]rune(p.Title)) > 1000 || len([]rune(p.Note)) > 10000 {
 		return sdk.Result{}, errors.New("the title or note is too long")
 	}
@@ -515,4 +520,40 @@ func (c *conn) tag(ctx context.Context, call sdk.Call, p input) (sdk.Result, err
 	res, err := sdk.JSON(map[string]any{"bookmark": b.ID, "title": b.title(), "changed": change})
 	res.Undo = sdk.UndoWith(back, map[string]any{"bookmark": b.ID, "tags": change}, undo)
 	return res, err
+}
+
+// localHost refuses links Karakeep would fetch from inside your network:
+// IP literals that are loopback, private, link-local, carrier-grade NAT or
+// otherwise reserved, numeric hosts (0x7f.1, 2130706433), localhost,
+// single-label names and the .local, .internal, .localhost and .home.arpa
+// suffixes. Karakeep's crawler fetches every saved link, so an agent could
+// otherwise use it to reach (and archive) local services.
+func localHost(host string) error {
+	h := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	refuse := fmt.Errorf("%s is a local or private address; only links to public sites can be saved", host)
+	if h == "" {
+		return refuse
+	}
+	if a, err := netip.ParseAddr(h); err == nil {
+		if netguard.ReservedAddr(a) {
+			return refuse
+		}
+		return nil
+	}
+	if !strings.Contains(h, ".") || h == "localhost" {
+		return refuse
+	}
+	for _, suffix := range []string{".localhost", ".local", ".internal", ".home.arpa", ".lan"} {
+		if strings.HasSuffix(h, suffix) {
+			return refuse
+		}
+	}
+	// No top-level domain is numeric: such a host is an IP address in a
+	// form some resolvers accept (octal, hex, fewer than four parts).
+	labels := strings.Split(h, ".")
+	last := labels[len(labels)-1]
+	if strings.HasPrefix(last, "0x") || strings.Trim(last, "0123456789") == "" {
+		return refuse
+	}
+	return nil
 }

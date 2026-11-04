@@ -194,6 +194,23 @@ func TestListmonk(t *testing.T) {
 	if _, err := invoke(m, "send_campaign", `{"campaign":2}`, false); err != nil || f.statusPut[2] != "2=scheduled" {
 		t.Fatal(err, f.statusPut)
 	}
+
+	// Pausing a scheduled campaign: undo schedules it again for its
+	// original time, instead of sending it now.
+	r, err = invoke(m, "pause_campaign", `{"campaign":2}`, false)
+	if err != nil || r.Undo == nil || string(r.Undo.Input) != `{"campaign":2,"sendAt":"2026-11-10T09:00:00Z"}` {
+		t.Fatal(r.Undo, err)
+	}
+	p, err = invoke(m, "send_campaign", string(r.Undo.Input), true)
+	if err != nil || !strings.HasPrefix(p.Plan.Summary, "Schedule emailing") || !strings.Contains(p.Plan.Summary, "at 2026-11-10T09:00:00Z") {
+		t.Fatal(p.Plan, err)
+	}
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sendAt":"2026-11-11T09:00:00Z"}`, false); err == nil {
+		t.Fatal("scheduled for a time the campaign doesn't have")
+	}
+	if _, err := invoke(m, "send_campaign", string(r.Undo.Input), false); err != nil || f.statusPut[len(f.statusPut)-1] != "2=scheduled" {
+		t.Fatal(err, f.statusPut)
+	}
 }
 
 func TestListmonkValidation(t *testing.T) {

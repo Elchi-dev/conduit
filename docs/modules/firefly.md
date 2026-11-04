@@ -19,13 +19,16 @@ to your books. Enter Firefly III's address, such as
 | `budgets` | read, sensitive | This `month` (or another, `YYYY-MM`): spent, earned and left to spend per currency, and each active budget's limit, spent and left. |
 | `bills` | read, sensitive | Active bills with the dates they're expected that month, whether paid, and the next expected date. |
 | `create_transaction` | write, sensitive | A `withdrawal`, `deposit` or `transfer` of a positive `amount`, with `description`, `source` and `destination` (account ids, or names: Firefly creates an expense or revenue account for a new name), and optional `date` (today by default), `currency`, `category`, `budget`, `tags` and `notes`. Firefly's rules and webhooks run, and a duplicate of an existing transaction is refused. The preview names the accounts; undo deletes the transaction. |
-| `delete_transaction` | destructive | Deletes a transaction with all its splits, with a preview. Firefly III can't bring it back. |
+| `delete_transaction` | destructive, sensitive | Deletes a transaction with all its splits, with a preview of it. Firefly III can't bring it back. |
 
 **Privacy.** Balances, transactions, budgets and bills are financial data,
 so these actions' input and output stay out of the audit log, approvals and
-events. Recording a transaction is sensitive too; its undo is kept because
-it only names the transaction id. The preview an approval shows does carry
-the amount and accounts, since that's what you're approving.
+events. Recording and deleting a transaction are sensitive too, so their
+previews are redacted in the audit log and events. Recording's undo is kept
+because it only names the transaction id. An approval keeps the full preview
+(amount, accounts, notes) for the people who can decide it, since that's what
+they're approving; anyone else sees it redacted. An agent denied
+`transactions` (or any other read here) gets previews redacted too.
 
 **Security.** The token goes in the `Authorization` header and the client
 won't follow a redirect to another host. Amounts, dates, currency codes and

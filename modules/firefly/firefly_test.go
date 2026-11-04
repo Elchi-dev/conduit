@@ -147,7 +147,7 @@ func TestFirefly(t *testing.T) {
 	if r, _ := invoke(m, "accounts", `{}`, false); strings.Contains(string(r.Output), `"Old"`) {
 		t.Fatal("inactive account listed")
 	}
-	sensitive := map[string]bool{"accounts": true, "transactions": true, "budgets": true, "bills": true, "create_transaction": true}
+	sensitive := map[string]bool{"accounts": true, "transactions": true, "budgets": true, "bills": true, "create_transaction": true, "delete_transaction": true}
 	for _, a := range m.Manifest().Actions {
 		if sensitive[a.Name] != a.Sensitive {
 			t.Fatalf("%s sensitive=%v", a.Name, a.Sensitive)

@@ -109,6 +109,20 @@ func TestSignal(t *testing.T) {
 	if err != nil || !strings.Contains(string(r.Output), `"new":0`) || !strings.Contains(string(r.Output), "in the group") || strings.Contains(string(r.Output), "dinner") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
+	// buffered reads only what was received, never the server's queue.
+	calls := f.receive
+	r, err = invoke(m, "buffered", `{"limit":5}`, false)
+	if err != nil || f.receive != calls || !strings.Contains(string(r.Output), `"text":"dinner at 7?"`) {
+		t.Fatalf("%s %v (receive calls %d→%d)", r.Output, err, calls, f.receive)
+	}
+	for _, a := range m.Manifest().Actions {
+		switch {
+		case a.Name == "receive" && a.Risk != sdk.RiskWrite:
+			t.Fatal("receive consumes the queue: it's a write")
+		case a.Name == "buffered" && (a.Risk != sdk.RiskRead || !a.Sensitive):
+			t.Fatal("buffered is a sensitive read")
+		}
+	}
 	p, err := invoke(m, "send", `{"recipients":["`+ana+`"],"text":"yes!"}`, true)
 	if err != nil || p.Plan == nil || !strings.Contains(p.Plan.Summary, ana) || len(f.sent) != 0 {
 		t.Fatal(p.Plan, err)

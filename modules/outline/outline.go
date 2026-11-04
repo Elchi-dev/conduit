@@ -85,12 +85,18 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + doc + `,"maxChars":{"type":"integer","minimum":1,"maximum":200000,"default":50000}}}`)},
 			{Name: "create_document", Title: "Create a document", Description: "A new published document in a collection, optionally under a parent document. Undo deletes it (to the trash).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["collection","title"],"properties":{` + collection + `,"parent":{"type":"string","description":"Parent document id, to nest it"},"title":{"type":"string"},"text":{"type":"string","description":"Markdown"}}}`)},
-			{Name: "update_document", Title: "Edit a document", Description: "Changes a document's title and/or replaces its text. Undo puts the previous ones back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "update_document", Title: "Edit a document", Description: "Changes a document's title and/or replaces its text. Undo restores the revision that was current (by its id, so no text goes in the log), when Outline has saved one; a title-only change is undone by putting the old title back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + doc + `,"title":{"type":"string"},"text":{"type":"string","description":"Markdown, replacing the whole text"}}}`)},
 			{Name: "archive_document", Title: "Archive a document", Description: "Moves a document (and its children) to the archive, out of the sidebar and search. Undo restores it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + doc + `}}`)},
-			{Name: "restore_document", Title: "Restore a document", Description: "Brings an archived or trashed document back. Undo archives or trashes it again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "restore_document", Title: "Restore a document", Description: "Brings an archived or trashed document back, into the collection it was in. A collection is accepted only when that one no longer exists (restoring anywhere else is restore_document_to). Undo archives or trashes it again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + doc + `,` + collection + `}}`)},
+			{Name: "restore_document_to", Title: "Restore a document into another collection", Description: "Brings an archived or trashed document back into a different collection, which changes who can see it. The preview names both collections. Undo moves it back.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["id","collection"],"properties":{` + doc + `,` + collection + `}}`)},
+			{Name: "move_document", Title: "Move a document to another collection", Description: "Moves a document (and its children) to the top of another collection, which changes who can see it. The preview names both collections. Undo moves it back.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["id","collection"],"properties":{` + doc + `,` + collection + `}}`)},
+			{Name: "restore_revision", Title: "Restore a revision", Description: "Puts a document back as it was in one of its revisions (title and text). Used by update_document's undo. Undo restores the revision that was current, when Outline has saved one.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["id","revision"],"properties":{` + doc + `,"revision":{"type":"string","description":"Revision id"}}}`)},
 			{Name: "delete_document", Title: "Delete a document", Description: "Moves a document and its children to the trash; Outline empties it after 30 days. Undo restores it while it's there.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + doc + `}}`)},
 		},
@@ -337,6 +343,7 @@ type input struct {
 	MaxChars     int     `json:"maxChars"`
 	Title        *string `json:"title"`
 	Text         *string `json:"text"`
+	Revision     string  `json:"revision"`
 }
 
 func (p input) fields() (map[string]any, error) {
@@ -464,8 +471,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return c.create(ctx, call, p)
 	case "update_document":
 		return c.update(ctx, call, p)
-	case "archive_document", "delete_document", "restore_document":
+	case "archive_document", "delete_document", "restore_document", "restore_document_to":
 		return c.move(ctx, call, p)
+	case "move_document":
+		return c.moveTo(ctx, call, p)
+	case "restore_revision":
+		return c.restoreRevision(ctx, call, p)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
@@ -541,16 +552,25 @@ func (c *conn) update(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	before, after, back := map[string]any{}, map[string]any{}, map[string]any{"id": d.ID}
+	before, after := map[string]any{}, map[string]any{}
 	if t, ok := b["title"]; ok {
-		before["title"], after["title"], back["title"] = d.Title, t, d.Title
+		before["title"], after["title"] = d.Title, t
 	}
-	if t, ok := b["text"]; ok {
-		before["chars"], after["chars"], back["text"] = len([]rune(d.Text)), len([]rune(t.(string))), d.Text
+	_, textChanged := b["text"]
+	if textChanged {
+		before["chars"], after["chars"] = len([]rune(d.Text)), len([]rune(b["text"].(string)))
 	}
 	if call.DryRun {
 		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Edit document %q", d.Title),
 			Changes: []sdk.Change{{Target: fmt.Sprintf("document %q", d.Title), Op: "update", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
+	}
+	// The undo never carries the old text (document text is private, and
+	// the audit log keeps undo tokens): it names the revision that holds it.
+	var undo *sdk.Undo
+	if textChanged {
+		undo = c.revisionUndo(ctx, d)
+	} else {
+		undo = sdk.UndoWith("update_document", map[string]any{"id": d.ID, "title": d.Title}, fmt.Sprintf("Rename the document back to %q", d.Title))
 	}
 	b["id"] = d.ID
 	var nd document
@@ -560,15 +580,127 @@ func (c *conn) update(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if nd.ID == "" {
 		nd = d
 	}
-	res, err := sdk.JSON(c.summary(nd, nil))
-	res.Undo = sdk.UndoWith("update_document", back, fmt.Sprintf("Restore document %q as it was", d.Title))
+	out := c.summary(nd, nil)
+	if undo == nil {
+		out["note"] = "Outline hasn't saved a revision of the previous text yet, so there's no undo; its document history may still have it"
+	}
+	res, err := sdk.JSON(out)
+	res.Undo = undo
+	return res, err
+}
+
+type revision struct {
+	ID         string `json:"id"`
+	DocumentID string `json:"documentId"`
+	Title      string `json:"title"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+// revisionUndo returns an undo that restores d's latest revision, when that
+// revision holds d as it is now (it was saved no earlier than d's last
+// update); nil otherwise.
+func (c *conn) revisionUndo(ctx context.Context, d document) *sdk.Undo {
+	var list []revision
+	if err := c.call(ctx, "revisions.list", map[string]any{"documentId": d.ID, "limit": 1, "sort": "createdAt", "direction": "DESC"}, &list); err != nil || len(list) == 0 {
+		return nil
+	}
+	r := list[0]
+	created, err1 := time.Parse(time.RFC3339Nano, r.CreatedAt)
+	updated, err2 := time.Parse(time.RFC3339Nano, d.UpdatedAt)
+	if !uuidRe.MatchString(r.ID) || (r.DocumentID != "" && r.DocumentID != d.ID) || err1 != nil || err2 != nil || created.Before(updated) {
+		return nil
+	}
+	return sdk.UndoWith("restore_revision", map[string]any{"id": d.ID, "revision": r.ID}, fmt.Sprintf("Restore document %q as it was", d.Title))
+}
+
+// restoreRevision puts a document back as it was in one of its revisions.
+func (c *conn) restoreRevision(ctx context.Context, call sdk.Call, p input) (sdk.Result, error) {
+	if !uuidRe.MatchString(strings.TrimSpace(p.Revision)) {
+		return sdk.Result{}, errors.New("the revision is a revision id")
+	}
+	d, err := c.get(ctx, p.ID)
+	if err != nil {
+		return sdk.Result{}, err
+	}
+	var r revision
+	if err := c.call(ctx, "revisions.info", map[string]any{"id": strings.TrimSpace(p.Revision)}, &r); err != nil {
+		return sdk.Result{}, err
+	}
+	if r.DocumentID != d.ID {
+		return sdk.Result{}, errors.New("that revision belongs to another document")
+	}
+	if call.DryRun {
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Restore document %q to its revision of %s", d.Title, r.CreatedAt),
+			Changes: []sdk.Change{{Target: fmt.Sprintf("document %q", d.Title), Op: "update", Before: mustJSON(map[string]any{"title": d.Title, "chars": len([]rune(d.Text))}), After: mustJSON(map[string]any{"title": r.Title, "revision": r.ID})}}}}, nil
+	}
+	undo := c.revisionUndo(ctx, d)
+	if err := c.call(ctx, "documents.restore", map[string]any{"id": d.ID, "revisionId": r.ID}, nil); err != nil {
+		return sdk.Result{}, err
+	}
+	res, err := sdk.JSON(map[string]any{"id": d.ID, "title": r.Title, "restored": r.ID})
+	res.Undo = undo
+	return res, err
+}
+
+// collectionName names a collection; gone says it doesn't exist (any more).
+func (c *conn) collectionName(ctx context.Context, id string) (name string, gone bool, err error) {
+	var ci collection
+	if err := c.call(ctx, "collections.info", map[string]any{"id": id}, &ci); err != nil {
+		if rest.IsStatus(err, http.StatusNotFound) {
+			return "", true, nil
+		}
+		return "", false, err
+	}
+	return ci.Name, false, nil
+}
+
+// moveTo moves a document to the top of another collection.
+func (c *conn) moveTo(ctx context.Context, call sdk.Call, p input) (sdk.Result, error) {
+	col, err := collectionID(p.Collection)
+	if err != nil {
+		return sdk.Result{}, err
+	}
+	d, err := c.get(ctx, p.ID)
+	if err != nil {
+		return sdk.Result{}, err
+	}
+	if d.CollectionID == col && (d.ParentDocumentID == nil || *d.ParentDocumentID == "") {
+		return sdk.JSON(map[string]any{"id": d.ID, "title": d.Title, "note": "the document is already at the top of that collection"})
+	}
+	to, gone, err := c.collectionName(ctx, col)
+	if err != nil {
+		return sdk.Result{}, err
+	}
+	if gone {
+		return sdk.Result{}, fmt.Errorf("there's no collection %s", col)
+	}
+	from := "a deleted collection"
+	if d.CollectionID != "" {
+		if n, gone, err := c.collectionName(ctx, d.CollectionID); err != nil {
+			return sdk.Result{}, err
+		} else if !gone {
+			from = fmt.Sprintf("collection %q", n)
+		}
+	}
+	if call.DryRun {
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Move %q and its child documents from %s to collection %q (people with access to that collection will see it)", d.Title, from, to),
+			Changes: []sdk.Change{{Target: fmt.Sprintf("document %q", d.Title), Op: "move", Before: mustJSON(map[string]any{"collection": from, "collectionId": d.CollectionID}), After: mustJSON(map[string]any{"collection": to, "collectionId": col})}}}}, nil
+	}
+	if err := c.call(ctx, "documents.move", map[string]any{"id": d.ID, "collectionId": col}, nil); err != nil {
+		return sdk.Result{}, err
+	}
+	res, err := sdk.JSON(map[string]any{"id": d.ID, "title": d.Title, "collectionId": col, "collection": to})
+	if uuidRe.MatchString(d.CollectionID) && d.CollectionID != col {
+		res.Undo = sdk.UndoWith("move_document", map[string]any{"id": d.ID, "collection": d.CollectionID}, fmt.Sprintf("Move %q back to %s", d.Title, from))
+	}
 	return res, err
 }
 
 // move archives, trashes or restores a document.
 func (c *conn) move(ctx context.Context, call sdk.Call, p input) (sdk.Result, error) {
 	col := ""
-	if p.Collection != "" && call.Action == "restore_document" {
+	restore := call.Action == "restore_document" || call.Action == "restore_document_to"
+	if (p.Collection != "" && restore) || call.Action == "restore_document_to" {
 		var err error
 		if col, err = collectionID(p.Collection); err != nil {
 			return sdk.Result{}, err
@@ -577,6 +709,42 @@ func (c *conn) move(ctx context.Context, call sdk.Call, p input) (sdk.Result, er
 	d, err := c.get(ctx, p.ID)
 	if err != nil {
 		return sdk.Result{}, err
+	}
+	// Restoring into another collection changes who can see the document:
+	// restore_document allows it only when its own collection is gone (then
+	// Outline needs one); anything else is restore_document_to, which is
+	// destructive. Both previews name the destination.
+	dest, from := "", ""
+	if col != "" && col == d.CollectionID {
+		if call.Action == "restore_document_to" {
+			return sdk.Result{}, errors.New("that's the collection the document is in; use restore_document")
+		}
+		col = ""
+	}
+	if col != "" {
+		gone := true
+		if uuidRe.MatchString(d.CollectionID) {
+			var n string
+			if n, gone, err = c.collectionName(ctx, d.CollectionID); err != nil {
+				return sdk.Result{}, err
+			}
+			from = fmt.Sprintf("collection %q", n)
+		}
+		if gone {
+			from = "a deleted collection"
+		} else if call.Action == "restore_document" {
+			return sdk.Result{}, fmt.Errorf("the document's %s still exists: restore it without a collection, or into another one with restore_document_to (destructive: it changes who can see it)", from)
+		}
+		n, missing, err := c.collectionName(ctx, col)
+		if err != nil {
+			return sdk.Result{}, err
+		}
+		if missing {
+			return sdk.Result{}, fmt.Errorf("there's no collection %s", col)
+		}
+		dest = fmt.Sprintf("collection %q", n)
+	} else if call.Action == "restore_document_to" {
+		return sdk.Result{}, errors.New("restore_document_to needs a collection")
 	}
 	archived := d.ArchivedAt != nil && *d.ArchivedAt != ""
 	trashed := d.DeletedAt != nil && *d.DeletedAt != ""
@@ -608,15 +776,34 @@ func (c *conn) move(ctx context.Context, call sdk.Call, p input) (sdk.Result, er
 		}
 		if col != "" {
 			body["collectionId"] = col
+			summary = fmt.Sprintf("Restore %q into %s (it was in %s)", d.Title, dest, from)
+			if call.Action == "restore_document_to" {
+				summary += "; people with access to that collection will see it"
+				back, undo = "move_document", fmt.Sprintf("Move %q back to %s", d.Title, from)
+			}
 		}
 	}
 	if call.DryRun {
-		return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: target, Op: op}}}}, nil
+		ch := sdk.Change{Target: target, Op: op}
+		if col != "" {
+			ch.Before = mustJSON(map[string]any{"collection": from, "collectionId": d.CollectionID})
+			ch.After = mustJSON(map[string]any{"collection": dest, "collectionId": col})
+		}
+		return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{ch}}}, nil
 	}
 	if err := c.call(ctx, method, body, nil); err != nil {
 		return sdk.Result{}, err
 	}
-	res, err := sdk.JSON(map[string]any{"id": d.ID, "title": d.Title, "done": op})
-	res.Undo = sdk.UndoWith(back, map[string]any{"id": d.ID}, undo)
+	out := map[string]any{"id": d.ID, "title": d.Title, "done": op}
+	if col != "" {
+		out["collectionId"] = col
+	}
+	res, err := sdk.JSON(out)
+	switch {
+	case back != "move_document":
+		res.Undo = sdk.UndoWith(back, map[string]any{"id": d.ID}, undo)
+	case uuidRe.MatchString(d.CollectionID):
+		res.Undo = sdk.UndoWith(back, map[string]any{"id": d.ID, "collection": d.CollectionID}, undo)
+	}
 	return res, err
 }

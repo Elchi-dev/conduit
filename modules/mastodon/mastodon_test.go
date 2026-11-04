@@ -134,3 +134,31 @@ func TestMastodonValidation(t *testing.T) {
 		t.Fatalf("%+v", h)
 	}
 }
+
+// Posting can be public and notifies everyone mentioned, so it's
+// destructive; the preview names who it reaches and creates nothing.
+func TestMastodonPostIsDestructiveWithPreview(t *testing.T) {
+	for _, a := range New().Manifest().Actions {
+		if a.Name == "post" && (a.Risk != sdk.RiskDestructive || !a.DryRun) {
+			t.Fatalf("post is %s (dry run %v)", a.Risk, a.DryRun)
+		}
+	}
+	m, f := setup(t, "secret://m")
+	f.posts["7"] = map[string]any{"status": "original"}
+	p, err := invoke(m, "post", `{"text":"thanks @sam@other.social and @kim","visibility":"direct","replyTo":"7"}`, true)
+	if err != nil || p.Plan == nil {
+		t.Fatal(err)
+	}
+	if len(f.posts) != 1 {
+		t.Fatal("the preview posted", f.posts)
+	}
+	after := string(p.Plan.Changes[0].After)
+	for _, want := range []string{`"visibility":"direct"`, `"mentions":["@sam@other.social","@kim"]`, `"replyTo":{"author":"@`, `"id":"7"`} {
+		if !strings.Contains(after, want) {
+			t.Fatalf("missing %s in %s", want, after)
+		}
+	}
+	if !strings.Contains(p.Plan.Summary, "notifies @sam@other.social, @kim") || !strings.Contains(p.Plan.Summary, "Reply (direct)") {
+		t.Fatal(p.Plan.Summary)
+	}
+}

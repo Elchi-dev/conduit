@@ -82,7 +82,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id + `,"maxChars":{"type":"integer","minimum":1,"maximum":200000,"default":50000}}}`)},
 			{Name: "create_page", Title: "Create a page", Description: "A new page in a book or chapter. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["name"],"properties":{"book":{"type":"integer","minimum":1,"description":"Book id"},"chapter":{"type":"integer","minimum":1,"description":"Chapter id, instead of book"},"name":{"type":"string"},` + content + `,` + tags + `}}`)},
-			{Name: "update_page", Title: "Edit a page", Description: "Changes a page's name, content or tags (only the fields given). Undo puts the previous ones back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "update_page", Title: "Edit a page", Description: "Changes a page's name, content or tags (only the fields given). A change of name or tags alone can be undone (the old ones are put back); a content change can't be undone here, because the old content would have to go in the log: BookStack keeps it in the page's revisions.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id + `,"name":{"type":"string"},` + content + `,` + tags + `}}`)},
 			{Name: "delete_page", Title: "Delete a page", Description: "Deletes a page. BookStack moves it to the recycle bin, where an admin can restore it.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + id + `}}`)},
@@ -564,17 +564,18 @@ func (c *conn) update(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	}
 	_, md := b["markdown"]
 	_, ht := b["html"]
-	if md || ht {
-		// Put back the content in the form the page was written in.
+	content := md || ht
+	if content {
+		// Only its size: page content is private (read_page is
+		// sensitive), and undo tokens are kept in the audit log, so a
+		// content change has no undo; BookStack's revisions keep the old one.
 		if pg.Markdown != "" || pg.Editor == "markdown" {
-			back["markdown"] = pg.Markdown
 			before["chars"] = len([]rune(pg.Markdown))
 		} else {
 			old := pg.RawHTML
 			if old == "" {
 				old = pg.HTML
 			}
-			back["html"] = old
 			before["chars"] = len([]rune(old))
 		}
 	}
@@ -600,7 +601,13 @@ func (c *conn) update(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if after.ID == 0 {
 		after = pg
 	}
-	res, err := sdk.JSON(map[string]any{"id": after.ID, "name": after.Name, "revisions": after.RevisionCount, "updated": after.UpdatedAt})
-	res.Undo = sdk.UndoWith("update_page", back, fmt.Sprintf("Restore page %q as it was", pg.Name))
+	out := map[string]any{"id": after.ID, "name": after.Name, "revisions": after.RevisionCount, "updated": after.UpdatedAt}
+	if content {
+		out["note"] = "the previous content is in the page's revisions in BookStack (no undo here)"
+	}
+	res, err := sdk.JSON(out)
+	if !content {
+		res.Undo = sdk.UndoWith("update_page", back, fmt.Sprintf("Restore page %q as it was", pg.Name))
+	}
 	return res, err
 }

@@ -89,14 +89,14 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + limit + `}}`)},
 			{Name: "tasks", Title: "Tasks", Description: "Tasks matching a Vikunja filter (done = false && priority >= 3, due_date < now+7d, labels in 4), in a project, or matching words.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"filter":{"type":"string"},"project":{"type":"integer","minimum":1},"search":{"type":"string","description":"Words in the title or description (not with filter)"},"includeDone":{"type":"boolean","default":false},` + limit + `}}`)},
-			{Name: "task", Title: "Task details", Risk: sdk.RiskRead, Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + task + `}}`)},
+			{Name: "task", Title: "Task details", Description: "One task with its description, labels and dates. Descriptions are private notes, so it's kept out of logs.", Risk: sdk.RiskRead, Sensitive: true, Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + task + `}}`)},
 			{Name: "create_task", Title: "Add a task", Description: "Adds a task to a project. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["project","title"],"properties":{"project":{"type":"integer","minimum":1},` + fields + `}}`)},
 			{Name: "mark_done", Title: "Mark a task done", Description: "Checks a task off; a repeating task moves to its next date instead. Undo reopens it (or puts the date back).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + task + `}}`)},
 			{Name: "mark_undone", Title: "Reopen a task", Description: "Unchecks a done task. Undo marks it done again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + task + `}}`)},
-			{Name: "update_task", Title: "Update a task", Description: "Changes the fields given and keeps the rest. Undo puts the old values back.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "update_task", Title: "Update a task", Description: "Changes the fields given and keeps the rest. Undo puts the old title, due date and priority back; a description change has no undo (the old description would have to go in the log).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + task + `,` + fields + `}}`)},
 			{Name: "delete_task", Title: "Delete a task", Description: "Deletes a task with its comments and attachments. Vikunja can't bring it back.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{` + task + `}}`)},
@@ -643,7 +643,9 @@ func (c *conn) update(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		case "title":
 			before[k], back["title"] = t.Title, t.Title
 		case "description":
-			before[k], back["description"] = t.Description, t.Description
+			// Descriptions are private (task is sensitive) and undo
+			// tokens are kept in the audit log: only its size, no undo.
+			before["descriptionChars"] = len([]rune(t.Description))
 		case "priority":
 			before[k], back["priority"] = t.Priority, t.Priority
 		case "due_date":
@@ -669,7 +671,14 @@ func (c *conn) update(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if after.ID == 0 {
 		after = t
 	}
-	res, err := sdk.JSON(c.summary(after, nil))
-	res.Undo = sdk.UndoWith("update_task", back, fmt.Sprintf("Restore %q", t.Title))
+	out := c.summary(after, nil)
+	_, described := b["description"]
+	if described {
+		out["note"] = "the description changed, so there's no undo"
+	}
+	res, err := sdk.JSON(out)
+	if !described {
+		res.Undo = sdk.UndoWith("update_task", back, fmt.Sprintf("Restore %q", t.Title))
+	}
 	return res, err
 }

@@ -81,7 +81,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["room"],"properties":{` + room + `,"limit":{"type":"integer","default":20,"minimum":1,"maximum":100}}}`)},
 			{Name: "send_message", Title: "Send a message", Description: "Sends a text message (or a notice, which bots should use) to an allowed room. Undo redacts it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["room","text"],"properties":{` + room + `,"text":{"type":"string","maxLength":16000},"notice":{"type":"boolean","default":false,"description":"Send as m.notice (no notifications for most clients)"}}}`)},
-			{Name: "redact", Title: "Redact a message", Description: "Removes a message's content for everyone in an allowed room, for good. The preview quotes it.", Risk: sdk.RiskDestructive, DryRun: true,
+			{Name: "redact", Title: "Redact a message", Description: "Removes a message's content for everyone in an allowed room, for good. The preview quotes it, so it's kept out of logs (only people who decide approvals see it).", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["room","event"],"properties":{` + room + `,"event":{"type":"string","description":"Event id, like $abc"},"reason":{"type":"string","maxLength":500}}}`)},
 			{Name: "members", Title: "Member count", Description: "How many members have joined an allowed room.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["room"],"properties":{` + room + `}}`)},

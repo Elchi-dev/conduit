@@ -102,7 +102,7 @@ func (m *Module) Manifest() sdk.Manifest {
 					"currency":{"type":"string","description":"ISO code, the account's currency by default"},
 					"category":{"type":"string"},"budget":{"type":"integer","minimum":1,"description":"Budget id"},
 					"tags":{"type":"array","maxItems":20,"items":{"type":"string"}},"notes":{"type":"string"}}}`)},
-			{Name: "delete_transaction", Title: "Delete a transaction", Description: "Deletes a transaction (all its splits) from your books. Firefly III can't bring it back.", Risk: sdk.RiskDestructive, DryRun: true,
+			{Name: "delete_transaction", Title: "Delete a transaction", Description: "Deletes a transaction (all its splits) from your books. Firefly III can't bring it back. Its preview shows the transaction, so it's kept out of logs.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"integer","minimum":1,"description":"Transaction id (see transactions)"}}}`)},
 		},
 	}

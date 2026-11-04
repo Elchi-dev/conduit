@@ -93,7 +93,9 @@ func (m *Module) Manifest() sdk.Manifest {
 			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "accounts", Title: "Accounts", Description: "Numbers registered or linked on the API server.", Risk: sdk.RiskRead, Sensitive: true},
-			{Name: "receive", Title: "Receive messages", Description: "Fetches new messages for the number and shows recent ones, oldest first. This takes them off the server's queue: anything else polling this number won't get them.", Risk: sdk.RiskRead, Sensitive: true,
+			{Name: "receive", Title: "Receive messages", Description: "Fetches new messages for the number and shows recent ones, oldest first. A write: it takes them off the server's queue, so anything else polling this number won't get them. To read what was already received, use buffered.", Risk: sdk.RiskWrite, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","properties":{"limit":{"type":"integer","default":20,"minimum":1,"maximum":200}}}`)},
+			{Name: "buffered", Title: "Received messages", Description: "Messages this instance already received (kept in memory since the daemon started), oldest first. Doesn't touch the server's queue; receive fetches new ones.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"limit":{"type":"integer","default":20,"minimum":1,"maximum":200}}}`)},
 			{Name: "send", Title: "Send a message", Description: "Sends a text message to recipients from allowedRecipients. Can't be undone from here.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["recipients","text"],"properties":{"recipients":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":20,"description":"Numbers, UUIDs or group ids from allowedRecipients"},"text":{"type":"string","maxLength":4000}}}`)},
@@ -334,13 +336,23 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(out)
 
-	case "receive":
+	case "receive", "buffered":
 		n := p.Limit
 		if n <= 0 {
 			n = 20
 		}
 		if n > maxBuffer {
 			n = maxBuffer
+		}
+		if call.Action == "buffered" {
+			c.mu.Lock()
+			msgs := c.buf
+			if len(msgs) > n {
+				msgs = msgs[len(msgs)-n:]
+			}
+			msgs = append([]map[string]any{}, msgs...)
+			c.mu.Unlock()
+			return sdk.JSON(map[string]any{"messages": msgs})
 		}
 		c.fetch.Lock()
 		var envs []envelope

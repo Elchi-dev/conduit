@@ -18,13 +18,16 @@ password.
 | `profile` | read | A profile (`actor`: handle or DID; you by default) with name, bio and follower, following and post counts. |
 | `timeline` | read | Your home timeline (`limit` default 20, at most 100), newest first, with reposts marked by who reposted. |
 | `notifications` | read | Likes, reposts, follows, mentions, replies and quotes, with the text of posts. |
-| `post` | write | Posts `text` publicly to your feed: at most 300 characters (counted as graphemes, so an emoji with a skin tone or a flag is one). Links, `@handle` mentions and `#hashtags` become rich text (mentions of handles that don't resolve stay plain). Optional `langs` (up to 3). The preview shows the text and its length; undo deletes the post. |
-| `reply` | write | Replies to the post at `uri` (an `at://` URI from the other actions), threaded under the conversation's root. Undo deletes the reply. |
+| `post` | destructive | Posts `text` publicly to your feed: at most 300 characters (counted as graphemes, so an emoji with a skin tone or a flag is one). Links, `@handle` mentions and `#hashtags` become rich text (mentions of handles that don't resolve stay plain). Optional `langs` (up to 3). The preview shows the text, its length and every account it mentions (handle and resolved DID), who will be notified; undo deletes the post. |
+| `reply` | destructive | Replies publicly to the post at `uri` (an `at://` URI from the other actions), threaded under the conversation's root. The preview also names the author being replied to (handle, DID and the post's URI). Undo deletes the reply. |
 | `delete` | destructive | Deletes one of your posts (by `uri`) for good, with its likes and reposts. Other people's posts are refused. The preview quotes the post with its counts. |
 | `search` | read | Searches public posts for `query`, sorted by `latest` (default) or `top`. |
 
-Posting to your own feed is `write` because it can be undone; deleting is
-`destructive` because it can't.
+Posting and replying are `destructive` even though they can be undone: a
+public post is seen (and can be copied) by anyone the moment it's up, and
+mentions and replies notify people who never asked to hear from your agent.
+An agent approved only for `write` can't post. Deleting is `destructive`
+because it can't be taken back.
 
 **How sign-in works.** The module creates a session with the app password
 and keeps it in memory; when the access token expires it refreshes the

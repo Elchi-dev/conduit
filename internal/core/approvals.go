@@ -23,10 +23,13 @@ type Approval struct {
 	Risk      sdk.Risk        `json:"risk"`
 	Input     json.RawMessage `json:"input"`
 	Plan      *sdk.Plan       `json:"plan,omitempty"`
-	Status    string          `json:"status"` // pending, approved, denied, expired
-	DecidedBy string          `json:"decidedBy,omitempty"`
-	DecidedAt *time.Time      `json:"decidedAt,omitempty"`
-	ExpiresAt time.Time       `json:"expiresAt"`
+	// PlanPrivate says the plan is shown in full only to people who can
+	// decide approvals; everyone else (and the bus) gets View().
+	PlanPrivate bool       `json:"planPrivate,omitempty"`
+	Status      string     `json:"status"` // pending, approved, denied, expired
+	DecidedBy   string     `json:"decidedBy,omitempty"`
+	DecidedAt   *time.Time `json:"decidedAt,omitempty"`
+	ExpiresAt   time.Time  `json:"expiresAt"`
 	// ResultSeq is the audit entry of the approved call, once it ran.
 	ResultSeq *int64 `json:"resultSeq,omitempty"`
 }
@@ -65,14 +68,24 @@ func (q *Approvals) Request(ctx context.Context, a Approval) (Approval, error) {
 		b, _ := json.Marshal(a.Plan)
 		plan = string(b)
 	}
-	_, err := q.store.DB.ExecContext(ctx, `INSERT INTO approvals (id, created_at, actor, actor_kind, module, instance, action, risk, input, plan, status, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		a.ID, a.CreatedAt.Format(time.RFC3339Nano), string(actor), a.Actor.Kind, a.Module, a.Instance, a.Action, a.Risk, string(a.Input), plan, a.Status, a.ExpiresAt.Format(time.RFC3339Nano))
+	_, err := q.store.DB.ExecContext(ctx, `INSERT INTO approvals (id, created_at, actor, actor_kind, module, instance, action, risk, input, plan, plan_private, status, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.CreatedAt.Format(time.RFC3339Nano), string(actor), a.Actor.Kind, a.Module, a.Instance, a.Action, a.Risk, string(a.Input), plan, a.PlanPrivate, a.Status, a.ExpiresAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return a, err
 	}
-	data, _ := json.Marshal(a)
+	data, _ := json.Marshal(a.View())
 	q.bus.Publish(sdk.Event{Type: "approval.requested", Module: "core", Data: data})
 	return a, nil
+}
+
+// View returns the approval as anyone who can't decide approvals sees it:
+// a private plan is redacted (see RedactPlan). People who decide get the
+// approval itself.
+func (a Approval) View() Approval {
+	if a.PlanPrivate && a.Plan != nil {
+		a.Plan = RedactPlan(a.Action, a.Plan)
+	}
+	return a
 }
 
 // Wait blocks until the approval is decided, it expires, or ctx ends.
@@ -176,7 +189,7 @@ func (q *Approvals) DenyAllPending(ctx context.Context, by string) (int, error) 
 
 // Get returns one approval.
 func (q *Approvals) Get(ctx context.Context, id string) (Approval, error) {
-	return scanApproval(q.store.DB.QueryRowContext(ctx, `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at, result_seq FROM approvals WHERE id = ?`, id))
+	return scanApproval(q.store.DB.QueryRowContext(ctx, `SELECT id, created_at, actor, module, instance, action, risk, input, plan, plan_private, status, decided_by, decided_at, expires_at, result_seq FROM approvals WHERE id = ?`, id))
 }
 
 // ExpireStale marks pending approvals past their expiry as expired. Waiters
@@ -204,7 +217,7 @@ func (q *Approvals) ExpireStale(ctx context.Context) {
 // List returns approvals with the given status ("" for all), newest first.
 func (q *Approvals) List(ctx context.Context, status string) ([]Approval, error) {
 	q.ExpireStale(ctx)
-	query := `SELECT id, created_at, actor, module, instance, action, risk, input, plan, status, decided_by, decided_at, expires_at, result_seq FROM approvals`
+	query := `SELECT id, created_at, actor, module, instance, action, risk, input, plan, plan_private, status, decided_by, decided_at, expires_at, result_seq FROM approvals`
 	var args []any
 	if status != "" {
 		query += ` WHERE status = ?`
@@ -232,7 +245,7 @@ func scanApproval(s scanner) (Approval, error) {
 	var created, actor, input, expires string
 	var plan, by, decided sql.NullString
 	var result sql.NullInt64
-	if err := s.Scan(&a.ID, &created, &actor, &a.Module, &a.Instance, &a.Action, &a.Risk, &input, &plan, &a.Status, &by, &decided, &expires, &result); err != nil {
+	if err := s.Scan(&a.ID, &created, &actor, &a.Module, &a.Instance, &a.Action, &a.Risk, &input, &plan, &a.PlanPrivate, &a.Status, &by, &decided, &expires, &result); err != nil {
 		return a, err
 	}
 	if result.Valid {

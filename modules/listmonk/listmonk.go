@@ -90,9 +90,9 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
 			{Name: "create_campaign", Title: "Create a draft campaign", Description: "Creates a draft campaign for some lists; nothing is sent. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["name","subject","lists","body"],"properties":{"name":{"type":"string","maxLength":200},"subject":{"type":"string","maxLength":500},"lists":{"type":"array","items":{"type":"integer","minimum":1},"minItems":1,"maxItems":20},"body":{"type":"string","maxLength":200000},"contentType":{"type":"string","enum":["richtext","html","markdown","plain"],"default":"markdown"},"fromEmail":{"type":"string","description":"Default: the server's from address"},"templateId":{"type":"integer","minimum":1},"tags":{"type":"array","items":{"type":"string"},"maxItems":10}}}`)},
-			{Name: "send_campaign", Title: "Send a campaign", Description: "Starts a draft, scheduled or paused campaign: it emails every subscriber on its lists (or is scheduled, when a draft has a send time). Can't be taken back. The preview shows each list's size.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
-			{Name: "pause_campaign", Title: "Pause a campaign", Description: "Pauses a running or scheduled campaign; emails already sent stay sent. Undo resumes it (which sends the rest).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "send_campaign", Title: "Send a campaign", Description: "Starts a draft, scheduled or paused campaign: it emails every subscriber on its lists (or is scheduled, when a draft has a send time, or a paused one is given its sendAt back). Can't be taken back. The preview shows each list's size.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `,"sendAt":{"type":"string","description":"Only for a paused campaign that was scheduled: its send time (unchanged), to schedule it again instead of sending now"}}}`)},
+			{Name: "pause_campaign", Title: "Pause a campaign", Description: "Pauses a running or scheduled campaign; emails already sent stay sent. Undo resumes a running one (which sends the rest) or schedules a scheduled one again for its original time.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
 			{Name: "delete_campaign", Title: "Delete a campaign", Description: "Deletes a campaign that isn't running, with its stats, for good.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
@@ -308,6 +308,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		FromEmail   string   `json:"fromEmail"`
 		TemplateID  int      `json:"templateId"`
 		Tags        []string `json:"tags"`
+		SendAt      string   `json:"sendAt"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
 		return sdk.Result{}, err
@@ -490,6 +491,25 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				target = "scheduled"
 			}
 		}
+		// Undoing the pause of a scheduled campaign: schedule it again,
+		// for the time it had.
+		if p.SendAt != "" {
+			want, err := time.Parse(time.RFC3339, p.SendAt)
+			if err != nil {
+				return sdk.Result{}, errors.New("sendAt is a time like 2026-11-10T09:00:00Z")
+			}
+			if cp.Status != "paused" {
+				return sdk.Result{}, fmt.Errorf("the campaign is %s; sendAt only schedules a paused campaign again", cp.Status)
+			}
+			have, err := time.Parse(time.RFC3339, ptrStr(cp.SendAt))
+			if err != nil || !have.Equal(want) {
+				return sdk.Result{}, errors.New("the campaign's send time has changed since it was paused; check it in Listmonk")
+			}
+			if !want.After(m.now()) {
+				return sdk.Result{}, errors.New("the campaign's send time has passed; send it without sendAt to send the rest now")
+			}
+			target = "scheduled"
+		}
 		if call.DryRun {
 			ls, err := c.lists(ctx)
 			if err != nil {
@@ -510,7 +530,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if target == "scheduled" {
 				verb, when = "Schedule emailing", "at "+*cp.SendAt
 			}
-			if cp.Status == "paused" {
+			if cp.Status == "paused" && target == "running" {
 				verb = "Resume emailing"
 			}
 			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s %q to up to %d subscribers %s: %s. Sent emails can't be recalled.", verb, clip(cp.Subject, 80), total, when, strings.Join(parts, ", ")),
@@ -539,7 +559,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"campaign": cp.ID, "status": after.Status, "sent": after.Sent})
-		res.Undo = sdk.UndoWith("send_campaign", map[string]int{"campaign": cp.ID}, "Resume the campaign")
+		if cp.Status == "scheduled" && ptrStr(cp.SendAt) != "" {
+			res.Undo = sdk.UndoWith("send_campaign", map[string]any{"campaign": cp.ID, "sendAt": *cp.SendAt}, "Schedule the campaign again for "+*cp.SendAt)
+		} else {
+			res.Undo = sdk.UndoWith("send_campaign", map[string]int{"campaign": cp.ID}, "Resume the campaign")
+		}
 		return res, err
 
 	case "delete_campaign":
@@ -561,4 +585,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.JSON(map[string]any{"deleted": cp.ID})
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
+}
+
+func ptrStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

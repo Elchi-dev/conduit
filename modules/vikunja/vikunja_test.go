@@ -194,6 +194,23 @@ func TestVikunja(t *testing.T) {
 		t.Fatal(err, f.tasks[1])
 	}
 
+	// A description change has no undo, and the preview gives only the
+	// old description's size: it's private.
+	f.tasks[1]["description"] = "PRIVATE door code 4711"
+	p, err := invoke(m, "update_task", `{"id":1,"description":"new notes"}`, true)
+	if err != nil || p.Plan == nil || strings.Contains(string(p.Plan.Changes[0].Before), "4711") || !strings.Contains(string(p.Plan.Changes[0].Before), `"descriptionChars":22`) {
+		t.Fatalf("%+v %v", p.Plan, err)
+	}
+	r, err = invoke(m, "update_task", `{"id":1,"description":"new notes","priority":2}`, false)
+	if err != nil || r.Undo != nil || f.tasks[1]["description"] != "new notes" || strings.Contains(string(r.Output), "4711") {
+		t.Fatalf("%+v %v", r, err)
+	}
+	for _, a := range m.Manifest().Actions {
+		if a.Name == "task" && !a.Sensitive {
+			t.Fatal("task details (with the description) must be sensitive")
+		}
+	}
+
 	r, err = invoke(m, "delete_task", `{"id":1}`, true)
 	if err != nil || r.Plan == nil || f.tasks[1] == nil {
 		t.Fatalf("%+v %v", r, err)

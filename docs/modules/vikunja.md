@@ -14,11 +14,11 @@ in the vault. Enter Vikunja's address, such as `https://tasks.example.com`.
 | `projects` | read | Every project; archived ones last and marked. |
 | `today` / `overdue` | read | Open tasks due today, or before today. |
 | `tasks` | read | Tasks matching a Vikunja `filter` (`priority >= 3`, `due_date < now+7d`, `labels in 4`), in a `project`, or matching `search` words. Without a filter, open tasks only unless `includeDone` is set; with one, the filter decides (add `done = false`). Up to `limit` (default 50, at most 200). |
-| `task` | read | One task with its description. |
+| `task` | read, sensitive | One task with its description, which can hold private notes, so it's kept out of the audit log, approvals and events. |
 | `create_task` | write | In a `project` (id), with `title`, `description`, `due` (`YYYY-MM-DD` for midnight in your time zone, or an RFC 3339 time) and `priority` (0 unset to 5 do now). Undo deletes it. |
 | `mark_done` | write | Undo reopens it. A repeating task moves to its next date instead, and undo puts the old date back. |
 | `mark_undone` | write | Reopens a done task; undo marks it done again. |
-| `update_task` | write | Changes only the fields given (an empty `due` clears it). The preview shows old and new values; undo restores the old ones. |
+| `update_task` | write | Changes only the fields given (an empty `due` clears it). The preview shows old and new values (for the description, only its length). Undo restores the old title, due date and priority; a change to the `description` has no undo, since the old description would have to be kept in the audit log. |
 | `delete_task` | destructive | With a preview. Vikunja can't restore a deleted task, its comments or attachments. |
 
 Vikunja replaces a whole task on every update, so the module reads the task

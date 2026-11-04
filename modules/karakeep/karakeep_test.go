@@ -204,6 +204,16 @@ func TestKarakeep(t *testing.T) {
 
 func TestKarakeepValidation(t *testing.T) {
 	m, f := setup(t, "secret://k")
+	for _, a := range m.Manifest().Actions {
+		if a.Name == "bookmark" && !a.Sensitive {
+			t.Fatal("bookmark details (your note) must be sensitive")
+		}
+	}
+	for _, ok := range []string{"example.com", "1.1.1.1", "sub.example.co.uk", "[2606:4700::1111]"} {
+		if err := localHost(strings.Trim(ok, "[]")); err != nil {
+			t.Fatalf("%s refused: %v", ok, err)
+		}
+	}
 	for _, c := range []struct{ action, in string }{
 		{"search", `{"query":" "}`},
 		{"recent", `{"list":"../users/me"}`},
@@ -212,6 +222,25 @@ func TestKarakeepValidation(t *testing.T) {
 		{"add_bookmark", `{"url":"javascript:alert(1)"}`},
 		{"add_bookmark", `{"url":"example.com"}`},
 		{"add_bookmark", `{"url":"https://user:pw@example.com/"}`},
+		// Karakeep fetches what it saves: nothing on the local network.
+		{"add_bookmark", `{"url":"http://127.0.0.1:8080/admin"}`},
+		{"add_bookmark", `{"url":"http://10.0.0.5/"}`},
+		{"add_bookmark", `{"url":"http://192.168.1.1/"}`},
+		{"add_bookmark", `{"url":"http://169.254.169.254/latest/meta-data/"}`},
+		{"add_bookmark", `{"url":"http://100.100.100.100/"}`},
+		{"add_bookmark", `{"url":"http://[::1]/"}`},
+		{"add_bookmark", `{"url":"http://[fd00::1]/"}`},
+		{"add_bookmark", `{"url":"http://[::ffff:127.0.0.1]/"}`},
+		{"add_bookmark", `{"url":"http://0.0.0.0/"}`},
+		{"add_bookmark", `{"url":"http://2130706433/"}`},
+		{"add_bookmark", `{"url":"http://0x7f.1/"}`},
+		{"add_bookmark", `{"url":"http://127.1/"}`},
+		{"add_bookmark", `{"url":"http://localhost:3000/"}`},
+		{"add_bookmark", `{"url":"http://LOCALHOST./"}`},
+		{"add_bookmark", `{"url":"http://app.localhost/"}`},
+		{"add_bookmark", `{"url":"http://nas/"}`},
+		{"add_bookmark", `{"url":"http://printer.local/"}`},
+		{"add_bookmark", `{"url":"http://grafana.corp.internal/"}`},
 		{"tag", `{"bookmark":"bm1","tags":[]}`},
 		{"tag", `{"bookmark":"bm1","tags":["  "]}`},
 		{"tag", `{"bookmark":"bm 1","tags":["x"]}`},

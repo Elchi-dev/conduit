@@ -35,7 +35,28 @@ the daemon, the MCP server and automations all call into it.
 6. The result is audited (`ok`, `error` or `planned` for dry runs) with any
    undo token, and an `action.<status>` event is published.
 
-Dry runs only need "not denied", because they change nothing.
+Dry runs only need "not denied" (allow or ask), because they change nothing.
+A preview often quotes what the module's reads return, though (the message a
+redact removes, the transaction a delete drops), so when the policy denies
+the caller **any** read action of the same module on that instance, the plan
+it gets back is redacted (see below), and so is the plan of its approvals
+for anyone who can't decide them. A deny rule on a sensitive read can't be
+got around by previewing a change.
+
+### Plans of sensitive actions
+
+A sensitive action's plan never goes in the audit log or an event as it is:
+the engine stores `RedactPlan`'s version, whose summary is "Change to
+`<action>` (details hidden)" and whose changes keep only their `op` (target,
+before and after become `"[redacted]"`). The caller of a dry run, who may run
+the action, gets the full plan unless it is denied a read as above.
+
+An approval keeps the full plan, marked `planPrivate`, for the people who
+decide it. Everyone else gets `Approval.View()`, the redacted version: the
+caller that asked (in the `ErrPending` outcome), the `approval.requested`
+event, and the daemon's `GET /api/v1/approvals` routes for anyone who isn't a
+signed-in person with `approvals:*:decide`. The web app's approval page uses
+those routes with the person's session, so whoever can approve sees the diff.
 
 ## Policy
 

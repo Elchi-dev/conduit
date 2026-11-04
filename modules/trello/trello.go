@@ -103,7 +103,9 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["card"],"properties":{` + card + `}}`)},
 			{Name: "add_card", Title: "Add a card", Description: "Adds a card to a list. Undo archives it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["list","name"],"properties":{` + list + `,"name":{"type":"string"},"description":{"type":"string"},"due":{"type":"string","description":"RFC 3339 time or YYYY-MM-DD"},` + pos + `}}`)},
-			{Name: "move_card", Title: "Move a card", Description: "Moves a card to another list (on any board you can see). Undo moves it back where it was.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "move_card", Title: "Move a card", Description: "Moves a card to another list on the same board. Moving it to another board is move_card_to_board. Undo moves it back where it was.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["card","list"],"properties":{` + card + `,` + list + `,` + pos + `}}`)},
+			{Name: "move_card_to_board", Title: "Move a card to another board", Description: "Moves a card to a list on any board you can see; everyone who can see that board (the public, if it's public) then sees the card, and it leaves its board's members and labels behind. Undo moves it back where it was.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["card","list"],"properties":{` + card + `,` + list + `,` + pos + `}}`)},
 			{Name: "comment", Title: "Comment on a card", Description: "Adds a comment as you; everyone on the board sees it.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["card","text"],"properties":{` + card + `,"text":{"type":"string","maxLength":16384}}}`)},
@@ -479,7 +481,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 
 	case "add_card":
 		return c.addCard(ctx, call, p)
-	case "move_card":
+	case "move_card", "move_card_to_board":
 		return c.moveCard(ctx, call, p)
 	case "comment":
 		text := strings.TrimSpace(p.Text)
@@ -657,6 +659,12 @@ func (c *conn) moveCard(ctx context.Context, call sdk.Call, p input) (sdk.Result
 	if from == l && len(p.Position) == 0 {
 		return sdk.JSON(map[string]any{"card": k.ID, "note": "the card is already in " + to.Name})
 	}
+	// Another board can have other (or public) visibility, so moving there
+	// can expose the card: only the destructive move_card_to_board does it.
+	cross := to.IDBoard == "" || k.IDBoard == "" || to.IDBoard != k.IDBoard
+	if cross && call.Action == "move_card" {
+		return sdk.Result{}, fmt.Errorf("%s is on another board than %q; moving a card between boards is move_card_to_board (destructive)", to.Name, k.Name)
+	}
 	body := map[string]any{"idList": l, "pos": pos}
 	if to.IDBoard != "" && to.IDBoard != k.IDBoard {
 		body["idBoard"] = to.IDBoard
@@ -670,7 +678,11 @@ func (c *conn) moveCard(ctx context.Context, call sdk.Call, p input) (sdk.Result
 		return sdk.Result{}, err
 	}
 	res, err := sdk.JSON(map[string]any{"card": k.ID, "from": fromName, "to": to.Name, "url": k.URL})
-	res.Undo = sdk.UndoWith("move_card", map[string]any{"card": k.ID, "list": from, "position": float64(k.Pos)}, fmt.Sprintf("Move %q back to %s", k.Name, fromName))
+	back := "move_card"
+	if cross {
+		back = "move_card_to_board"
+	}
+	res.Undo = sdk.UndoWith(back, map[string]any{"card": k.ID, "list": from, "position": float64(k.Pos)}, fmt.Sprintf("Move %q back to %s", k.Name, fromName))
 	return res, err
 }
 

@@ -115,6 +115,10 @@ func (f *fakeNotion) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"object":"page","id":"`+newID+`","url":"https://www.notion.so/new"}`)
 	case "PATCH /blocks/" + pageID + "/children":
 		io.WriteString(w, `{"results":[{"id":"b0000000-0000-0000-0000-000000000001"},{"id":"b0000000-0000-0000-0000-000000000002"}]}`)
+	case "GET /blocks/a0000000-0000-0000-0000-000000000005":
+		io.WriteString(w, `{"id":"a0000000-0000-0000-0000-000000000005","type":"child_page","child_page":{"title":"Sub"}}`)
+	case "GET /blocks/d0000000-0000-0000-0000-000000000001":
+		io.WriteString(w, `{"id":"d0000000-0000-0000-0000-000000000001","type":"child_database","child_database":{"title":"Tasks"}}`)
 	default:
 		if strings.HasPrefix(r.URL.Path, "/blocks/b0000000") {
 			if r.Method == "PATCH" {
@@ -301,5 +305,24 @@ func TestNotionRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "n"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// A child_page or child_database block is a whole page or database, so
+// trash_blocks (write) refuses it and points to archive_page.
+func TestNotionTrashBlocksSparesPages(t *testing.T) {
+	m, f := setup(t, "secret://n")
+	for _, id := range []string{"a0000000-0000-0000-0000-000000000005", "d0000000000000000000000000000001"} {
+		for _, dry := range []bool{true, false} {
+			in := `{"blocks":["b0000000-0000-0000-0000-000000000001","` + id + `"]}`
+			if _, err := invoke(m, "trash_blocks", in, dry); err == nil || !strings.Contains(err.Error(), "archive_page") {
+				t.Fatalf("%s: %v", id, err)
+			}
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.trashed) != 0 {
+		t.Fatalf("trashed %v", f.trashed)
 	}
 }

@@ -50,6 +50,8 @@ func (f *fakeArgo) app(name string) map[string]any {
 	}
 	st := a["status"].(map[string]any)
 	switch name {
+	case "creds":
+		a["spec"].(map[string]any)["source"].(map[string]any)["repoURL"] = "https://bot:ghp_tok@github.com/elchi/deploy"
 	case "api":
 		a["spec"].(map[string]any)["syncPolicy"] = map[string]any{"automated": map[string]any{"prune": true, "selfHeal": true}}
 		st["sync"] = map[string]any{"status": "Synced", "revision": rev3}
@@ -87,7 +89,7 @@ func (f *fakeArgo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		enc.Encode(map[string]any{"items": []any{f.app("web"), f.app("api"), f.app("jobs")}})
-	case "GET /argocd/api/v1/applications/web", "GET /argocd/api/v1/applications/api":
+	case "GET /argocd/api/v1/applications/web", "GET /argocd/api/v1/applications/api", "GET /argocd/api/v1/applications/creds":
 		enc.Encode(f.app(strings.TrimPrefix(r.URL.Path, "/argocd/api/v1/applications/")))
 	case "GET /argocd/api/v1/applications/jobs":
 		if q.Get("appNamespace") != "team-a" {
@@ -103,6 +105,7 @@ func (f *fakeArgo) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{"kind":"Pod","namespace":"web","name":"web-abc-1","health":{"status":"Degraded","message":"CrashLoopBackOff"},"parentRefs":[{"kind":"ReplicaSet"}]},
 			{"kind":"Service","namespace":"web","name":"web","health":{"status":"Healthy"}}]}`)
 	case "POST /argocd/api/v1/applications/web/sync":
+		f.syncBody = nil
 		json.Unmarshal(body, &f.syncBody)
 		enc.Encode(f.app("web"))
 	case "POST /argocd/api/v1/applications/web/rollback":
@@ -183,7 +186,7 @@ func TestArgoWrites(t *testing.T) {
 	if r.Plan.Summary != "Sync web to main: 2 resources out of sync" || len(r.Plan.Changes) != 3 || r.Plan.Changes[1].Op != "create" || !strings.HasPrefix(r.Plan.Changes[2].Op, "keep") {
 		t.Fatalf("%+v", r.Plan)
 	}
-	r, _ = invoke(m, "sync", `{"app":"web","prune":true}`, true)
+	r, _ = invoke(m, "sync_prune", `{"app":"web"}`, true)
 	if !strings.Contains(r.Plan.Summary, "1 to delete") || r.Plan.Changes[2].Op != "prune (delete)" {
 		t.Fatalf("%+v", r.Plan)
 	}
@@ -191,7 +194,7 @@ func TestArgoWrites(t *testing.T) {
 	if len(r.Plan.Changes) != 1 || r.Plan.Changes[0].Target != "ConfigMap web/new-cm" {
 		t.Fatalf("%+v", r.Plan)
 	}
-	if _, err := invoke(m, "sync", `{"app":"web","prune":true,"revision":"v1.2.0"}`, false); err != nil || f.syncBody["prune"] != true || f.syncBody["revision"] != "v1.2.0" {
+	if _, err := invoke(m, "sync_revision", `{"app":"web","prune":true,"revision":"v1.2.0"}`, false); err != nil || f.syncBody["prune"] != true || f.syncBody["revision"] != "v1.2.0" {
 		t.Fatalf("%v %v", err, f.syncBody)
 	}
 	if _, err := invoke(m, "sync", `{"app":"team-a/jobs"}`, false); err == nil || !strings.Contains(err.Error(), "already has an operation") {
@@ -286,5 +289,54 @@ func TestArgoRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "a"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// sync is write: it mustn't prune or deploy another revision (that's what
+// the destructive rollback, sync_prune and sync_revision are for).
+func TestArgoSyncWriteNeitherPrunesNorPicksRevision(t *testing.T) {
+	m, f := setup(t, "secret://a")
+	risk := map[string]sdk.Risk{}
+	for _, a := range m.Manifest().Actions {
+		risk[a.Name] = a.Risk
+	}
+	if risk["sync"] != sdk.RiskWrite || risk["sync_prune"] != sdk.RiskDestructive || risk["sync_revision"] != sdk.RiskDestructive {
+		t.Fatalf("%v", risk)
+	}
+	for _, in := range []string{
+		`{"app":"web","prune":true}`,
+		`{"app":"web","revision":"1111111111111111111111111111111111111111"}`,
+		`{"app":"web","revision":"v1.2.0"}`,
+	} {
+		if _, err := invoke(m, "sync", in, false); err == nil {
+			t.Fatalf("sync accepted %s", in)
+		}
+		if _, err := invoke(m, "sync", in, true); err == nil {
+			t.Fatalf("sync previewed %s", in)
+		}
+	}
+	if f.syncBody != nil {
+		t.Fatalf("sent %v", f.syncBody)
+	}
+	if _, err := invoke(m, "sync_prune", `{"app":"web","revision":"v1.2.0"}`, false); err == nil {
+		t.Fatal("sync_prune took a revision")
+	}
+	if _, err := invoke(m, "sync_revision", `{"app":"web"}`, false); err == nil {
+		t.Fatal("sync_revision without a revision")
+	}
+	// The app's own target revision is fine at write risk.
+	if _, err := invoke(m, "sync", `{"app":"web","revision":"main"}`, false); err != nil || f.syncBody["prune"] != false {
+		t.Fatalf("%v %v", err, f.syncBody)
+	}
+	if _, err := invoke(m, "sync_prune", `{"app":"web"}`, false); err != nil || f.syncBody["prune"] != true || f.syncBody["revision"] != nil {
+		t.Fatalf("%v %v", err, f.syncBody)
+	}
+}
+
+func TestArgoStripsRepoCredentials(t *testing.T) {
+	m, _ := setup(t, "secret://a")
+	r, err := invoke(m, "application", `{"app":"creds"}`, false)
+	if err != nil || strings.Contains(string(r.Output), "ghp_tok") || strings.Contains(string(r.Output), "bot") || !strings.Contains(string(r.Output), `"repo":"https://github.com/elchi/deploy"`) {
+		t.Fatalf("%s %v", r.Output, err)
 	}
 }

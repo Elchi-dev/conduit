@@ -62,6 +62,7 @@ var (
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	app := `"app":{"type":"string","description":"Application name (or namespace/name for apps outside Argo CD's namespace)"}`
+	resources := `"resources":{"type":"array","maxItems":100,"description":"Only these resources","items":{"type":"object","required":["kind","name"],"properties":{"group":{"type":"string"},"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}}}}`
 	return sdk.Manifest{
 		ID: "argocd", Name: "Argo CD", Version: "0.1.0", Category: "Infrastructure", Icon: "pipeline",
 		Description: "Argo CD applications: sync and health status, resources, sync with a preview, refresh, roll back, stop an operation.",
@@ -78,8 +79,12 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `}}`)},
 			{Name: "resource_tree", Title: "Resource tree", Description: "The app's live resources counted by kind and health, with the unhealthy ones listed.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `}}`)},
-			{Name: "sync", Title: "Sync", Description: "Applies the target revision to the cluster. The preview lists the out-of-sync resources (and what pruning would delete).", Risk: sdk.RiskWrite, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `,"revision":{"type":"string","description":"Sync to this revision instead of the target"},"prune":{"type":"boolean","description":"Delete resources no longer in Git"},"resources":{"type":"array","maxItems":100,"description":"Only these resources","items":{"type":"object","required":["kind","name"],"properties":{"group":{"type":"string"},"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}}}}}}`)},
+			{Name: "sync", Title: "Sync", Description: "Applies the app's target revision to the cluster, without deleting anything (no pruning, no other revision: those are sync_prune and sync_revision). The preview lists the out-of-sync resources.", Risk: sdk.RiskWrite, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `,` + resources + `}}`)},
+			{Name: "sync_prune", Title: "Sync and prune", Description: "Applies the app's target revision and deletes the resources no longer in Git. The preview lists every resource that would be deleted.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `,` + resources + `}}`)},
+			{Name: "sync_revision", Title: "Sync to another revision", Description: "Applies a revision other than the app's target (an older commit, another branch or tag), optionally pruning. The preview lists what would change and be deleted.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["app","revision"],"properties":{` + app + `,"revision":{"type":"string","description":"Branch, tag or commit to sync to"},"prune":{"type":"boolean","description":"Delete resources not in that revision"},` + resources + `}}`)},
 			{Name: "refresh", Title: "Refresh", Description: "Compares the app with Git and the cluster again now; hard also clears the manifest cache. Changes nothing in the cluster.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["app"],"properties":{` + app + `,"hard":{"type":"boolean"}}}`)},
 			{Name: "rollback", Title: "Roll back", Description: "Deploys an earlier revision from the app's history (the previous one unless given). Needs auto-sync off. Undo rolls forward to what was deployed.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
@@ -416,7 +421,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	case "resource_tree":
 		return c.tree(ctx, p.App)
 
-	case "sync":
+	case "sync", "sync_prune", "sync_revision":
 		return c.sync(ctx, call, p)
 
 	case "refresh":
@@ -480,7 +485,7 @@ func (c *conn) details(a application) map[string]any {
 	// parameters can carry secrets.
 	sl := []map[string]any{}
 	for _, s := range srcs {
-		e := map[string]any{"repo": s.RepoURL, "targetRevision": s.TargetRevision}
+		e := map[string]any{"repo": rest.StripUserinfo(s.RepoURL), "targetRevision": s.TargetRevision}
 		if s.Path != "" {
 			e["path"] = s.Path
 		}
@@ -602,7 +607,26 @@ func (c *conn) tree(ctx context.Context, ref string) (sdk.Result, error) {
 	return sdk.JSON(map[string]any{"app": name, "nodes": len(t.Nodes), "kinds": kinds, "unhealthy": unhealthy})
 }
 
+// sync applies an app. At write risk ("sync") it neither prunes nor picks a
+// revision other than the app's target, since either can delete resources or
+// deploy an old commit, which is what the destructive rollback is for:
+// sync_prune prunes, sync_revision takes a revision.
 func (c *conn) sync(ctx context.Context, call sdk.Call, p input) (sdk.Result, error) {
+	switch call.Action {
+	case "sync":
+		if p.Prune {
+			return sdk.Result{}, errors.New("sync doesn't prune; deleting resources no longer in Git is sync_prune (destructive)")
+		}
+	case "sync_prune":
+		if p.Revision != "" {
+			return sdk.Result{}, errors.New("sync_prune syncs the target revision; another revision is sync_revision")
+		}
+		p.Prune = true
+	case "sync_revision":
+		if p.Revision == "" {
+			return sdk.Result{}, errors.New("give the revision to sync to")
+		}
+	}
 	if p.Revision != "" && !revRe.MatchString(p.Revision) {
 		return sdk.Result{}, errors.New("the revision is a branch, tag or commit")
 	}
@@ -617,6 +641,11 @@ func (c *conn) sync(ctx context.Context, call sdk.Call, p input) (sdk.Result, er
 	a, ns, err := c.getApp(ctx, p.App, "")
 	if err != nil {
 		return sdk.Result{}, err
+	}
+	if call.Action == "sync" && p.Revision != "" {
+		if a.Spec.Source == nil || p.Revision != a.Spec.Source.TargetRevision {
+			return sdk.Result{}, fmt.Errorf("sync applies %s's target revision only; syncing to %s is sync_revision (destructive)", a.Metadata.Name, p.Revision)
+		}
 	}
 	if a.running() {
 		return sdk.Result{}, fmt.Errorf("%s already has an operation %s; wait for it or terminate it", a.Metadata.Name, strings.ToLower(a.Status.OperationState.Phase))

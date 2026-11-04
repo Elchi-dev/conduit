@@ -9,8 +9,8 @@ vault. Enter the server address, such as `https://n8n.example.com`.
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `workflows` | read | Every workflow (up to 1,000) with active state, tags, node count, last change and a link. `active` filters. |
-| `activate` | write | Turns on the workflow's triggers. The preview shows the change; undo deactivates it. |
-| `deactivate` | write | Turns them off; undo activates it. |
+| `activate` | write | Turns on the workflow's triggers. The preview shows the change; undo deactivates it (an undo runs at its own action's risk, so that one is destructive). |
+| `deactivate` | destructive | Turns them off, so the workflow's automations stop running; undo activates it. |
 | `executions` | read | Recent executions, newest first, with workflow name, status, mode, duration and a link. `workflow`, `status` and `limit` filter. Execution data isn't fetched. |
 | `failed_executions` | read | The same, only those that ended in an error. |
 

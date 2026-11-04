@@ -107,7 +107,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["database"],"properties":{` + db + `,"title":{"type":"string"},"properties":{"type":"object","description":"Property name to value: text, number, true/false, a select or status name, a list for multi-select, a date (2026-11-04 or {start,end}), page ids for relations"},` + content + `}}`)},
 			{Name: "append_blocks", Title: "Append to a page", Description: "Adds content at the end of a page (or block). Undo moves the new blocks to the trash.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["page","content"],"properties":{` + page + `,` + content + `}}`)},
-			{Name: "trash_blocks", Title: "Trash blocks", Description: "Moves blocks to the trash. Undo restores them.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "trash_blocks", Title: "Trash blocks", Description: "Moves blocks to the trash (not child pages or databases: use archive_page for a page). Undo restores them.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["blocks"],"properties":{"blocks":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"string"}}}}`)},
 			{Name: "restore_blocks", Title: "Restore blocks", Description: "Brings trashed blocks back. Undo trashes them again.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["blocks"],"properties":{"blocks":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"string"}}}}`)},
@@ -668,13 +668,25 @@ func (c *conn) trashBlocks(ctx context.Context, call sdk.Call, raw []string) (sd
 	if !trash {
 		op, back, desc = "restore", "trash_blocks", "Trash %d blocks again"
 	}
-	if call.DryRun {
-		var changes []sdk.Change
+	// A child_page or child_database block is a whole page or database:
+	// trashing it takes everything inside along, so it's not done here.
+	blocks := map[string]block{}
+	if call.DryRun || trash {
 		for _, id := range ids {
 			var b block
 			if _, err := c.api.Do(ctx, http.MethodGet, "/blocks/"+id, nil, nil, &b); err != nil {
 				return sdk.Result{}, fmt.Errorf("block %s: %w", id, err)
 			}
+			if trash && (b.Type == "child_page" || b.Type == "child_database") {
+				return sdk.Result{}, fmt.Errorf("block %s is a whole %s, with everything in it; trash_blocks doesn't remove pages or databases (move a page to the trash with archive_page)", id, strings.TrimPrefix(b.Type, "child_"))
+			}
+			blocks[id] = b
+		}
+	}
+	if call.DryRun {
+		var changes []sdk.Change
+		for _, id := range ids {
+			b := blocks[id]
 			text := []rune(b.text())
 			if len(text) > 80 {
 				text = append(text[:80], '…')

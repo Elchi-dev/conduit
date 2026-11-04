@@ -206,3 +206,50 @@ func TestGrafanaRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %v", h, leaked)
 	}
 }
+
+// create_silence is write: it can't mute (nearly) everything or for more
+// than a day. That's the destructive create_long_silence.
+func TestGrafanaSilenceLimits(t *testing.T) {
+	m, f := setup(t, "secret://g")
+	risk := map[string]sdk.Risk{}
+	for _, a := range m.Manifest().Actions {
+		risk[a.Name] = a.Risk
+	}
+	if risk["create_silence"] != sdk.RiskWrite || risk["create_long_silence"] != sdk.RiskDestructive {
+		t.Fatalf("%v", risk)
+	}
+	for _, ms := range []string{
+		`{"name":"alertname","value":""}`,
+		`{"name":"alertname","value":".*","isRegex":true}`,
+		`{"name":"alertname","value":".+","isRegex":true}`,
+		`{"name":"alertname","value":"^.*$","isRegex":true}`,
+		`{"name":"alertname","value":"(?s).+","isRegex":true}`,
+		`{"name":"alertname","value":"x|.*","isRegex":true}`,
+		`{"name":"alertname","value":"nonexistent","isEqual":false}`,
+		`{"name":"alertname","value":"nonexistent","isRegex":true,"isEqual":false}`,
+		`{"name":"severity","value":""},{"name":"alertname","value":".+","isRegex":true}`,
+	} {
+		in := `{"matchers":[` + ms + `],"comment":"x","durationMinutes":30}`
+		if _, err := invoke(m, "create_silence", in, false); err == nil {
+			t.Fatalf("create_silence accepted %s", ms)
+		}
+		if _, err := invoke(m, "create_long_silence", in, true); err != nil {
+			t.Fatalf("create_long_silence refused %s: %v", ms, err)
+		}
+	}
+	long := `{"matchers":[{"name":"alertname","value":"High CPU"}],"comment":"x","durationMinutes":1441}`
+	if _, err := invoke(m, "create_silence", long, false); err == nil {
+		t.Fatal("create_silence lasted over 24 hours")
+	}
+	if f.silences["s-1"] == "active" {
+		t.Fatal("a refused silence was created")
+	}
+	// A narrow matcher next to a broad one is fine.
+	ok := `{"matchers":[{"name":"alertname","value":"High CPU"},{"name":"instance","value":".+","isRegex":true}],"comment":"x","durationMinutes":1440}`
+	if _, err := invoke(m, "create_silence", ok, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "create_long_silence", long, false); err != nil {
+		t.Fatal(err)
+	}
+}

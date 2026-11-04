@@ -65,8 +65,10 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "storage", Title: "Storage", Description: "Disk size, used and free space of the library volume.", Risk: sdk.RiskRead},
 			{Name: "users", Title: "Users", Description: "How many users and admins, with each user's photos, videos and usage (admin key).", Risk: sdk.RiskRead},
 			{Name: "jobs", Title: "Jobs", Description: "Each background job queue: active, waiting, failed, paused.", Risk: sdk.RiskRead},
-			{Name: "start_job", Title: "Start a job", Description: "Starts a background job for the assets that need it, or for all with force.", Risk: sdk.RiskWrite, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{"job":{"type":"string","enum":` + string(enum) + `},"force":{"type":"boolean","default":false,"description":"Run it for every asset, not only missing ones"}}}`)},
+			{Name: "start_job", Title: "Start a job", Description: "Starts a background job for the assets that need it. Running it for every asset is start_job_force.", Risk: sdk.RiskWrite, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{"job":{"type":"string","enum":` + string(enum) + `}}}`)},
+			{Name: "start_job_force", Title: "Start a job for every asset", Description: "Starts a background job for every asset, redoing existing results; for face detection and recognition that discards the existing faces and people (names, merges) and rebuilds them.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{"job":{"type":"string","enum":` + string(enum) + `}}}`)},
 			{Name: "recent_assets", Title: "Recent uploads", Description: "Newest photos and videos: file name, type, date taken, camera and place (no image data).", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"limit":{"type":"integer","default":25,"maximum":100}}}`)},
 			{Name: "albums", Title: "Albums", Description: "Albums with their size, owner and whether they're shared.", Risk: sdk.RiskRead},
@@ -286,13 +288,22 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(out)
 
-	case "start_job":
+	case "start_job", "start_job_force":
 		if !knownJob(p.Job) {
 			return sdk.Result{}, fmt.Errorf("the job is one of %s", strings.Join(jobs, ", "))
 		}
+		// force redoes every asset and, for faces, wipes the people already
+		// recognised and named: only the destructive start_job_force does it.
+		if call.Action == "start_job" && p.Force {
+			return sdk.Result{}, errors.New("start_job runs for the assets that need it; running it for every asset is start_job_force (destructive)")
+		}
+		p.Force = call.Action == "start_job_force"
 		scope := "assets that need it"
 		if p.Force {
 			scope = "every asset"
+			if p.Job == "faceDetection" || p.Job == "facialRecognition" {
+				scope += ", discarding the existing faces and people"
+			}
 		}
 		if call.DryRun {
 			all, err := c.jobs(ctx)

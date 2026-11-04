@@ -72,7 +72,9 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"includeSilenced":{"type":"boolean","default":false}}}`)},
 			{Name: "silences", Title: "Silences", Description: "Active and pending silences (expired ones too when asked).", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"includeExpired":{"type":"boolean","default":false}}}`)},
-			{Name: "create_silence", Title: "Silence alerts", Description: "Mutes matching alerts for a while. Undo expires the silence.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "create_silence", Title: "Silence alerts", Description: "Mutes matching alerts for up to 24 hours. At least one matcher must narrow it down (not empty, .*, .+ or a != / !~ matcher alone). Undo expires the silence.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["matchers","comment"],"properties":{` + matchers + `,"durationMinutes":{"type":"integer","minimum":1,"maximum":1440,"default":120},"comment":{"type":"string"}}}`)},
+			{Name: "create_long_silence", Title: "Silence alerts for long or broadly", Description: "Mutes matching alerts for up to 30 days, with any matchers, even ones that match every alert. Undo expires the silence.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["matchers","comment"],"properties":{` + matchers + `,"durationMinutes":{"type":"integer","minimum":1,"maximum":43200,"default":120},"comment":{"type":"string"}}}`)},
 			{Name: "expire_silence", Title: "Expire a silence", Description: "Ends a silence now. Undo creates it again for the time it had left.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Silence id"}}}`)},
@@ -156,6 +158,46 @@ type Matcher struct {
 	Value   string `json:"value"`
 	IsRegex bool   `json:"isRegex"`
 	IsEqual *bool  `json:"isEqual,omitempty"`
+}
+
+// maxShortSilence is the longest silence create_silence makes, in minutes.
+const maxShortSilence = 24 * 60
+
+// broadMatcher reports whether a matcher lets (nearly) every alert through:
+// an empty value (which also matches alerts without the label), a regex
+// that matches the empty string or any text, or a negative matcher (!= or
+// !~), which matches everything but a few values.
+func broadMatcher(x Matcher) bool {
+	if x.IsEqual != nil && !*x.IsEqual {
+		return true
+	}
+	if !x.IsRegex {
+		return x.Value == ""
+	}
+	re, err := regexp.Compile("^(?:" + x.Value + ")$") // Alertmanager anchors them
+	if err != nil {
+		return true
+	}
+	if re.MatchString("") {
+		return true
+	}
+	for _, sample := range []string{"a", "Z", "0", "-", "DiskFull", "node-exporter:9100", "Ünïcødé ~!@#$%^&*()"} {
+		if !re.MatchString(sample) {
+			return false
+		}
+	}
+	return true
+}
+
+// broadSilence: an alert is silenced when all matchers match, so a silence
+// is broad when every one of its matchers is.
+func broadSilence(ms []Matcher) bool {
+	for _, x := range ms {
+		if !broadMatcher(x) {
+			return false
+		}
+	}
+	return true
 }
 
 type silence struct {
@@ -355,7 +397,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(out)
 
-	case "create_silence":
+	case "create_silence", "create_long_silence":
 		if len(p.Matchers) == 0 || len(p.Matchers) > 20 {
 			return sdk.Result{}, errors.New("add 1 to 20 matchers")
 		}
@@ -382,6 +424,16 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		if mins < 1 || mins > 43200 {
 			return sdk.Result{}, errors.New("the duration is 1 minute to 30 days")
+		}
+		if call.Action == "create_silence" {
+			// Muting everything, or for days, hides outages: that's the
+			// destructive create_long_silence.
+			if mins > maxShortSilence {
+				return sdk.Result{}, errors.New("create_silence lasts at most 24 hours (1440 minutes); longer is create_long_silence (destructive)")
+			}
+			if broadSilence(p.Matchers) {
+				return sdk.Result{}, errors.New("these matchers match (nearly) every alert; add one that names what to silence, such as alertname=\"DiskFull\", or use create_long_silence (destructive)")
+			}
 		}
 		start := m.clock().UTC()
 		end := start.Add(time.Duration(mins) * time.Minute)
@@ -428,7 +480,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				if mins > 43200 {
 					mins = 43200
 				}
-				res.Undo = sdk.UndoWith("create_silence", map[string]any{"matchers": s.Matchers, "comment": s.Comment, "durationMinutes": mins},
+				again := "create_silence"
+				if mins > maxShortSilence || broadSilence(s.Matchers) {
+					again = "create_long_silence"
+				}
+				res.Undo = sdk.UndoWith(again, map[string]any{"matchers": s.Matchers, "comment": s.Comment, "durationMinutes": mins},
 					"Silence "+describe(s.Matchers)+" again")
 			}
 		}

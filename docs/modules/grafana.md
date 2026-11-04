@@ -17,8 +17,9 @@ server address, such as `https://grafana.example.com` (a sub-path like
 | `alert_rules` | read | Every Grafana-managed rule with folder, group, state (firing, pending, inactive), health, last error and active alert count. `state` filters. |
 | `alerts` | read | Alerts firing now, not silenced unless `includeSilenced`. |
 | `silences` | read | Active and pending silences; `includeExpired` adds expired ones. |
-| `create_silence` | write | `matchers` (name, value, `isRegex`, `isEqual`), `durationMinutes` (1 minute to 30 days, default 2 hours) and a required `comment`. The preview shows the silence. Undo expires it. |
-| `expire_silence` | write | Ends a silence now. The preview shows it; undo creates it again with the same matchers for the time it had left. |
+| `create_silence` | write | `matchers` (name, value, `isRegex`, `isEqual`), `durationMinutes` (1 minute to 24 hours, default 2 hours) and a required `comment`. At least one matcher must narrow it down: a silence whose matchers are all empty values, regexes that match anything (`.*`, `.+`, `^.*$`, or anything that matches the empty string), or negative (`!=`, `!~`) matchers is refused, since it would mute (nearly) every alert. The preview shows the silence. Undo expires it. |
+| `create_long_silence` | destructive | The same, for up to 30 days and with any matchers, including ones that match every alert. |
+| `expire_silence` | write | Ends a silence now. The preview shows it; undo creates it again with the same matchers for the time it had left, through `create_long_silence` when that's over 24 hours or its matchers are that broad. |
 | `annotate` | write | An annotation on every dashboard, or on one (`dashboardUID`, optional `panelId`), at `time` (default now) or over a region to `timeEnd`. Undo deletes it. |
 | `delete_annotation` | destructive | With a preview. |
 

@@ -16,7 +16,7 @@ the vault. Listing needs `listBuckets` and `listFiles`; hiding needs
 | `buckets` | read | Name, id, type, file lock, number of lifecycle rules |
 | `files` | read | One folder level (or `recursive`), up to 1000 per page with a `next` cursor. `versions` lists every version and hide marker with file ids |
 | `usage` | read | Visible files, versions, hide markers, total bytes (all versions) and current bytes, per bucket. Counted from the version listing, up to `maxFiles` (default 100000) per bucket; `truncated` says when it stopped early |
-| `hide_file` | write | Adds a hide marker; versions stay. Preview first. Undo removes the marker |
+| `hide_file` | write | Adds a hide marker; versions stay. Preview first. Undo removes the marker. Refused when one of the bucket's lifecycle rules with `daysFromHidingToDeleting` covers the file (its `fileNamePrefix` matches), since B2 would then delete it for good: use `delete_file_version` (destructive) for that |
 | `delete_file_version` | destructive | Removes one version for good (or a hide marker, which unhides the file). Preview shows the version; the file name must match the version id |
 
 Health checks the key and says when it lacks `listBuckets` or `listFiles`.

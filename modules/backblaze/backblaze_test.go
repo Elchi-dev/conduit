@@ -25,6 +25,7 @@ type fakeB2 struct {
 	files  []file // newest first per name
 	next   int
 	calls  []string
+	rules  []any // the bucket's lifecycle rules, when set
 }
 
 func (f *fakeB2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +56,11 @@ func (f *fakeB2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reply := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 	switch op {
 	case "b2_list_buckets":
-		all := []map[string]any{{"bucketId": bucketID, "bucketName": "family-photos", "bucketType": "allPrivate", "lifecycleRules": []any{map[string]any{}}}}
+		rules := f.rules
+		if rules == nil {
+			rules = []any{map[string]any{}}
+		}
+		all := []map[string]any{{"bucketId": bucketID, "bucketName": "family-photos", "bucketType": "allPrivate", "lifecycleRules": rules}}
 		if n, _ := in["bucketName"].(string); n != "" && n != "family-photos" {
 			all = nil
 		}
@@ -163,7 +168,7 @@ func TestBackblaze(t *testing.T) {
 	}
 
 	r, err = invoke(m, "hide_file", `{"bucket":"family-photos","fileName":"photos/cat.jpg"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Hide family-photos/photos/cat.jpg (its versions stay)" || len(f.files) != 3 {
+	if err != nil || r.Plan == nil || r.Plan.Summary != "Hide family-photos/photos/cat.jpg (its versions are kept: no lifecycle rule deletes it once hidden)" || len(f.files) != 3 {
 		t.Fatalf("plan %+v %v", r.Plan, err)
 	}
 	r, err = invoke(m, "hide_file", `{"bucket":"family-photos","fileName":"photos/cat.jpg"}`, false)
@@ -221,5 +226,39 @@ func TestBackblazeValidation(t *testing.T) {
 	_ = bad.Configure(context.Background(), fakehost.New(map[string]string{"secret://bad": "x"}), "b2", raw)
 	if h := bad.Health(context.Background(), "b2"); h.Status != "down" || !strings.Contains(h.Message, "refused") {
 		t.Fatalf("%+v", h)
+	}
+}
+
+// hide_file is write because a hidden file's versions stay; a lifecycle rule
+// with daysFromHidingToDeleting makes hiding a permanent deletion, so it's
+// refused there and left to the destructive delete_file_version.
+func TestBackblazeHideRefusedWhenLifecycleDeletes(t *testing.T) {
+	for _, rules := range [][]any{
+		{map[string]any{"fileNamePrefix": "", "daysFromHidingToDeleting": 1}},
+		{map[string]any{"fileNamePrefix": "logs/", "daysFromHidingToDeleting": 7}, map[string]any{"fileNamePrefix": "photos/", "daysFromHidingToDeleting": 30, "daysFromUploadingToHiding": nil}},
+	} {
+		m, f := setup(t)
+		f.mu.Lock()
+		f.rules = rules
+		f.mu.Unlock()
+		for _, dry := range []bool{true, false} {
+			_, err := invoke(m, "hide_file", `{"bucket":"family-photos","fileName":"photos/cat.jpg"}`, dry)
+			if err == nil || !strings.Contains(err.Error(), "delete_file_version") {
+				t.Fatalf("%v: %v", rules, err)
+			}
+		}
+		f.mu.Lock()
+		for _, c := range f.calls {
+			if c == "b2_hide_file" {
+				t.Fatal("hid the file")
+			}
+		}
+		f.mu.Unlock()
+	}
+	// A rule for another prefix, or one that only hides, doesn't matter.
+	m, f := setup(t)
+	f.rules = []any{map[string]any{"fileNamePrefix": "logs/", "daysFromHidingToDeleting": 7}, map[string]any{"fileNamePrefix": "", "daysFromUploadingToHiding": 30, "daysFromHidingToDeleting": nil}}
+	if _, err := invoke(m, "hide_file", `{"bucket":"family-photos","fileName":"photos/cat.jpg"}`, false); err != nil {
+		t.Fatal(err)
 	}
 }

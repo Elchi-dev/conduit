@@ -209,13 +209,37 @@ func TestTrelloWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// move_card (write) stays on the board: another board may be more public.
+	for _, dry := range []bool{true, false} {
+		if _, err := invoke(m, "move_card", `{"card":"Xyz98765","list":"`+other+`"}`, dry); err == nil || !strings.Contains(err.Error(), "move_card_to_board") {
+			t.Fatal(err)
+		}
+	}
+	if f.cards[card1]["idList"] != todo {
+		t.Fatal("moved")
+	}
+	risk := map[string]sdk.Risk{}
+	for _, a := range m.Manifest().Actions {
+		risk[a.Name] = a.Risk
+	}
+	if risk["move_card"] != sdk.RiskWrite || risk["move_card_to_board"] != sdk.RiskDestructive {
+		t.Fatalf("%v", risk)
+	}
+	r, err = invoke(m, "move_card", `{"card":"Xyz98765","list":"`+doing+`"}`, false)
+	if err != nil || f.cards[card1]["idList"] != doing || r.Undo == nil || r.Undo.Action != "move_card" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.cards[card1]["idList"] != todo {
+		t.Fatal(err)
+	}
+
 	// Move to another board: idBoard goes along; undo moves it back to its old list and position.
-	r, err = invoke(m, "move_card", `{"card":"Xyz98765","list":"`+other+`"}`, true)
+	r, err = invoke(m, "move_card_to_board", `{"card":"Xyz98765","list":"`+other+`"}`, true)
 	if err != nil || r.Plan == nil || r.Plan.Summary != `Move "Write report" from To do to Inbox` || f.cards[card1]["idList"] != todo {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "move_card", `{"card":"Xyz98765","list":"`+other+`"}`, false)
-	if err != nil || f.cards[card1]["idList"] != other || f.cards[card1]["idBoard"] != board2 || r.Undo == nil {
+	r, err = invoke(m, "move_card_to_board", `{"card":"Xyz98765","list":"`+other+`"}`, false)
+	if err != nil || f.cards[card1]["idList"] != other || f.cards[card1]["idBoard"] != board2 || r.Undo == nil || r.Undo.Action != "move_card_to_board" {
 		t.Fatalf("%+v %v %v", r, err, f.cards[card1])
 	}
 	if string(r.Undo.Input) != `{"card":"`+card1+`","list":"`+todo+`","position":16384}` {

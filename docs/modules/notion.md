@@ -24,7 +24,7 @@ pages; `database` lists them.
 | `query_database` | read | Rows with an optional Notion `filter` and `sorts` (passed through as Notion defines them), up to `limit` (default 50, at most 500), each with its title, link and property values flattened to text. |
 | `create_page` | write | A row in a database: `title`, `properties` by name with plain values (text, numbers, true/false, select and status names, a list of names for multi-select, a date or `{start, end}`, page ids for relations), and optional `content`. Values are converted using the data source's schema; unknown properties and types it can't set (people, files) are refused before anything is sent. With a preview; undo moves the page to the trash. |
 | `append_blocks` | write | `content` as simple Markdown (`#` headings, `-` bullets, `1.` numbers, `- [ ]` to-dos, `>` quotes, `---`, code fences, paragraphs), up to 100 blocks, at the end of a page or block. The preview lists the blocks; undo trashes them. |
-| `trash_blocks` / `restore_blocks` | write | Up to 100 block ids. The preview shows each block's type and text; each undoes the other. |
+| `trash_blocks` / `restore_blocks` | write | Up to 100 block ids. The preview shows each block's type and text; each undoes the other. `trash_blocks` refuses `child_page` and `child_database` blocks (with nothing trashed), since they take a whole page or database along: move a page to the trash with `archive_page`. |
 | `archive_page` | write | Moves a page to the trash, where Notion keeps it for 30 days, so it's a write with undo (restore) rather than destructive. With a preview. |
 | `unarchive_page` | write | Restores a page from the trash; undo trashes it again. |
 

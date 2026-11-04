@@ -171,3 +171,15 @@ func TestN8NRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+// Deactivating stops a workflow's automations: destructive. Activating only
+// restores them and stays write.
+func TestN8NRisks(t *testing.T) {
+	risk := map[string]sdk.Risk{}
+	for _, a := range New().Manifest().Actions {
+		risk[a.Name] = a.Risk
+	}
+	if risk["deactivate"] != sdk.RiskDestructive || risk["activate"] != sdk.RiskWrite {
+		t.Fatalf("%v", risk)
+	}
+}

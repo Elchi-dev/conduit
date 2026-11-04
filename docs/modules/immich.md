@@ -14,7 +14,8 @@ Enter the server address, such as `https://photos.example.com`.
 | `storage` | read | Size, used and free space of the library volume. |
 | `users` | read | How many users, admins and active users, with each one's photos, videos, usage and quota (admin). Email addresses are left out. |
 | `jobs` | read | Each job queue: running, paused, active, waiting, delayed and failed counts (admin). |
-| `start_job` | write | Starts one of Immich's own jobs (thumbnails, metadata, video conversion, faces, smart search, duplicates, library scan, sidecars, storage template, migration, database backup) for the assets that need it, or for every asset with `force`. The preview shows the queue now. |
+| `start_job` | write | Starts one of Immich's own jobs (thumbnails, metadata, video conversion, faces, smart search, duplicates, library scan, sidecars, storage template, migration, database backup) for the assets that need it. The preview shows the queue now. `force` is refused here. |
+| `start_job_force` | destructive | The same job for every asset, redoing existing results. For face detection and facial recognition that discards the existing faces and people (names, merges) and rebuilds them; the preview says so. |
 | `recent_assets` | read | Newest photos and videos: file name, type, date taken, owner, camera, city and country, size. No image data or GPS coordinates. |
 | `albums` | read | Albums with size, owner, date range and whether they're shared. |
 

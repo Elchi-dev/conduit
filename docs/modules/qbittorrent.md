@@ -9,6 +9,10 @@ and uses the right one).
 **Setup.** Turn on the Web UI (Tools, Options, Web UI), store its password
 in the vault and enter the username and the Web UI's address, such as
 `http://nas.lan:8080`. For a self-signed certificate, set `fingerprint`.
+To let `add` choose a download folder, list the allowed folders in
+`saveRoots` (as qBittorrent sees them, e.g. `/downloads`); without
+`saveRoots`, `add` refuses a `savePath` and torrents go to qBittorrent's
+default folder or their category's.
 
 | Action | Risk | Notes |
 | --- | --- | --- |
@@ -16,7 +20,7 @@ in the vault and enter the username and the Web UI's address, such as
 | `torrents` | read | Hash, name, state, progress, size, speeds, ratio, seeds and peers, ETA, category, tags, save path. Filter by `filter` (state), `category`, `tag` or `query` (name); `paused`/`stopped` and `resumed`/`running` work on both 4.x and 5.x. |
 | `pause` | write | Pauses up to 100 torrents by hash. The preview lists the ones that change; undo resumes only those (not ones that were already paused). |
 | `resume` | write | The reverse; undo pauses only the ones it resumed. |
-| `add` | write | Up to 20 `magnet:` links or http(s) URLs of `.torrent` files, with optional `savePath`, `category`, `tags` and `paused`. Magnets already in qBittorrent are skipped. Undo deletes the added torrents and keeps their files; for a URL the module waits a few seconds for qBittorrent to fetch it so it can name it in the undo. |
+| `add` | write | Up to 20 `magnet:` links or http(s) URLs of `.torrent` files, with optional `savePath`, `category`, `tags` and `paused`. A `savePath` must be an absolute path without `..` that, cleaned, is one of `saveRoots` or inside one; it's refused when the instance has no `saveRoots`. Magnets already in qBittorrent are skipped. Undo deletes the added torrents and keeps their files; for a URL the module waits a few seconds for qBittorrent to fetch it so it can name it in the undo. |
 | `delete` | destructive | Removes up to 100 torrents, and their downloaded data with `deleteFiles`. With a preview; no undo. |
 | `set_speed_limits` | write | The global `downloadKiB` and/or `uploadKiB` limit in KiB/s (0 = unlimited). When the alternative limits are on, qBittorrent applies it to those. Undo restores the previous limits. |
 
@@ -31,4 +35,6 @@ URLs (which carry private tracker passkeys) aren't part of any output, and
 previews show added URLs without their query string. The URLs you add are in
 the action's input, so they're in the audit log: prefer magnet links over
 `.torrent` URLs with a passkey. After too many failed sign-ins qBittorrent
-bans the address for a while; Health says so.
+bans the address for a while; Health says so. `saveRoots` is checked by
+path only: a symlink inside an allowed folder that points elsewhere is
+followed by qBittorrent, so don't keep such links there.

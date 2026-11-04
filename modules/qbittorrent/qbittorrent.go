@@ -19,6 +19,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -39,11 +40,15 @@ type Config struct {
 	Password           string `json:"password"` // secret:// Web UI password
 	Fingerprint        string `json:"fingerprint"`
 	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+	// SaveRoots are the folders add may save into; without any, add takes
+	// no savePath (qBittorrent's default or the category's folder is used).
+	SaveRoots []string `json:"saveRoots"`
 }
 
 type conn struct {
 	base, origin string
-	user, pass   string // pass is a secret:// reference
+	saveRoots    []string // cleaned absolute paths
+	user, pass   string   // pass is a secret:// reference
 	h            sdk.Host
 	http         *http.Client
 
@@ -87,7 +92,8 @@ func (m *Module) Manifest() sdk.Manifest {
 			"username":{"type":"string","description":"Web UI username (Tools, Options, Web UI)"},
 			"password":{"type":"string","x-secret":true,"description":"Web UI password"},
 			"fingerprint":{"type":"string","description":"SHA-256 fingerprint of the Web UI's certificate, to trust a self-signed certificate"},
-			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"}}}`),
+			"insecureSkipVerify":{"type":"boolean","default":false,"description":"Skip certificate checks (not recommended; use the fingerprint)"},
+			"saveRoots":{"type":"array","maxItems":20,"items":{"type":"string"},"description":"Folders (as qBittorrent sees them, e.g. /downloads) that add may save into with savePath; without any, savePath is refused and torrents go to qBittorrent's default or their category's folder"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "transfer", Title: "Transfer info", Description: "Download and upload speed, data this session, speed limits (and whether the alternative limits are on), connection status, DHT nodes.", Risk: sdk.RiskRead},
 			{Name: "torrents", Title: "Torrents", Description: "Torrents with progress, speed, state, ratio, size and ETA; filter by state, category or tag.", Risk: sdk.RiskRead,
@@ -103,7 +109,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "add", Title: "Add torrents", Description: "Adds torrents by magnet link or http(s) URL of a .torrent file. Undo deletes the new ones, keeping downloaded files.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["urls"],"properties":{
 					"urls":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"string"},"description":"magnet: links or http(s) URLs of .torrent files"},
-					"savePath":{"type":"string","description":"Download folder (default: qBittorrent's)"},
+					"savePath":{"type":"string","description":"Download folder inside one of the instance's saveRoots (default: qBittorrent's or the category's)"},
 					"category":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"maxItems":10},
 					"paused":{"type":"boolean","default":false,"description":"Add without starting"}}}`)},
 			{Name: "delete", Title: "Delete torrents", Description: "Removes torrents from qBittorrent, and with deleteFiles also their downloaded data.", Risk: sdk.RiskDestructive, DryRun: true,
@@ -143,9 +149,17 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 			client = &http.Client{Timeout: 30 * time.Second, Transport: tr}
 		}
 	}
+	var roots []string
+	for _, r := range c.SaveRoots {
+		r = strings.TrimSpace(r)
+		if !strings.HasPrefix(r, "/") || hasDotDot(r) || strings.ContainsAny(r, "\r\n\x00") || len(r) > 200 {
+			return fmt.Errorf("save root %q isn't an absolute folder path like /downloads", r)
+		}
+		roots = append(roots, path.Clean(r))
+	}
 	origin := u.Scheme + "://" + u.Host
 	base := origin + strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/api/v2")
-	m.set.Put(id, &conn{base: base, origin: origin, user: strings.TrimSpace(c.Username), pass: c.Password, h: h, http: rest.SameHostOnly(client)})
+	m.set.Put(id, &conn{base: base, origin: origin, saveRoots: roots, user: strings.TrimSpace(c.Username), pass: c.Password, h: h, http: rest.SameHostOnly(client)})
 	return nil
 }
 
@@ -502,6 +516,38 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
 
+func hasDotDot(p string) bool {
+	for _, seg := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// savePath checks a requested download folder: it must be inside one of
+// the instance's saveRoots, since qBittorrent writes the torrent's files
+// (named by whoever made the torrent) wherever it's told to.
+func (c *conn) savePath(s string) (string, error) {
+	s, err := clean(s, "save path")
+	if err != nil {
+		return "", err
+	}
+	if len(c.saveRoots) == 0 {
+		return "", errors.New("this instance has no saveRoots, so add can't choose a download folder; leave savePath out (a category's folder still applies) or add the allowed folders to the settings")
+	}
+	if !strings.HasPrefix(s, "/") || hasDotDot(s) {
+		return "", errors.New("the save path is an absolute folder path without ..")
+	}
+	p := path.Clean(s)
+	for _, r := range c.saveRoots {
+		if p == r || strings.HasPrefix(p, strings.TrimSuffix(r, "/")+"/") {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("%s isn't inside the allowed folders (%s)", p, strings.Join(c.saveRoots, ", "))
+}
+
 func clean(s string, what string) (string, error) {
 	s = strings.TrimSpace(s)
 	if len(s) > 200 || strings.ContainsAny(s, "\r\n\x00") {
@@ -729,8 +775,8 @@ func (c *conn) add(ctx context.Context, dry bool, p input, wait time.Duration) (
 		}
 	}
 	form := url.Values{}
-	if p.SavePath != "" {
-		s, err := clean(p.SavePath, "save path")
+	if strings.TrimSpace(p.SavePath) != "" {
+		s, err := c.savePath(p.SavePath)
 		if err != nil {
 			return sdk.Result{}, err
 		}

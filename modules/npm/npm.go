@@ -63,6 +63,23 @@ var (
 	hostRe   = regexp.MustCompile(`^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 )
 
+// createProps are the inputs create_proxy_host and create_proxy_host_advanced share.
+const createProps = `
+	"domains":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"string"},"description":"Domain names, e.g. app.example.com or *.example.com"},
+	"forwardScheme":{"type":"string","enum":["http","https"],"default":"http"},
+	"forwardHost":{"type":"string","description":"Host name or IP of the service"},
+	"forwardPort":{"type":"integer","minimum":1,"maximum":65535},
+	"certificateId":{"type":"integer","minimum":0,"default":0,"description":"An existing certificate's id (from certificates); 0 for none"},
+	"sslForced":{"type":"boolean","default":false,"description":"Redirect HTTP to HTTPS (needs a certificate)"},
+	"http2":{"type":"boolean","default":false},
+	"hstsEnabled":{"type":"boolean","default":false},
+	"hstsSubdomains":{"type":"boolean","default":false},
+	"blockExploits":{"type":"boolean","default":true},
+	"websockets":{"type":"boolean","default":false,"description":"Allow WebSocket upgrades"},
+	"cachingEnabled":{"type":"boolean","default":false},
+	"accessListId":{"type":"integer","minimum":0,"default":0},
+	"enabled":{"type":"boolean","default":true}`
+
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	id := `{"type":"object","required":["id"],"properties":{"id":{"type":"integer","minimum":1,"description":"Proxy host id (from proxy_hosts)"}}}`
@@ -80,27 +97,20 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "proxy_hosts", Title: "Proxy hosts", Description: "Every proxy host: domains, where it forwards, SSL certificate and whether it's forced, access list, enabled, and nginx errors.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"query":{"type":"string","description":"Part of a domain or forward host"}}}`)},
 			{Name: "enable", Title: "Enable a proxy host", Description: "Turns a proxy host on. Undo disables it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
-			{Name: "disable", Title: "Disable a proxy host", Description: "Turns a proxy host off, so its domains stop being served. Undo enables it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
+			{Name: "disable", Title: "Disable a proxy host", Description: "Turns a proxy host off, so its domains stop being served. Undo enables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
 			{Name: "certificates", Title: "Certificates", Description: "SSL certificates with domains, provider and days until they expire, soonest first.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"withinDays":{"type":"integer","minimum":1,"maximum":3650,"description":"Only those expiring within this many days (expired included)"}}}`)},
-			{Name: "create_proxy_host", Title: "Create a proxy host", Description: "Publishes domains by forwarding them to a service. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["domains","forwardHost","forwardPort"],"properties":{
-					"domains":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"string"},"description":"Domain names, e.g. app.example.com or *.example.com"},
-					"forwardScheme":{"type":"string","enum":["http","https"],"default":"http"},
-					"forwardHost":{"type":"string","description":"Host name or IP of the service"},
-					"forwardPort":{"type":"integer","minimum":1,"maximum":65535},
-					"certificateId":{"type":"integer","minimum":0,"default":0,"description":"An existing certificate's id (from certificates); 0 for none"},
-					"sslForced":{"type":"boolean","default":false,"description":"Redirect HTTP to HTTPS (needs a certificate)"},
-					"http2":{"type":"boolean","default":false},
-					"hstsEnabled":{"type":"boolean","default":false},
-					"hstsSubdomains":{"type":"boolean","default":false},
-					"blockExploits":{"type":"boolean","default":true},
-					"websockets":{"type":"boolean","default":false,"description":"Allow WebSocket upgrades"},
-					"cachingEnabled":{"type":"boolean","default":false},
-					"accessListId":{"type":"integer","minimum":0,"default":0},
-					"advancedConfig":{"type":"string","description":"Custom nginx configuration (shown in full in the preview)"},
-					"locations":{"type":"array","maxItems":50,"items":{"type":"object"},"description":"Custom locations, as NPM stores them"},
-					"enabled":{"type":"boolean","default":true}}}`)},
+			{Name: "create_proxy_host", Title: "Create a proxy host", Description: "Publishes domains by forwarding them to a service (not to a loopback address or NPM's own admin UI). No custom nginx config or locations: those need create_proxy_host_advanced. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["domains","forwardHost","forwardPort"],"properties":{` + createProps + `}}`)},
+			{Name: "create_proxy_host_advanced", Title: "Create a proxy host with custom nginx config", Description: "Like create_proxy_host, but also takes custom nginx configuration and custom locations, which run as nginx's own configuration (it can read files such as private keys), and allows loopback forward hosts. The preview shows the configuration and every location in full. Undo deletes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["domains","forwardHost","forwardPort"],"properties":{` + createProps + `,
+					"advancedConfig":{"type":"string","maxLength":65536,"description":"Custom nginx configuration (shown in full in the preview)"},
+					"locations":{"type":"array","maxItems":50,"items":{"type":"object","required":["path","forward_host","forward_port"],"properties":{
+						"path":{"type":"string","description":"Location path, e.g. /api"},
+						"forward_scheme":{"type":"string","enum":["http","https"],"default":"http"},
+						"forward_host":{"type":"string","description":"Host name or IP address"},
+						"forward_port":{"type":"integer","minimum":1,"maximum":65535},
+						"advanced_config":{"type":"string","description":"Custom nginx configuration for this location"}}},"description":"Custom locations"}}}`)},
 			{Name: "delete_proxy_host", Title: "Delete a proxy host", Description: "Deletes a proxy host; its domains stop being served. Undo creates it again with the same settings (under a new id).", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
 		},
 	}
@@ -397,12 +407,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return c.certificates(ctx, m.now(), p.WithinDays)
 
-	case "create_proxy_host":
+	case "create_proxy_host", "create_proxy_host_advanced":
 		var p createInput
 		if err := sdk.Decode(call, &p); err != nil {
 			return sdk.Result{}, err
 		}
-		return c.create(ctx, call.DryRun, p)
+		return c.create(ctx, call.DryRun, p, call.Action == "create_proxy_host_advanced")
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
@@ -445,12 +455,92 @@ func (c *conn) deleteHost(ctx context.Context, dry bool, h proxyHost) (sdk.Resul
 		CertificateID: h.certID(), SSLForced: bool(h.SSLForced), HTTP2: bool(h.HTTP2), HSTSEnabled: bool(h.HSTS), HSTSSubdomains: bool(h.HSTSSubdomains),
 		BlockExploits: &be, Websockets: bool(h.Websockets), CachingEnabled: bool(h.Caching), AccessListID: h.AccessListID,
 		AdvancedConfig: h.AdvancedConfig, Locations: h.Locations, Enabled: &en}
+	// Custom config, locations or a loopback target can only come back
+	// through the destructive create_proxy_host_advanced (an undo runs at its
+	// own action's risk).
+	action := "create_proxy_host"
+	if strings.TrimSpace(h.AdvancedConfig) != "" || len(h.Locations) > 0 || c.internalTarget(h.ForwardHost, h.ForwardPort) != "" {
+		action = "create_proxy_host_advanced"
+	}
 	res, err := sdk.JSON(map[string]any{"deleted": h.ID, "domains": h.Domains})
-	res.Undo = sdk.UndoWith("create_proxy_host", again, "Recreate the proxy host for "+h.name())
+	res.Undo = sdk.UndoWith(action, again, "Recreate the proxy host for "+h.name())
 	return res, err
 }
 
-func (c *conn) create(ctx context.Context, dry bool, p createInput) (sdk.Result, error) {
+// location is one custom location. Only these fields are passed on, each
+// checked, because NPM writes them into nginx's configuration.
+type location struct {
+	Path           string          `json:"path"`
+	ForwardScheme  string          `json:"forward_scheme"`
+	ForwardHost    string          `json:"forward_host"`
+	ForwardPort    json.RawMessage `json:"forward_port"`
+	AdvancedConfig string          `json:"advanced_config"`
+}
+
+func checkLocation(raw json.RawMessage) (map[string]any, error) {
+	var l location
+	if err := json.Unmarshal(raw, &l); err != nil {
+		return nil, errors.New("each location is an object with path, forward_scheme, forward_host and forward_port")
+	}
+	path := strings.TrimSpace(l.Path)
+	if !strings.HasPrefix(path, "/") || len(path) > 256 || !pathRe.MatchString(path) {
+		return nil, fmt.Errorf("location path %q is like /api (letters, digits and / . _ ~ -)", l.Path)
+	}
+	scheme := l.ForwardScheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	if scheme != "http" && scheme != "https" {
+		return nil, fmt.Errorf("location %s: forward_scheme is http or https", path)
+	}
+	fh := strings.TrimSpace(l.ForwardHost)
+	if !validHost(fh) {
+		return nil, fmt.Errorf("location %s: forward_host is a host name or an IP address", path)
+	}
+	port, err := strconv.Atoi(strings.Trim(string(l.ForwardPort), `"`))
+	if err != nil || port < 1 || port > 65535 {
+		return nil, fmt.Errorf("location %s: forward_port is a whole number from 1 to 65535", path)
+	}
+	if len(l.AdvancedConfig) > 64<<10 {
+		return nil, fmt.Errorf("location %s: at most 64 KB of advanced configuration", path)
+	}
+	return map[string]any{"path": path, "forward_scheme": scheme, "forward_host": fh, "forward_port": port, "advanced_config": l.AdvancedConfig}, nil
+}
+
+// validHost is a plain host name or IP address, nothing that could close an
+// nginx directive.
+func validHost(h string) bool {
+	return h != "" && len(h) <= 253 && (net.ParseIP(h) != nil || hostRe.MatchString(h))
+}
+
+// internalTarget says why forwarding to host:port would publish something
+// that is only meant to be reached locally: a loopback or unspecified
+// address (NPM's own container), or NPM's admin UI. "" when it's neither.
+// Names are compared as given; they aren't resolved.
+func (c *conn) internalTarget(host string, port int) string {
+	h := strings.ToLower(strings.Trim(strings.TrimSpace(host), "[]"))
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return "a loopback address"
+	}
+	if ip := net.ParseIP(h); ip != nil && (ip.IsLoopback() || ip.IsUnspecified()) {
+		return "a loopback address"
+	}
+	if u, err := url.Parse(c.origin); err == nil && strings.EqualFold(u.Hostname(), h) {
+		admin := u.Port()
+		if admin == "" {
+			admin = "80"
+			if u.Scheme == "https" {
+				admin = "443"
+			}
+		}
+		if port == 81 || strconv.Itoa(port) == admin {
+			return "Nginx Proxy Manager's admin UI"
+		}
+	}
+	return ""
+}
+
+func (c *conn) create(ctx context.Context, dry bool, p createInput, advanced bool) (sdk.Result, error) {
 	if len(p.Domains) == 0 || len(p.Domains) > 20 {
 		return sdk.Result{}, errors.New("give 1 to 20 domain names")
 	}
@@ -476,11 +566,23 @@ func (c *conn) create(ctx context.Context, dry bool, p createInput) (sdk.Result,
 	// The forward host lands in nginx's configuration, so it's a plain host
 	// name or IP address and nothing else.
 	fh := strings.TrimSpace(p.ForwardHost)
-	if fh == "" || len(fh) > 253 || (net.ParseIP(fh) == nil && !hostRe.MatchString(fh)) {
+	if !validHost(fh) {
 		return sdk.Result{}, errors.New("forwardHost is a host name or an IP address")
 	}
 	if p.ForwardPort < 1 || p.ForwardPort > 65535 {
 		return sdk.Result{}, errors.New("forwardPort is 1 to 65535")
+	}
+	if !advanced {
+		// Custom nginx config runs as nginx itself (OpenResty runs Lua, alias
+		// serves any file such as private keys), and a loopback target
+		// publishes whatever listens only locally, NPM's admin UI included:
+		// both are for the destructive create_proxy_host_advanced.
+		if strings.TrimSpace(p.AdvancedConfig) != "" || len(p.Locations) > 0 {
+			return sdk.Result{}, errors.New("custom nginx configuration and custom locations need create_proxy_host_advanced (destructive)")
+		}
+		if why := c.internalTarget(fh, p.ForwardPort); why != "" {
+			return sdk.Result{}, fmt.Errorf("%s:%d is %s; publishing it needs create_proxy_host_advanced (destructive)", fh, p.ForwardPort, why)
+		}
 	}
 	if p.CertificateID < 0 || p.AccessListID < 0 {
 		return sdk.Result{}, errors.New("certificateId and accessListId are 0 or an existing id")
@@ -491,11 +593,13 @@ func (c *conn) create(ctx context.Context, dry bool, p createInput) (sdk.Result,
 	if len(p.Locations) > 50 || len(p.AdvancedConfig) > 64<<10 {
 		return sdk.Result{}, errors.New("at most 50 locations and 64 KB of advanced configuration")
 	}
+	locations := []map[string]any{}
 	for _, l := range p.Locations {
-		var o map[string]any
-		if json.Unmarshal(l, &o) != nil {
-			return sdk.Result{}, errors.New("each location is an object")
+		o, err := checkLocation(l)
+		if err != nil {
+			return sdk.Result{}, err
 		}
+		locations = append(locations, o)
 	}
 	hosts, err := c.hosts(ctx)
 	if err != nil {
@@ -510,10 +614,6 @@ func (c *conn) create(ctx context.Context, dry bool, p createInput) (sdk.Result,
 	}
 	block := p.BlockExploits == nil || *p.BlockExploits
 	enabled := p.Enabled == nil || *p.Enabled
-	locations := p.Locations
-	if locations == nil {
-		locations = []json.RawMessage{}
-	}
 	body := map[string]any{"domain_names": domains, "forward_scheme": scheme, "forward_host": fh, "forward_port": p.ForwardPort,
 		"certificate_id": p.CertificateID, "ssl_forced": p.SSLForced, "http2_support": p.HTTP2, "hsts_enabled": p.HSTSEnabled,
 		"hsts_subdomains": p.HSTSSubdomains, "block_exploits": block, "allow_websocket_upgrade": p.Websockets,
@@ -528,6 +628,9 @@ func (c *conn) create(ctx context.Context, dry bool, p createInput) (sdk.Result,
 		}
 		if strings.TrimSpace(p.AdvancedConfig) != "" {
 			after["advancedConfig"] = p.AdvancedConfig
+		}
+		if len(locations) > 0 {
+			after["locations"] = locations
 		}
 		a, _ := json.Marshal(after)
 		return sdk.Result{Plan: &sdk.Plan{Summary: "Create a proxy host for " + name, Changes: []sdk.Change{{Target: "proxy host " + name, Op: "create", After: a}}}}, nil

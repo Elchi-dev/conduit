@@ -63,7 +63,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "workflows", Title: "Workflows", Description: "Workflows with whether they're active, their tags and when they changed.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"active":{"type":"boolean","description":"Only active (true) or inactive (false) ones"}}}`)},
 			{Name: "activate", Title: "Activate a workflow", Description: "Turns on the workflow's triggers. Undo deactivates it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(wf)},
-			{Name: "deactivate", Title: "Deactivate a workflow", Description: "Turns off the workflow's triggers. Undo activates it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(wf)},
+			{Name: "deactivate", Title: "Deactivate a workflow", Description: "Turns off the workflow's triggers, so its automations stop running. Undo activates it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(wf)},
 			{Name: "executions", Title: "Executions", Description: "Recent executions, newest first, optionally of one workflow or with one status.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"workflow":{"type":"string","description":"Workflow id"},"status":{"type":"string","enum":["success","error","running","waiting","canceled"]},"limit":{"type":"integer","default":20,"maximum":100}}}`)},
 			{Name: "failed_executions", Title: "Failed executions", Description: "Recent executions that ended in an error.", Risk: sdk.RiskRead,

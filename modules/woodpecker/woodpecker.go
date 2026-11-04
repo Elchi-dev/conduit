@@ -78,7 +78,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["repo","number","step"],"properties":{` + repo + `,` + num + `,"step":{"type":"string","description":"Step name or id (from pipeline)"},"lines":{"type":"integer","default":200,"maximum":2000}}}`)},
 			{Name: "restart", Title: "Restart a pipeline", Description: "Runs the pipeline again as a new pipeline (its code runs with the repository's secrets).", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","number"],"properties":{` + repo + `,` + num + `}}`)},
-			{Name: "cancel", Title: "Cancel a pipeline", Description: "Stops a pending or running pipeline; steps in progress are killed.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "cancel", Title: "Cancel a pipeline", Description: "Stops a pending or running pipeline; steps in progress are killed.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","number"],"properties":{` + repo + `,` + num + `}}`)},
 		},
 		Resources: []sdk.ResourceSpec{{Kind: "pipeline", Title: "Pipelines", ListAction: "pipelines", GetAction: "pipeline", ViewHint: "table"}},

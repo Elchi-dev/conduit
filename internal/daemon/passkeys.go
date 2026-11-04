@@ -24,7 +24,10 @@ package daemon
 //
 // Ceremony state (the challenge) is kept in memory for five minutes, used
 // once, and bound to its ceremony type, the relying party it was started
-// for and (for registration) the account. It doesn't survive a restart,
+// for and (for registration) the account. Starting a sign-in is limited per
+// source (30 a minute, 10 open at once); registrations are counted per
+// account and in a separate table, so a flood of sign-in starts can't block
+// adding a passkey. It doesn't survive a restart,
 // which only means a ceremony in progress has to start again.
 
 import (
@@ -48,14 +51,24 @@ import (
 
 	"github.com/elchi-dev/conduit/internal/auth"
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/internal/ratelimit"
 	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
 const (
 	passkeyCeremonyTTL = 5 * time.Minute
-	maxPasskeyCeremony = 10000
 	passkeyNameSize    = 60
+	// Sign-in ceremonies are started without signing in, so each source
+	// (address, IPv6 /64, or relay client) may have only a few open, and
+	// registrations have their own budget that sign-ins can't use up.
+	maxLoginCeremonies    = 10000
+	maxRegisterCeremonies = 1000
+	maxCeremoniesPerKey   = 10
 )
+
+// passkeyBeginsBySource limits how often one source may start a passkey
+// sign-in, whether or not it finishes it.
+var passkeyBeginsBySource = ratelimit.New(30, time.Minute, 10000)
 
 func (s *Server) passkeyRoutes() []route {
 	return []route{
@@ -122,29 +135,66 @@ func (rp relyingParty) webauthn() (*webauthn.WebAuthn, error) {
 type passkeyCeremony struct {
 	kind    string // "register" or "login"
 	user    string // registration: the account adding the passkey
+	owner   string // what the per-key cap counts: the source (login) or account (register)
 	rp      relyingParty
 	data    webauthn.SessionData
 	expires time.Time
 }
 
 type passkeyCeremonies struct {
-	mu sync.Mutex
-	m  map[string]passkeyCeremony
+	mu    sync.Mutex
+	m     map[string]passkeyCeremony
+	kinds map[string]int // open ceremonies per kind
+	open  map[string]int // open ceremonies per kind and owner
 }
 
-var ceremonies = &passkeyCeremonies{m: map[string]passkeyCeremony{}}
+var ceremonies = newPasskeyCeremonies()
 
+func newPasskeyCeremonies() *passkeyCeremonies {
+	return &passkeyCeremonies{m: map[string]passkeyCeremony{}, kinds: map[string]int{}, open: map[string]int{}}
+}
+
+func ceremonyLimit(kind string) int {
+	if kind == "register" {
+		return maxRegisterCeremonies
+	}
+	return maxLoginCeremonies
+}
+
+// drop removes a ceremony and its counts. Callers hold c.mu.
+func (c *passkeyCeremonies) drop(id string) {
+	cer, ok := c.m[id]
+	if !ok {
+		return
+	}
+	delete(c.m, id)
+	c.kinds[cer.kind]--
+	k := cer.kind + "\x00" + cer.owner
+	if c.open[k]--; c.open[k] <= 0 {
+		delete(c.open, k)
+	}
+}
+
+// sweep drops expired ceremonies. Callers hold c.mu.
+func (c *passkeyCeremonies) sweep(now time.Time) {
+	for id, v := range c.m {
+		if now.After(v.expires) {
+			c.drop(id)
+		}
+	}
+}
+
+// put stores a ceremony and returns its id, or "" when its owner already
+// has maxCeremoniesPerKey open or its kind's table is full.
 func (c *passkeyCeremonies) put(cer passkeyCeremony) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
-	if len(c.m) >= maxPasskeyCeremony {
-		for k, v := range c.m {
-			if now.After(v.expires) {
-				delete(c.m, k)
-			}
-		}
-		if len(c.m) >= maxPasskeyCeremony {
+	k := cer.kind + "\x00" + cer.owner
+	full := func() bool { return c.open[k] >= maxCeremoniesPerKey || c.kinds[cer.kind] >= ceremonyLimit(cer.kind) }
+	if full() {
+		c.sweep(now)
+		if full() {
 			return ""
 		}
 	}
@@ -153,6 +203,8 @@ func (c *passkeyCeremonies) put(cer passkeyCeremony) string {
 	id := base64.RawURLEncoding.EncodeToString(b)
 	cer.expires = now.Add(passkeyCeremonyTTL)
 	c.m[id] = cer
+	c.kinds[cer.kind]++
+	c.open[k]++
 	return id
 }
 
@@ -161,7 +213,7 @@ func (c *passkeyCeremonies) take(id string) (passkeyCeremony, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	cer, ok := c.m[id]
-	delete(c.m, id)
+	c.drop(id)
 	if !ok || time.Now().After(cer.expires) {
 		return passkeyCeremony{}, false
 	}
@@ -280,7 +332,7 @@ func (s *Server) beginPasskeyRegistration(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusInternalServerError, "could not start: "+err.Error())
 		return
 	}
-	id := ceremonies.put(passkeyCeremony{kind: "register", user: p.User.ID, rp: rp, data: *data})
+	id := ceremonies.put(passkeyCeremony{kind: "register", user: p.User.ID, owner: p.User.ID, rp: rp, data: *data})
 	if id == "" {
 		writeErr(w, http.StatusServiceUnavailable, "too many passkey requests in progress; try again in a minute")
 		return
@@ -393,7 +445,13 @@ func passkeyLimited(w http.ResponseWriter, src string) bool {
 }
 
 func (s *Server) beginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
-	if passkeyLimited(w, requestSource(r)) {
+	src := requestSource(r)
+	if passkeyLimited(w, src) {
+		return
+	}
+	if !passkeyBeginsBySource.Take(src) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(passkeyBeginsBySource.RetryAfter(src).Seconds())+1))
+		writeErr(w, http.StatusTooManyRequests, "too many passkey sign-ins started; try again in a minute")
 		return
 	}
 	rp, why := relyingPartyFor(r)
@@ -411,7 +469,7 @@ func (s *Server) beginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not start: "+err.Error())
 		return
 	}
-	id := ceremonies.put(passkeyCeremony{kind: "login", rp: rp, data: *data})
+	id := ceremonies.put(passkeyCeremony{kind: "login", owner: src, rp: rp, data: *data})
 	if id == "" {
 		w.Header().Set("Retry-After", "60")
 		writeErr(w, http.StatusTooManyRequests, "too many sign-ins in progress; try again in a minute")

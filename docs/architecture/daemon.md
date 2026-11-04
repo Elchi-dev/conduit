@@ -100,7 +100,11 @@ in `user_passkeys` by `internal/auth/passkeys.go`, using
   a ceremony in progress starts again.
 - **Limits:** failed passkey sign-ins count toward the same 20-per-source
   limit as wrong passwords; wrong passwords when adding one count toward the
-  account limit.
+  account limit. Starting a sign-in (which needs no account) is limited to
+  30 a minute and 10 open ceremonies per source (address, IPv6 /64, or relay
+  client), with at most 10,000 open in all; registrations are counted
+  separately (10 open per account, 1,000 in all), so a flood of sign-in
+  starts can't block adding a passkey.
 - **Password resets:** changing your password, or an owner or admin setting
   it, removes all of that person's passkeys, so whoever sets the new
   password takes the account back from anyone who planted one.

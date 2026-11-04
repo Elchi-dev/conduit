@@ -20,7 +20,8 @@ keep writes on ask in your policies if an agent uses it.
 | `due_soon` | read | Unfinished, unarchived cards due within `days` (default 7) on one `board` or all your open boards, overdue ones first and marked `overdue`. |
 | `card` | read | A card with its description, list, board and labels. |
 | `add_card` | write | `list`, `name`, optional `description`, `due` (RFC 3339, or a date, which means noon UTC) and `position` (`top`, `bottom`, default bottom, or a number). The preview shows the card; undo archives it. |
-| `move_card` | write | To any `list` you can see, on the same or another board, at `position` (default top). The preview shows from and to; undo moves it back to its old list and position. |
+| `move_card` | write | To another `list` on the card's own board, at `position` (default top). A list on another board is refused. The preview shows from and to; undo moves it back to its old list and position. |
+| `move_card_to_board` | destructive | The same, to a list on any board you can see. Another board can be seen by other people (or be public), so this can expose the card. Undo moves it back (through `move_card_to_board`). |
 | `comment` | write | Comments as you; everyone on the board sees it. With a preview, no undo (delete it in Trello). |
 | `archive_card` | write | Archiving closes a card but keeps it, so it's a write with undo (unarchive), not a destructive action. With a preview. |
 | `unarchive_card` | write | Sends an archived card back to its list; undo archives it again. |

@@ -160,3 +160,12 @@ func TestWoodpeckerValidation(t *testing.T) {
 		t.Fatalf("%+v", h)
 	}
 }
+
+// Cancelling kills the steps in progress: destructive.
+func TestWoodpeckerRisks(t *testing.T) {
+	for _, a := range New().Manifest().Actions {
+		if a.Name == "cancel" && a.Risk != sdk.RiskDestructive {
+			t.Fatalf("cancel is %s", a.Risk)
+		}
+	}
+}

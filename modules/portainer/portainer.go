@@ -200,7 +200,7 @@ func stackState(s int) string {
 func (s stack) summary() map[string]any {
 	out := map[string]any{"id": s.ID, "name": s.Name, "type": stackTypes[s.Type], "environment": s.EndpointID, "state": stackState(s.Status)}
 	if s.GitConfig != nil {
-		out["git"] = s.GitConfig.URL
+		out["git"] = rest.StripUserinfo(s.GitConfig.URL)
 		out["ref"] = s.GitConfig.ReferenceName
 	}
 	if s.UpdateDate > 0 {
@@ -254,7 +254,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if e.Status == 1 {
 				state = "up"
 			}
-			row := map[string]any{"id": e.ID, "name": e.Name, "type": envTypes[e.Type], "url": e.URL, "state": state}
+			row := map[string]any{"id": e.ID, "name": e.Name, "type": envTypes[e.Type], "url": rest.StripUserinfo(e.URL), "state": state}
 			if len(e.Snapshots) > 0 {
 				s := e.Snapshots[len(e.Snapshots)-1]
 				row["running"], row["stopped"], row["stacks"], row["images"] = s.RunningContainerCount, s.StoppedContainerCount, s.StackCount, s.ImageCount
@@ -326,7 +326,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		var body map[string]any
 		mode := "compose file"
 		if s.GitConfig != nil {
-			mode = "Git " + s.GitConfig.URL + "@" + s.GitConfig.ReferenceName
+			mode = "Git " + rest.StripUserinfo(s.GitConfig.URL) + "@" + s.GitConfig.ReferenceName
 			path = fmt.Sprintf("/stacks/%d/git/redeploy", s.ID)
 			body = map[string]any{"pullImage": pull, "prune": false, "env": env, "repositoryReferenceName": s.GitConfig.ReferenceName}
 		} else {

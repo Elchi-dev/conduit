@@ -107,7 +107,7 @@ func TestImmich(t *testing.T) {
 		t.Fatal(string(r.Output))
 	}
 
-	r, err := invoke(m, "start_job", `{"job":"smartSearch","force":true}`, true)
+	r, err := invoke(m, "start_job_force", `{"job":"smartSearch"}`, true)
 	if err != nil || r.Plan == nil || r.Plan.Summary != "Start the smartSearch job for every asset" || f.started != "" {
 		t.Fatalf("plan %+v %v", r.Plan, err)
 	}
@@ -168,5 +168,30 @@ func TestImmichRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "i"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+// force redoes every asset (and wipes faces and people for the face jobs),
+// so start_job (write) refuses it; start_job_force is destructive.
+func TestImmichForceIsDestructive(t *testing.T) {
+	m, f := setup(t, "secret://admin")
+	risk := map[string]sdk.Risk{}
+	for _, a := range m.Manifest().Actions {
+		risk[a.Name] = a.Risk
+	}
+	if risk["start_job"] != sdk.RiskWrite || risk["start_job_force"] != sdk.RiskDestructive {
+		t.Fatalf("%v", risk)
+	}
+	for _, dry := range []bool{true, false} {
+		if _, err := invoke(m, "start_job", `{"job":"facialRecognition","force":true}`, dry); err == nil || !strings.Contains(err.Error(), "start_job_force") {
+			t.Fatal(err)
+		}
+	}
+	if f.started != "" {
+		t.Fatal(f.started)
+	}
+	r, err := invoke(m, "start_job_force", `{"job":"faceDetection"}`, true)
+	if err != nil || !strings.Contains(r.Plan.Summary, "discarding the existing faces and people") {
+		t.Fatalf("%+v %v", r.Plan, err)
 	}
 }

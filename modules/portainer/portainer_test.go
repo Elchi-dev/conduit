@@ -34,7 +34,7 @@ func (f *fakePortainer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stack := func(id int, git bool) string {
 		g := "null"
 		if git {
-			g = `{"URL":"https://git.example.com/ops/media.git","ReferenceName":"refs/heads/main"}`
+			g = `{"URL":"https://deploy:glpat_x@git.example.com/ops/media.git","ReferenceName":"refs/heads/main"}`
 		}
 		return `{"Id":` + map[bool]string{true: "3", false: "4"}[git] + `,"Name":"` + map[bool]string{true: "media", false: "web"}[git] + `","Type":2,"EndpointId":1,"Status":` + map[int]string{1: "1", 2: "2"}[id] + `,"Env":[{"name":"DB_PASSWORD","value":"hunter2"}],"GitConfig":` + g + `}`
 	}
@@ -112,7 +112,7 @@ func TestPortainer(t *testing.T) {
 		"images":       `"sizeMB":187`,
 	} {
 		r, err := invoke(m, action, `{"environment":1}`, false)
-		if err != nil || !strings.Contains(string(r.Output), want) || strings.Contains(string(r.Output), "hunter2") {
+		if err != nil || !strings.Contains(string(r.Output), want) || strings.Contains(string(r.Output), "hunter2") || strings.Contains(string(r.Output), "glpat_x") {
 			t.Fatalf("%s: %s %v", action, r.Output, err)
 		}
 	}
@@ -139,7 +139,10 @@ func TestPortainer(t *testing.T) {
 	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "Git https://git.example.com/ops/media.git@refs/heads/main") || strings.Contains(string(r.Plan.Changes[0].Before), "hunter2") {
 		t.Fatalf("plan %+v %v", r.Plan, err)
 	}
-	if _, err := invoke(m, "redeploy_stack", `{"id":3,"pullImage":false}`, false); err != nil {
+	if b, _ := json.Marshal(r.Plan); strings.Contains(string(b), "glpat_x") {
+		t.Fatalf("the preview shows the repository's credentials: %s", b)
+	}
+	if r, err := invoke(m, "redeploy_stack", `{"id":3,"pullImage":false}`, false); err != nil || strings.Contains(string(r.Output), "glpat_x") {
 		t.Fatal(err)
 	}
 	if last := f.seen[len(f.seen)-1]; !strings.HasPrefix(last, "PUT /api/stacks/3/git/redeploy?endpointId=1") || !strings.Contains(last, `"pullImage":false`) || !strings.Contains(last, `"DB_PASSWORD"`) {

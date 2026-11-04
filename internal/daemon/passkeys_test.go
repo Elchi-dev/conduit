@@ -10,9 +10,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -383,5 +386,87 @@ func TestPasskeyDisabledAndPasswordReset(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("passkeys_removed audited %d times, want 2", n)
+	}
+}
+
+// Starting a passkey sign-in needs no account, so one source can't hold more
+// than a few ceremonies open, can't start them quickly, and sign-ins can't
+// use up the room registrations need.
+func TestPasskeyCeremonyBudgets(t *testing.T) {
+	c := newPasskeyCeremonies()
+	for i := 0; i < maxCeremoniesPerKey; i++ {
+		if c.put(passkeyCeremony{kind: "login", owner: "203.0.113.9"}) == "" {
+			t.Fatal("under the per-source cap")
+		}
+	}
+	if c.put(passkeyCeremony{kind: "login", owner: "203.0.113.9"}) != "" {
+		t.Fatal("one source opened more than the per-source cap")
+	}
+	if c.put(passkeyCeremony{kind: "login", owner: "198.51.100.1"}) == "" {
+		t.Fatal("another source was refused")
+	}
+	// Taking a ceremony frees its slot.
+	var id string
+	for k, v := range c.m {
+		if v.owner == "203.0.113.9" {
+			id = k
+		}
+	}
+	if _, ok := c.take(id); !ok || c.put(passkeyCeremony{kind: "login", owner: "203.0.113.9"}) == "" {
+		t.Fatal("a finished ceremony still counts")
+	}
+	// Fill the sign-in table from many sources: registration still works.
+	for i := 0; c.kinds["login"] < maxLoginCeremonies; i++ {
+		if c.put(passkeyCeremony{kind: "login", owner: "src" + strconv.Itoa(i)}) == "" {
+			t.Fatal("refused before the table was full")
+		}
+	}
+	if c.put(passkeyCeremony{kind: "login", owner: "fresh"}) != "" {
+		t.Fatal("the sign-in table has no limit")
+	}
+	if c.put(passkeyCeremony{kind: "register", user: "u1", owner: "u1"}) == "" {
+		t.Fatal("sign-ins starved registration")
+	}
+	// Expired ceremonies are swept when the table is full.
+	for k, v := range c.m {
+		v.expires = time.Now().Add(-time.Second)
+		c.m[k] = v
+	}
+	if c.put(passkeyCeremony{kind: "login", owner: "fresh"}) == "" || len(c.m) != 1 || c.kinds["login"] != 1 || len(c.open) != 1 {
+		t.Fatalf("not swept: %d %v %d", len(c.m), c.kinds, len(c.open))
+	}
+
+	// Through the handler: per-source cap, then the begin rate limit
+	// (counted per IPv6 /64).
+	s := &Server{}
+	begin := func(addr string) (int, string) {
+		r := httptest.NewRequest("POST", "http://localhost/api/v1/auth/passkeys/login/begin", nil)
+		r.RemoteAddr = addr
+		w := httptest.NewRecorder()
+		s.beginPasskeyLogin(w, r)
+		var out struct{ Ceremony string }
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out.Ceremony
+	}
+	n := 0
+	for code, _ := begin("192.0.2.77:1"); code == http.StatusOK; code, _ = begin("192.0.2.77:1") {
+		if n++; n > maxCeremoniesPerKey {
+			t.Fatal("no per-source cap")
+		}
+	}
+	if code, _ := begin("192.0.2.78:1"); code != http.StatusOK {
+		t.Fatalf("another client got %d", code)
+	}
+	n = 0
+	for i := 0; i < 40; i++ {
+		code, id := begin("[2001:db8:1:2::" + strconv.FormatInt(int64(i+1), 16) + "]:443")
+		if code != http.StatusOK {
+			break
+		}
+		ceremonies.take(id) // finished, so only the rate limit applies
+		n++
+	}
+	if n != 30 {
+		t.Fatalf("one /64 started %d sign-ins", n)
 	}
 }

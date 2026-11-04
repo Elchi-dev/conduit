@@ -214,6 +214,13 @@ type Bucket struct {
 	Type     string `json:"type"`
 	FileLock bool   `json:"fileLock,omitempty"`
 	Rules    int    `json:"lifecycleRules"`
+	// lifecycle is the bucket's rules, for hide_file's check.
+	lifecycle []lifecycleRule
+}
+
+type lifecycleRule struct {
+	FileNamePrefix           string `json:"fileNamePrefix"`
+	DaysFromHidingToDeleting *int   `json:"daysFromHidingToDeleting"`
 }
 
 func (c *conn) buckets(ctx context.Context, name string) ([]Bucket, error) {
@@ -230,10 +237,10 @@ func (c *conn) buckets(ctx context.Context, name string) ([]Bucket, error) {
 	}
 	var r struct {
 		Buckets []struct {
-			ID    string `json:"bucketId"`
-			Name  string `json:"bucketName"`
-			Type  string `json:"bucketType"`
-			Rules []any  `json:"lifecycleRules"`
+			ID    string          `json:"bucketId"`
+			Name  string          `json:"bucketName"`
+			Type  string          `json:"bucketType"`
+			Rules []lifecycleRule `json:"lifecycleRules"`
 			Lock  struct {
 				Value struct {
 					Enabled bool `json:"isFileLockEnabled"`
@@ -246,25 +253,41 @@ func (c *conn) buckets(ctx context.Context, name string) ([]Bucket, error) {
 	}
 	out := []Bucket{}
 	for _, b := range r.Buckets {
-		out = append(out, Bucket{Name: b.Name, ID: b.ID, Type: b.Type, FileLock: b.Lock.Value.Enabled, Rules: len(b.Rules)})
+		out = append(out, Bucket{Name: b.Name, ID: b.ID, Type: b.Type, FileLock: b.Lock.Value.Enabled, Rules: len(b.Rules), lifecycle: b.Rules})
 	}
 	return out, nil
 }
 
 func (c *conn) bucketID(ctx context.Context, name string) (string, error) {
+	b, err := c.bucket(ctx, name)
+	return b.ID, err
+}
+
+func (c *conn) bucket(ctx context.Context, name string) (Bucket, error) {
 	if !bucketRe.MatchString(name) {
-		return "", errors.New("the bucket is its name: 6 to 63 letters, digits and dashes")
+		return Bucket{}, errors.New("the bucket is its name: 6 to 63 letters, digits and dashes")
 	}
 	bs, err := c.buckets(ctx, name)
 	if err != nil {
-		return "", err
+		return Bucket{}, err
 	}
 	for _, b := range bs {
 		if b.Name == name {
-			return b.ID, nil
+			return b, nil
 		}
 	}
-	return "", fmt.Errorf("no bucket %s (or the key can't see it)", name)
+	return Bucket{}, fmt.Errorf("no bucket %s (or the key can't see it)", name)
+}
+
+// deletesHidden returns the lifecycle rule that would delete fileName for
+// good some days after it's hidden, if there's one.
+func (b Bucket) deletesHidden(fileName string) *lifecycleRule {
+	for i, r := range b.lifecycle {
+		if r.DaysFromHidingToDeleting != nil && strings.HasPrefix(fileName, r.FileNamePrefix) {
+			return &b.lifecycle[i]
+		}
+	}
+	return nil
 }
 
 func validFileName(s string) error {
@@ -451,9 +474,19 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err := validFileName(p.FileName); err != nil {
 			return sdk.Result{}, err
 		}
-		bid, err := c.bucketID(ctx, p.Bucket)
+		bk, err := c.bucket(ctx, p.Bucket)
 		if err != nil {
 			return sdk.Result{}, err
+		}
+		bid := bk.ID
+		// Hiding is only reversible while the versions stay: a lifecycle
+		// rule with daysFromHidingToDeleting turns it into a deletion.
+		if r := bk.deletesHidden(p.FileName); r != nil {
+			prefix := "every file"
+			if r.FileNamePrefix != "" {
+				prefix = "files under " + r.FileNamePrefix
+			}
+			return sdk.Result{}, fmt.Errorf("%s has a lifecycle rule that deletes %s %d days after they're hidden, so hiding %s would delete it for good; that's delete_file_version (destructive), for each version", p.Bucket, prefix, *r.DaysFromHidingToDeleting, p.FileName)
 		}
 		var cur struct {
 			Files []file `json:"files"`
@@ -467,7 +500,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		target := p.Bucket + "/" + p.FileName
 		if call.DryRun {
 			before, _ := json.Marshal(cur.Files[0].row(false))
-			return sdk.Result{Plan: &sdk.Plan{Summary: "Hide " + target + " (its versions stay)",
+			return sdk.Result{Plan: &sdk.Plan{Summary: "Hide " + target + " (its versions are kept: no lifecycle rule deletes it once hidden)",
 				Changes: []sdk.Change{{Target: target, Op: "hide", Before: before}}}}, nil
 		}
 		var marker file

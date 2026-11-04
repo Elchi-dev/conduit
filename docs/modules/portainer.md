@@ -11,7 +11,7 @@ environments limits what Conduit can do. Enter the server address, such as
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `environments` | read | Each environment with type, state and its last snapshot's container, stack and image counts. |
-| `stacks` | read | Stacks (all, or of one `environment`) with type, state and Git source. Environment variables are never returned. |
+| `stacks` | read | Stacks (all, or of one `environment`) with type, state and Git source (any credentials in the repository address are removed, here and in previews). Environment variables are never returned. |
 | `start_stack` | write | The preview shows the state change. Undo stops it. |
 | `stop_stack` | destructive | Stops every container of the stack. Undo starts it. |
 | `redeploy_stack` | destructive | A Git stack pulls its repository again; any other compose stack is redeployed from its current compose file and variables. `pullImage` (default true) pulls newer images. The preview says which. Can't be undone. Kubernetes stacks aren't supported. |

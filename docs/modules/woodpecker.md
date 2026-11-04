@@ -15,7 +15,7 @@ it into the vault and enter its reference with the server address
 | `pipeline` | read | One pipeline's workflows and steps, with step ids, states, exit codes and durations |
 | `logs` | read, sensitive | The end of one step's log (default 200 lines, at most 2000 and 256 KB). The step is its name, `workflow/step`, or its id. Kept out of the audit log |
 | `restart` | destructive | Runs the pipeline again as a new one, so its code runs again with the repository's secrets. Preview first |
-| `cancel` | write | Stops a pending, running or blocked pipeline. Preview first |
+| `cancel` | destructive | Stops a pending, running or blocked pipeline; steps in progress are killed. Preview first |
 
 `repo` is always `owner/name` and numbers must be positive, so input can't
 reach other API paths. Redirects to another host are refused.

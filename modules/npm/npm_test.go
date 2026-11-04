@@ -192,7 +192,7 @@ func TestNPM(t *testing.T) {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	r, err = invoke(m, "delete_proxy_host", `{"id":1}`, false)
-	if err != nil || f.hosts[1] != nil || r.Undo == nil || r.Undo.Action != "create_proxy_host" {
+	if err != nil || f.hosts[1] != nil || r.Undo == nil || r.Undo.Action != "create_proxy_host_advanced" {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil {
@@ -268,5 +268,71 @@ func TestNPMRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "n"); h.Status != "down" || leaked {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// Custom nginx config and locations run as nginx itself, so they are only
+// for the destructive create_proxy_host_advanced, where every location field
+// is checked and the preview shows them in full. Loopback targets and NPM's
+// admin UI aren't published at write risk.
+func TestNPMAdvancedConfigIsDestructive(t *testing.T) {
+	m, f := setup(t, "secret://pw")
+	risk := map[string]sdk.Risk{}
+	for _, a := range m.Manifest().Actions {
+		risk[a.Name] = a.Risk
+	}
+	if risk["create_proxy_host"] != sdk.RiskWrite || risk["create_proxy_host_advanced"] != sdk.RiskDestructive || risk["disable"] != sdk.RiskDestructive || risk["enable"] != sdk.RiskWrite {
+		t.Fatalf("%v", risk)
+	}
+	base := `"domains":["pwn.example.com"],"forwardPort":80`
+	for _, in := range []string{
+		`{` + base + `,"forwardHost":"10.0.0.9","advancedConfig":"location /x { content_by_lua_block { os.execute('id') } }"}`,
+		`{` + base + `,"forwardHost":"10.0.0.9","locations":[{"path":"/y","forward_host":"10.0.0.6","forward_port":80}]}`,
+		`{` + base + `,"forwardHost":"127.0.0.1"}`,
+		`{` + base + `,"forwardHost":"127.8.9.10"}`,
+		`{` + base + `,"forwardHost":"::1"}`,
+		`{` + base + `,"forwardHost":"localhost"}`,
+		`{` + base + `,"forwardHost":"0.0.0.0"}`,
+	} {
+		if _, err := invoke(m, "create_proxy_host", in, false); err == nil {
+			t.Fatalf("create_proxy_host accepted %s", in)
+		}
+	}
+	nas := &conn{origin: "http://NAS.lan:8181"}
+	if nas.internalTarget("nas.lan", 81) == "" || nas.internalTarget("nas.LAN", 8181) == "" || nas.internalTarget("nas.lan", 8096) != "" || nas.internalTarget("10.0.0.5", 81) != "" {
+		t.Fatal("NPM's admin UI isn't recognised as a forward target")
+	}
+	for _, loc := range []string{
+		`{"path":"/y","forward_scheme":"http","forward_host":"127.0.0.1:81; }\n location /db { alias /data/; autoindex on; } #","forward_port":80}`,
+		`{"path":"/y { alias /etc/; } location /z","forward_host":"10.0.0.6","forward_port":80}`,
+		`{"path":"y","forward_host":"10.0.0.6","forward_port":80}`,
+		`{"path":"/y","forward_host":"10.0.0.6","forward_port":"80; alias /"}`,
+		`{"path":"/y","forward_host":"10.0.0.6","forward_port":80.5}`,
+		`{"path":"/y","forward_host":"10.0.0.6","forward_port":80,"forward_scheme":"http://evil/;"}`,
+		`"just a string"`,
+	} {
+		in := `{` + base + `,"forwardHost":"10.0.0.9","locations":[` + loc + `]}`
+		if _, err := invoke(m, "create_proxy_host_advanced", in, false); err == nil {
+			t.Fatalf("create_proxy_host_advanced accepted %s", loc)
+		}
+	}
+	for _, s := range f.seen {
+		if strings.HasPrefix(s, "POST ") {
+			t.Fatalf("refused input reached NPM: %s", s)
+		}
+	}
+	// The advanced action works, previews everything and sends only the
+	// checked location fields.
+	in := `{` + base + `,"forwardHost":"127.0.0.1","advancedConfig":"client_max_body_size 0;","locations":[{"path":"/api","forward_host":"10.0.0.6","forward_port":"9000","extra":"x"}]}`
+	r, err := invoke(m, "create_proxy_host_advanced", in, true)
+	if err != nil || r.Plan == nil || !strings.Contains(string(r.Plan.Changes[0].After), `client_max_body_size 0;`) || !strings.Contains(string(r.Plan.Changes[0].After), `"forward_host":"10.0.0.6"`) {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "create_proxy_host_advanced", in, false); err != nil {
+		t.Fatal(err)
+	}
+	last := f.seen[len(f.seen)-1]
+	if !strings.Contains(last, `"forward_port":9000`) || strings.Contains(last, "extra") {
+		t.Fatalf("%s", last)
 	}
 }

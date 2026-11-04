@@ -319,3 +319,48 @@ func TestMagnetHash(t *testing.T) {
 		}
 	}
 }
+
+// add is write, so it only saves inside the instance's saveRoots; with none
+// configured it takes no savePath at all.
+func TestQbittorrentSavePathConfined(t *testing.T) {
+	magnet := `"magnet:?xt=urn:btih:dddddddddddddddddddddddddddddddddddddddd&dn=x"`
+	sent := func(f *fakeQbt) string {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for i := len(f.seen) - 1; i >= 0; i-- {
+			if strings.Contains(f.seen[i], "/torrents/add") {
+				return f.seen[i]
+			}
+		}
+		return ""
+	}
+	m, f := setup(t, "2.11.2", "secret://pw")
+	if _, err := invoke(m, "add", `{"urls":[`+magnet+`],"savePath":"/downloads/x"}`, false); err == nil || !strings.Contains(err.Error(), "saveRoots") {
+		t.Fatal(err)
+	}
+	if sent(f) != "" {
+		t.Fatal("sent without saveRoots")
+	}
+
+	raw, _ := json.Marshal(Config{URL: "http://" + f.host + "/qbt/", Username: "admin", Password: "secret://pw", SaveRoots: []string{"/downloads/", "/media/tv"}})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://pw": "pw"}), "q", raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, sp := range []string{"/etc/cron.d", "/downloads/../etc", "/downloadsX", "downloads/x", "/media/tv/../../root/.ssh", "/media"} {
+		if _, err := invoke(m, "add", `{"urls":[`+magnet+`],"savePath":"`+sp+`"}`, false); err == nil {
+			t.Fatalf("accepted %s", sp)
+		}
+	}
+	if sent(f) != "" {
+		t.Fatal("a refused save path reached qBittorrent")
+	}
+	if _, err := invoke(m, "add", `{"urls":[`+magnet+`],"savePath":"/downloads/./iso//"}`, false); err != nil || !strings.Contains(sent(f), "savepath=%2Fdownloads%2Fiso") {
+		t.Fatalf("%v %s", err, sent(f))
+	}
+	for _, roots := range [][]string{{"downloads"}, {"/a/../etc"}} {
+		raw, _ := json.Marshal(Config{URL: "http://" + f.host + "/qbt/", Username: "admin", Password: "secret://pw", SaveRoots: roots})
+		if err := New().Configure(context.Background(), fakehost.New(nil), "x", raw); err == nil {
+			t.Fatalf("accepted save roots %v", roots)
+		}
+	}
+}

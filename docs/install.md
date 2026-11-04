@@ -96,17 +96,12 @@ http://127.0.0.1:7600.
 ## Android
 
 Download `conduit-android-<version>.apk` from the release and open it (allow
-installs from your browser or file manager when asked), or add the F-Droid
-repository so F-Droid, Droid-ify or Neo Store install Conduit and keep it
-updated:
+installs from your browser or file manager when asked). The app checks for
+new versions itself and installs them in place; every APK is signed with
+the same key, so updates never need an uninstall.
 
-```
-https://github.com/Elchi-dev/conduit/releases/latest/download
-```
-
-In F-Droid: Settings, Repositories, add, paste the address. The repository is
-signed with the same key as the APK and is published with each signed
-release; it appears once the release signing keys are set up.
+An F-Droid repository (for F-Droid, Droid-ify or Neo Store) will follow
+once it has a permanent web address.
 
 ## After installing
 

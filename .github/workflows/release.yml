@@ -233,6 +233,10 @@ jobs:
           gh release upload "$TAG" "conduit-android-${TAG#v}.apk" --clobber
       - name: F-Droid repository
         if: steps.keys.outputs.signed == 'true'
+        # fdroidserver requires a repository address ending in /repo, which
+        # release downloads can't have; until the repository has a static
+        # home (the website), this step mustn't fail the release.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           FDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

@@ -16,7 +16,7 @@ self-signed certificate, enter its SHA-256 `fingerprint`.
 | --- | --- | --- |
 | `sites` | read | Site id, name, main URL, time zone, currency and whether it's an ecommerce site. |
 | `visits_summary` | read | Visits, unique visitors, users, actions, actions per visit, bounce rate (%), average time on site (seconds) and converted visits. The `period` (`day`, `week`, `month` by default, `year`) contains `date` (`today` by default, `yesterday` or `YYYY-MM-DD`); or give a `from`/`to` range of up to a year. |
-| `top_pages` | read | The most visited page URLs, with visits, pageviews, average time on page, bounce and exit rates. Same periods; up to `limit` rows (10 by default, at most 1000). |
+| `top_pages` | read | The most visited page URLs (without their query, shown as `?…`, since a query can hold one visitor's details), with visits, pageviews, average time on page, bounce and exit rates. Same periods; up to `limit` rows (10 by default, at most 1000). |
 | `top_referrers` | read | Where visits came from (search engines, websites, campaigns, social networks), with the referrer type and visits. Same periods and limit. |
 | `live` | read | Visits, visitors, actions and converted visits in the last `minutes` (30 by default, at most 1440). |
 

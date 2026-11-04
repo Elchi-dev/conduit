@@ -33,7 +33,10 @@ before a request is made; long values are clipped and the output is capped.
 
 - Grant the service account the **Viewer** role on each property; the only
   scope requested is `analytics.readonly`.
-- User-scoped custom dimensions (`customUser:…`) and identifiers such as
-  `userId` are refused, so reports stay about traffic, not people.
+- User-scoped custom dimensions (`customUser:…`, in any case) and names
+  that look like an identifier are refused, so reports stay about traffic,
+  not people: `userId`, `clientId`, session ids, `transactionId`, and
+  custom dimensions such as `customEvent:user_id` or `customEvent:email`
+  (compared without case, underscores or dashes).
 - GA4 applies its own quotas per property; a used-up quota is reported as
   such.

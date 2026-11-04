@@ -81,7 +81,8 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "order", Title: "Order details", Description: "One order with its items, costs, shipments, and the recipient's name, email, phone and address.", Risk: sdk.RiskRead, Sensitive: true, Input: sdk.Schema(order)},
 			{Name: "shipping_rates", Title: "Shipping rates", Description: "What shipping would cost and how long it takes for some variants to a country (and state, city, zip). Nothing is ordered.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","required":["country","items"],"properties":{"country":{"type":"string","description":"Two-letter country code, like US or DE"},"state":{"type":"string","description":"State code, required for US, CA and AU"},"city":{"type":"string"},"zip":{"type":"string"},"currency":{"type":"string","description":"Three-letter currency code; the store's when empty"},"items":{"type":"array","minItems":1,"maxItems":50,"items":{"type":"object","required":["variant","quantity"],"properties":{"variant":{"type":"integer","minimum":1,"description":"Printful catalog variant id"},"quantity":{"type":"integer","minimum":1,"maximum":1000}}}}}}`)},
-			{Name: "confirm_order", Title: "Confirm a draft order", Description: "Sends a draft order to fulfilment. Printful charges the card on your account the order's cost; the preview shows the exact amount. Can't be undone from here.", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(order)},
+			{Name: "confirm_order", Title: "Confirm a draft order", Description: "Sends a draft order to fulfilment. Printful charges the card on your account the order's cost; the preview shows the exact amount, which the run must give as expectedCost (refused if the cost changed since). Can't be undone from here.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{"order":{"type":"string","description":"Order id, or @ and your external id (like @1001)"},"expectedCost":{"type":"string","description":"The charge the preview shows, like 25.22 EUR; needed to confirm, refused if the order's cost changed since"}}}`)},
 		},
 	}
 }
@@ -131,8 +132,15 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 // Close implements sdk.Module.
 func (m *Module) Close(id string) error { m.set.Delete(id); return nil }
 
-func scrub(s string) string {
+// scrub keeps credentials, emails and phone numbers, and any of the
+// recipient details in hide, out of error text, then shortens it.
+func scrub(s string, hide ...string) string {
 	s = rest.Redact(s)
+	for _, v := range hide {
+		if v = strings.TrimSpace(v); len(v) >= 3 {
+			s = strings.ReplaceAll(s, v, "[recipient]")
+		}
+	}
 	s = emailRe.ReplaceAllString(s, "[email]")
 	s = phoneRe.ReplaceAllString(s, "[number]")
 	if len(s) > 240 {
@@ -141,15 +149,15 @@ func scrub(s string) string {
 	return s
 }
 
-func friendly(err error) error {
+func friendly(err error, hide ...string) error {
 	if err == nil {
 		return nil
 	}
 	var e *rest.Error
 	if !errors.As(err, &e) {
-		return errors.New(scrub(err.Error()))
+		return errors.New(scrub(err.Error(), hide...))
 	}
-	msg := "Printful: " + scrub(e.Message)
+	msg := "Printful: " + scrub(e.Message, hide...)
 	switch e.Status {
 	case http.StatusUnauthorized:
 		msg = "Printful refused the token"
@@ -164,7 +172,8 @@ func friendly(err error) error {
 }
 
 // do sends a request and unwraps Printful's {"code","result"} envelope.
-func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, out any) (*paging, error) {
+// Error text is kept free of the details in hide.
+func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, out any, hide ...string) (*paging, error) {
 	var env struct {
 		Code   int             `json:"code"`
 		Result json.RawMessage `json:"result"`
@@ -174,14 +183,14 @@ func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, 
 		} `json:"error"`
 	}
 	if _, err := c.api.Do(ctx, method, path, q, body, &env); err != nil {
-		return nil, friendly(err)
+		return nil, friendly(err, hide...)
 	}
 	if env.Code >= 300 {
 		msg := "the request failed"
 		if env.Error != nil && env.Error.Message != "" {
 			msg = env.Error.Message
 		}
-		return nil, friendly(&rest.Error{Status: env.Code, Message: msg})
+		return nil, friendly(&rest.Error{Status: env.Code, Message: msg}, hide...)
 	}
 	if out != nil && len(env.Result) > 0 {
 		if err := json.Unmarshal(env.Result, out); err != nil {
@@ -211,6 +220,42 @@ func normal(s string) (string, bool) {
 		return "", false
 	}
 	return strconv.FormatInt(w, 10) + "." + frac, true
+}
+
+// units reads a decimal string in ten-thousandths, to compare amounts.
+func units(s string) (int64, bool) {
+	n, ok := normal(s)
+	if !ok {
+		return 0, false
+	}
+	whole, frac, _ := strings.Cut(n, ".")
+	if len(frac) > 4 {
+		return 0, false
+	}
+	w, _ := strconv.ParseInt(whole, 10, 64)
+	f, _ := strconv.ParseInt((frac + "0000")[:4], 10, 64)
+	return w*10000 + f, true
+}
+
+// expectCost checks the charge the preview showed (like 25.22 or
+// 25.22 EUR) against the order now: a draft's items, shipping or address,
+// and so its cost, can change between a preview and its approval.
+func expectCost(given string, c costs) error {
+	now := money(c.Total, c.Currency)
+	g := strings.TrimSpace(given)
+	if g == "" {
+		return fmt.Errorf("give expectedCost %q, the charge the preview showed", now)
+	}
+	n, cur, _ := strings.Cut(g, " ")
+	v, ok := units(n)
+	w, _ := units(c.Total)
+	if !ok || (cur != "" && !strings.EqualFold(strings.TrimSpace(cur), c.Currency)) {
+		return fmt.Errorf("expectedCost is an amount like %q, as the preview showed it", now)
+	}
+	if v != w {
+		return fmt.Errorf("the order changed since the preview: it costs %s now, not %s; preview it again", now, g)
+	}
+	return nil
 }
 
 func money(s, cur string) string {
@@ -357,6 +402,8 @@ type input struct {
 	Zip      string `json:"zip"`
 	Currency string `json:"currency"`
 	Items    []item `json:"items"`
+	// The charge the preview showed, checked again when the order is confirmed.
+	ExpectedCost string `json:"expectedCost"`
 }
 
 // orderPath turns an order id or @external id into its path.
@@ -415,7 +462,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			}
 			return sdk.JSON(statusOut(o.orderRow))
 		}
-		return c.confirm(ctx, call, path)
+		return c.confirm(ctx, call, path, p.ExpectedCost)
 	case "shipping_rates":
 		return c.rates(ctx, p)
 	}
@@ -523,7 +570,7 @@ func (c *conn) orderDetail(ctx context.Context, path string) (sdk.Result, error)
 	return sdk.JSON(out)
 }
 
-func (c *conn) confirm(ctx context.Context, call sdk.Call, path string) (sdk.Result, error) {
+func (c *conn) confirm(ctx context.Context, call sdk.Call, path, expected string) (sdk.Result, error) {
 	o, err := c.getOrder(ctx, path)
 	if err != nil {
 		return sdk.Result{}, err
@@ -538,20 +585,32 @@ func (c *conn) confirm(ctx context.Context, call sdk.Call, path string) (sdk.Res
 		return sdk.JSON(map[string]any{"order": o.ID, "status": o.Status, "note": "nothing to change: it's confirmed already"})
 	}
 	charge := money(o.Costs.Total, o.Costs.Currency)
-	if _, ok := normal(o.Costs.Total); !ok || o.Costs.Currency == "" {
+	if _, ok := units(o.Costs.Total); !ok || !curRe.MatchString(o.Costs.Currency) {
 		return sdk.Result{}, fmt.Errorf("Printful hasn't worked out order %s's cost yet; try again in a moment", o.label())
 	}
+	expect := expectCost(expected, o.Costs)
 	if call.DryRun {
 		items := 0
 		for _, it := range o.Items {
 			items += it.Quantity
 		}
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Confirm order %s (%d items, %s): Printful charges your card %s and starts fulfilment", o.label(), items, o.ShipService, charge),
+		note := ""
+		if expected == "" {
+			note = fmt.Sprintf(" To run it, give expectedCost %q; it's refused if the cost changed.", charge)
+		} else if expect != nil {
+			note = " Running this call will be refused: " + expect.Error() + "."
+		}
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Confirm order %s (%d items, %s): Printful charges your card %s and starts fulfilment. It can't be undone.%s", o.label(), items, o.ShipService, charge, note),
 			Changes: []sdk.Change{{Target: "order " + o.label(), Op: "confirm", Before: mustJSON(map[string]any{"status": o.Status}),
 				After: mustJSON(map[string]any{"status": "pending", "charge": charge, "costs": o.Costs.out()})}}}}, nil
 	}
+	if expect != nil {
+		return sdk.Result{}, expect
+	}
+	r := o.Recipient
 	var after orderRow
-	if _, err := c.do(ctx, http.MethodPost, "/orders/"+strconv.FormatInt(o.ID, 10)+"/confirm", nil, nil, &after); err != nil {
+	if _, err := c.do(ctx, http.MethodPost, "/orders/"+strconv.FormatInt(o.ID, 10)+"/confirm", nil, nil, &after,
+		r.Name, r.Company, r.Address1, r.Address2, r.City, r.Zip, r.Email, r.Phone); err != nil {
 		return sdk.Result{}, err
 	}
 	out := map[string]any{"order": o.ID, "status": after.Status, "charged": charge}

@@ -218,6 +218,14 @@ func TestInvalidInputNeverReachesGoogle(t *testing.T) {
 		{"report", `{"property":"123","dimensions":["page path"]}`},
 		{"report", `{"property":"123","dimensions":["customUser:email"]}`},
 		{"report", `{"property":"123","dimensions":["userId"]}`},
+		{"report", `{"property":"123","dimensions":["userid"]}`},
+		{"report", `{"property":"123","dimensions":["customuser:plan"]}`},
+		{"report", `{"property":"123","dimensions":["customEvent:user_id"]}`},
+		{"report", `{"property":"123","dimensions":["customEvent:client-id"]}`},
+		{"report", `{"property":"123","dimensions":["customEvent:Email"]}`},
+		{"report", `{"property":"123","dimensions":["transactionId"]}`},
+		{"realtime", `{"property":"123","dimensions":["customUser:plan"]}`},
+		{"report", `{"property":"123","metrics":["customUser:x"]}`},
 		{"report", `{"property":"123","metrics":["activeUsers","activeUsers"]}`},
 		{"report", `{"property":"123","metrics":["a","b","c","d","e","f","g","h","i","j","k"]}`},
 		{"report", `{"property":"123","limit":1001}`},
@@ -255,5 +263,18 @@ func TestCrossHostRedirectRefused(t *testing.T) {
 	}
 	if hits != 0 {
 		t.Fatal("followed")
+	}
+}
+
+func TestIdentifyingNames(t *testing.T) {
+	for _, n := range []string{"pagePath", "country", "activeUsers", "newUsers", "sessions", "sessionsPerUser", "signedInWithUserId", "customEvent:plan", "keyEvents:purchase"} {
+		if identifies(n) {
+			t.Errorf("%s refused", n)
+		}
+	}
+	for _, n := range []string{"userId", "USERID", "clientId", "sessionId", "customUser:plan", "CUSTOMUSER:plan", "customEvent:user_id", "customEvent:ga_session_id", "customItem:email", "transactionId"} {
+		if !identifies(n) {
+			t.Errorf("%s allowed", n)
+		}
 	}
 }

@@ -62,7 +62,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		io.WriteString(w, `{"nb_uniq_visitors":80,"nb_users":3,"nb_visits":100,"nb_actions":250,"bounce_count":40,"sum_visit_length":9000,"bounce_rate":"40%","nb_actions_per_visit":2.5,"avg_time_on_site":90,"nb_visits_converted":2}`)
 	case "Actions.getPageUrls":
-		io.WriteString(w, `[{"label":"/","nb_visits":60,"nb_hits":80,"avg_time_on_page":30,"bounce_rate":"35%","exit_rate":"50%"},{"label":"/pricing","nb_visits":20,"nb_hits":22},{"label":"/x","nb_visits":1}]`)
+		io.WriteString(w, `[{"label":"/","nb_visits":60,"nb_hits":80,"avg_time_on_page":30,"bounce_rate":"35%","exit_rate":"50%"},{"label":"/pricing","nb_visits":20,"nb_hits":22},{"label":"/x","nb_visits":1},{"label":"/welcome?email=jane%40example.org&ref=1","nb_visits":1}]`)
 	case "Referrers.getAll":
 		io.WriteString(w, `[{"label":"Google","referer_type":2,"nb_visits":30},{"label":"news.example.org","referer_type":3,"nb_visits":5}]`)
 	case "Live.getCounters":
@@ -102,6 +102,7 @@ func TestMatomoReads(t *testing.T) {
 		{"visits_summary", `{"site":1,"date":"2020-01-01"}`, `"visits":0`},
 		{"visits_summary", `{"site":1,"from":"2026-01-01","to":"2026-12-31"}`, `"period":"range"`},
 		{"top_pages", `{"site":1,"limit":2}`, `{"avgTimeOnPageSeconds":0,"bounceRate":0,"exitRate":0,"page":"/pricing","pageviews":22,"visits":20}`},
+		{"top_pages", `{"site":1}`, `"page":"/welcome?…"`},
 		{"top_referrers", `{"site":1}`, `{"referrer":"Google","type":"search","visits":30}`},
 		{"live", `{"site":1}`, `"visitors":3`},
 	} {
@@ -113,6 +114,9 @@ func TestMatomoReads(t *testing.T) {
 	last := f.seen[len(f.seen)-1]
 	if last.Get("method") != "Live.getCounters" || last.Get("lastMinutes") != "30" || last.Get("idSite") != "1" {
 		t.Fatal(last)
+	}
+	if r, _ := invoke(m, "top_pages", `{"site":1}`); strings.Contains(string(r.Output), "jane") {
+		t.Fatalf("a page's query reached the output: %s", r.Output)
 	}
 	r, _ := invoke(m, "top_pages", `{"site":1,"limit":2}`)
 	if strings.Contains(string(r.Output), `"/x"`) || !strings.Contains(string(r.Output), `"truncated":true`) {

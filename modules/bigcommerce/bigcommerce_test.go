@@ -137,15 +137,21 @@ func TestBigCommerceReads(t *testing.T) {
 func TestBigCommerceStatus(t *testing.T) {
 	m, f := setup(t, "secret://bc")
 	r, err := invoke(m, "update_order_status", `{"order":100,"status":"shipped"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Set order 100 (total 49.00 EUR) from awaiting_fulfillment to shipped; BigCommerce may email the customer" || f.statusID != 11 {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Set order 100 (total 49.00 EUR) from awaiting_fulfillment to shipped; BigCommerce may email the customer. To run it, give expectedStatus "awaiting_fulfillment" (the order as previewed); it's refused if the order changed.` || f.statusID != 11 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	plan, _ := json.Marshal(r.Plan)
 	if strings.Contains(string(plan), "Jane") || strings.Contains(string(plan), "jane") {
 		t.Fatalf("the preview has personal data: %s", plan)
 	}
-	r, err = invoke(m, "update_order_status", `{"order":100,"status":"shipped"}`, false)
-	if err != nil || f.statusID != 2 || r.Undo == nil || string(r.Undo.Input) != `{"order":100,"status":"awaiting_fulfillment"}` {
+	if _, err := invoke(m, "update_order_status", `{"order":100,"status":"shipped"}`, false); err == nil || f.statusID != 11 {
+		t.Fatalf("ran without the previewed status: %v", err)
+	}
+	if _, err := invoke(m, "update_order_status", `{"order":100,"status":"shipped","expectedStatus":"pending"}`, false); err == nil || f.statusID != 11 || !strings.Contains(err.Error(), "changed since the preview") {
+		t.Fatal(err)
+	}
+	r, err = invoke(m, "update_order_status", `{"order":100,"status":"shipped","expectedStatus":"awaiting_fulfillment"}`, false)
+	if err != nil || f.statusID != 2 || r.Undo == nil || string(r.Undo.Input) != `{"expectedStatus":"shipped","order":100,"status":"awaiting_fulfillment"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if r, err := invoke(m, "update_order_status", `{"order":100,"status":"shipped"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") || r.Undo != nil {
@@ -158,15 +164,22 @@ func TestBigCommerceStatus(t *testing.T) {
 	if err != nil || !strings.Contains(r.Plan.Summary, "total 49.00 EUR") || !strings.Contains(r.Plan.Summary, "no money is refunded") {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if r, err := invoke(m, "update_order_status", `{"order":100,"status":"cancelled"}`, false); err != nil || r.Undo != nil || f.statusID != 5 {
+	if r, err := invoke(m, "update_order_status", `{"order":100,"status":"cancelled","expectedStatus":"awaiting_fulfillment"}`, false); err != nil || r.Undo != nil || f.statusID != 5 {
 		t.Fatalf("a cancellation has no undo: %+v %v", r, err)
 	}
+	// An earlier change's undo doesn't bring the cancelled order back.
+	if _, err := invoke(m, "update_order_status", `{"expectedStatus":"shipped","order":100,"status":"awaiting_fulfillment"}`, false); err == nil || f.statusID != 5 {
+		t.Fatalf("the undo resurrected a cancelled order: %v", err)
+	}
+	if r, err := invoke(m, "update_order_status", `{"order":100,"status":"pending"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "becomes active again") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
 	f.ignore = true
-	if _, err := invoke(m, "update_order_status", `{"order":100,"status":"completed"}`, false); err == nil || !strings.Contains(err.Error(), "kept") {
+	if _, err := invoke(m, "update_order_status", `{"order":100,"status":"completed","expectedStatus":"cancelled"}`, false); err == nil || !strings.Contains(err.Error(), "kept") {
 		t.Fatal(err)
 	}
 	n := len(f.seen)
-	if _, err := invoke(m, "update_order_status", `{"order":101,"status":"completed"}`, false); err == nil || len(f.seen) != n+1 {
+	if _, err := invoke(m, "update_order_status", `{"order":101,"status":"completed","expectedStatus":"cancelled"}`, false); err == nil || len(f.seen) != n+1 {
 		t.Fatalf("changed another order: %v %v", err, f.seen[n:])
 	}
 	if _, err := invoke(m, "update_order_status", `{"order":7,"status":"completed"}`, true); err == nil || !strings.Contains(err.Error(), "no order 7") {

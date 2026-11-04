@@ -72,9 +72,31 @@ var (
 	fieldRe = regexp.MustCompile(`^[a-z][A-Za-z0-9]{1,63}(?::[A-Za-z0-9_]{1,64})?$`)
 )
 
-// refused are names that would identify a visitor rather than describe
-// traffic; user-scoped custom dimensions (customUser:…) are refused too.
-var refused = map[string]bool{"userId": true, "clientId": true, "sessionId": true}
+// identifying are the words of names that would identify a visitor (or a
+// purchase, which leads to one) rather than describe traffic, compared
+// without case, underscores or dashes: userId, user_id or a custom
+// customEvent:user_id, clientId, a session id, an email. User-scoped custom
+// dimensions (customUser:…) are refused whatever their name.
+var identifying = []string{"userid", "clientid", "sessionid", "pseudoid", "transactionid", "email", "phone", "ipaddress"}
+
+// identifies says whether a dimension or metric name could single out a
+// visitor.
+func identifies(n string) bool {
+	l := strings.ToLower(n)
+	if strings.HasPrefix(l, "customuser:") {
+		return true
+	}
+	l = strings.NewReplacer("_", "", "-", "").Replace(l)
+	if l == "signedinwithuserid" { // yes or no, not the id
+		return false
+	}
+	for _, w := range identifying {
+		if strings.Contains(l, w) {
+			return true
+		}
+	}
+	return false
+}
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
@@ -271,7 +293,7 @@ func names(in []string, kind string, max int, def []string) ([]string, error) {
 	out := []string{}
 	for _, n := range in {
 		n = strings.TrimSpace(n)
-		if !fieldRe.MatchString(n) || refused[n] || strings.HasPrefix(n, "customUser:") {
+		if !fieldRe.MatchString(n) || identifies(n) {
 			return nil, fmt.Errorf("%q isn't a %s name this module reads (GA4 API names like pagePath or activeUsers)", clip(n, 80), strings.TrimSuffix(kind, "s"))
 		}
 		if seen[n] {

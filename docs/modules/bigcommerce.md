@@ -17,7 +17,7 @@ and digits after `/stores/` in the API path it shows, such as
 | `order` | read, sensitive | One order with line items, the customer's message, and the billing and shipping names, emails, phones and addresses. |
 | `products` | read | Name, SKU, price, visibility, availability, inventory tracking and stock. `search` filters. |
 | `inventory` | read | Stock of tracked products, per variant where stock is tracked by variant. `below` keeps only what's running low. |
-| `update_order_status` | destructive | Sets an order's status: pending, awaiting payment, fulfilment, shipment or pickup, shipped, partially shipped, completed, cancelled, declined, manual verification or disputed. The preview shows the total in the order's currency and both statuses. Undo sets the previous status back (not after a cancellation or decline). |
+| `update_order_status` | destructive | Sets an order's status: pending, awaiting payment, fulfilment, shipment or pickup, shipped, partially shipped, completed, cancelled, declined, manual verification or disputed. The preview shows the total in the order's currency and both statuses. The run must give `expectedStatus`, the status the preview showed, and is refused if the order moved on since. Undo sets the previous status back (not after a cancellation or decline), and only while the order still has the status it was set to. |
 
 `update_order_status` says "nothing to change" when the order already has
 that status.

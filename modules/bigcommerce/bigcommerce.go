@@ -102,8 +102,8 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"search":{"type":"string","description":"Words to look for in names, SKUs and descriptions"},` + page + `}}`)},
 			{Name: "inventory", Title: "Inventory", Description: "Stock of products whose inventory is tracked, per variant where tracked by variant, optionally only what's running low.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"below":{"type":"integer","minimum":1,"description":"Only items with fewer than this many in stock"},"limit":{"type":"integer","default":100,"minimum":1,"maximum":250}}}`)},
-			{Name: "update_order_status", Title: "Change an order's status", Description: "Sets an order's status, like shipped, completed or cancelled. BigCommerce emails the customer about most changes, and cancelling or declining can return the stock; no money is refunded. Undo sets the previous status back, except after a cancellation or decline.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["order","status"],"properties":{` + order + `,"status":{"type":"string","enum":` + set + `}}}`)},
+			{Name: "update_order_status", Title: "Change an order's status", Description: "Sets an order's status, like shipped, completed or cancelled. BigCommerce emails the customer about most changes, and cancelling or declining can return the stock; no money is refunded. Undo sets the previous status back, except after a cancellation or decline. The run must give the status the preview showed.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["order","status"],"properties":{` + order + `,"status":{"type":"string","enum":` + set + `},"expectedStatus":{"type":"string","description":"The order's status now, as the preview shows it; needed to run, refused if the order changed since"}}}`)},
 		},
 	}
 }
@@ -271,6 +271,25 @@ type input struct {
 	Order  int64  `json:"order"`
 	Search string `json:"search"`
 	Below  int    `json:"below"`
+	// The status the preview showed, checked again when the change runs.
+	ExpectedStatus string `json:"expectedStatus"`
+}
+
+// expectStatus checks the status the preview showed against the order now:
+// an order can move on between a preview and its approval (cancelled,
+// refunded), and the change approved was from the status shown.
+func expectStatus(given, now string) error {
+	g := strings.ToLower(strings.TrimSpace(given))
+	switch {
+	case g == "":
+		return fmt.Errorf("give expectedStatus %q, the status the preview showed", now)
+	case g != now:
+		if len(g) > 40 {
+			g = g[:40] + "…"
+		}
+		return fmt.Errorf("the order changed since the preview: its status is %s now, not %s; preview it again", now, g)
+	}
+	return nil
 }
 
 func limit(n, def, most int) int {
@@ -587,10 +606,20 @@ func (c *conn) updateStatus(ctx context.Context, call sdk.Call, p input) (sdk.Re
 		return sdk.Result{}, fmt.Errorf("order %d is %s; its status stays", o.ID, from)
 	}
 	total := money(o.TotalIncTax, o.CurrencyCode)
+	expect := expectStatus(p.ExpectedStatus, from)
 	if call.DryRun {
 		summary := fmt.Sprintf("Set order %d (total %s) from %s to %s; BigCommerce may email the customer", o.ID, total, from, to)
 		if to == "cancelled" || to == "declined" {
 			summary = fmt.Sprintf("Set order %d (total %s) from %s to %s: no money is refunded, its stock may be returned, and BigCommerce may email the customer", o.ID, total, from, to)
+		}
+		if from == "cancelled" || from == "declined" {
+			summary += "; the " + from + " order becomes active again"
+		}
+		summary += "."
+		if p.ExpectedStatus == "" {
+			summary += fmt.Sprintf(" To run it, give expectedStatus %q (the order as previewed); it's refused if the order changed.", from)
+		} else if expect != nil {
+			summary += " Running this call will be refused: " + expect.Error() + "."
 		}
 		before := map[string]any{"status": from, "total": total, "paymentStatus": o.PaymentStatus}
 		if parse(o.RefundedAmount) > 0 {
@@ -598,6 +627,9 @@ func (c *conn) updateStatus(ctx context.Context, call sdk.Call, p input) (sdk.Re
 		}
 		return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: fmt.Sprintf("order %d", o.ID), Op: "set_status",
 			Before: mustJSON(before), After: mustJSON(map[string]any{"status": to})}}}}, nil
+	}
+	if expect != nil {
+		return sdk.Result{}, expect
 	}
 	var after orderRow
 	if err := c.do(ctx, http.MethodPut, "/v2/orders/"+strconv.FormatInt(o.ID, 10), nil, map[string]any{"status_id": statusIDs[to]}, &after); err != nil {
@@ -608,7 +640,8 @@ func (c *conn) updateStatus(ctx context.Context, call sdk.Call, p input) (sdk.Re
 	}
 	res, err := sdk.JSON(map[string]any{"order": o.ID, "status": to, "was": from})
 	if to != "cancelled" && to != "declined" && settable[from] {
-		res.Undo = sdk.UndoWith("update_order_status", map[string]any{"order": o.ID, "status": from}, fmt.Sprintf("Set order %d back to %s", o.ID, from))
+		// The undo runs only while the order is still where this left it.
+		res.Undo = sdk.UndoWith("update_order_status", map[string]any{"order": o.ID, "status": from, "expectedStatus": to}, fmt.Sprintf("Set order %d back to %s", o.ID, from))
 	}
 	return res, err
 }

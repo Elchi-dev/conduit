@@ -417,7 +417,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		row = func(r map[string]any) map[string]any {
-			return map[string]any{"page": clip(str(r["label"]), 300), "visits": int64(num(r["nb_visits"])), "pageviews": int64(num(r["nb_hits"])),
+			return map[string]any{"page": clip(pageLabel(str(r["label"])), 300), "visits": int64(num(r["nb_visits"])), "pageviews": int64(num(r["nb_hits"])),
 				"avgTimeOnPageSeconds": num(r["avg_time_on_page"]), "bounceRate": num(r["bounce_rate"]), "exitRate": num(r["exit_rate"])}
 		}
 	} else {
@@ -438,6 +438,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		head["truncated"] = true
 	}
 	return sdk.JSON(head)
+}
+
+// pageLabel drops a page URL's query and fragment: Matomo keeps the query
+// of each URL it tracks unless it's excluded in the site's settings, and a
+// query often holds one visitor's details (an email in a sign-up link, a
+// reset token, a search). It's shown as "?…".
+func pageLabel(s string) string {
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		return s[:i] + "?…"
+	}
+	return s
 }
 
 // refType names Matomo's referrer type codes.

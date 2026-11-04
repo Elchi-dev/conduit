@@ -124,14 +124,22 @@ func TestPrintfulReads(t *testing.T) {
 func TestPrintfulConfirm(t *testing.T) {
 	m, f := setup(t, "secret://pf")
 	r, err := invoke(m, "confirm_order", `{"order":"@1001"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Confirm order 77 (1001) (2 items, Flat Rate (3-4 business days)): Printful charges your card 25.22 EUR and starts fulfilment" || f.confirms != 0 {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Confirm order 77 (1001) (2 items, Flat Rate (3-4 business days)): Printful charges your card 25.22 EUR and starts fulfilment. It can't be undone. To run it, give expectedCost "25.22 EUR"; it's refused if the cost changed.` || f.confirms != 0 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	plan, _ := json.Marshal(r.Plan)
 	if strings.Contains(string(plan), "Jane") || strings.Contains(string(plan), "jane") {
 		t.Fatalf("the preview has personal data: %s", plan)
 	}
-	r, err = invoke(m, "confirm_order", `{"order":77}`, false)
+	for _, bad := range []string{``, `,"expectedCost":"25.21"`, `,"expectedCost":"25.22 USD"`, `,"expectedCost":"25,22"`} {
+		if _, err := invoke(m, "confirm_order", `{"order":77`+bad+`}`, false); err == nil || f.confirms != 0 {
+			t.Fatalf("%s: confirmed a cost that wasn't previewed: %v", bad, err)
+		}
+	}
+	if r, err := invoke(m, "confirm_order", `{"order":77,"expectedCost":"20.00"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "will be refused") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "confirm_order", `{"order":77,"expectedCost":"25.220 eur"}`, false)
 	if err != nil || f.confirms != 1 || r.Undo != nil || !strings.Contains(string(r.Output), `"charged":"25.22 EUR"`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
@@ -231,5 +239,31 @@ func TestPrintfulRefusesCrossHostRedirect(t *testing.T) {
 	m.Configure(context.Background(), fakehost.New(secrets), "p", raw)
 	if h := m.Health(context.Background(), "p"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestPrintfulConfirmErrorHidesTheRecipient(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(400)
+			io.WriteString(w, `{"code":400,"result":"Bad","error":{"reason":"BadRequest","message":"Recipient Jane Doe at 1 Main St, 10115 Berlin can't be shipped to"}}`)
+			return
+		}
+		fmt.Fprintf(w, `{"code":200,"result":%s}`, (&fakePrintful{status: "draft"}).order())
+	}))
+	defer srv.Close()
+	m := &Module{Base: srv.URL}
+	raw, _ := json.Marshal(Config{Token: "secret://pf"})
+	if err := m.Configure(context.Background(), fakehost.New(secrets), "p", raw); err != nil {
+		t.Fatal(err)
+	}
+	_, err := invoke(m, "confirm_order", `{"order":77,"expectedCost":"25.22"}`, false)
+	if err == nil || !strings.Contains(err.Error(), "can't be shipped") {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"Jane", "Main St", "10115", "Berlin"} {
+		if strings.Contains(err.Error(), s) {
+			t.Fatalf("the error quotes the recipient: %v", err)
+		}
 	}
 }

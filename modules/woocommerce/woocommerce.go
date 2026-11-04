@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -97,10 +98,10 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"search":{"type":"string","description":"Words to look for in product names"},"status":{"type":"string","enum":["","publish","draft","pending","private"]},"stockStatus":{"type":"string","enum":["","instock","outofstock","onbackorder"]},` + page + `}}`)},
 			{Name: "stock", Title: "Stock", Description: "Products whose stock is managed, with the quantity left, optionally only what's running low.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"below":{"type":"integer","minimum":1,"description":"Only products with fewer than this many in stock"},"limit":{"type":"integer","default":100,"minimum":1,"maximum":100}}}`)},
-			{Name: "update_order_status", Title: "Change an order's status", Description: "Sets an order to pending, processing, on-hold, completed or cancelled. WooCommerce emails the customer about most of these changes, and cancelling releases the stock; no money is refunded. Undo sets the previous status back, except after a cancellation.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["order","status"],"properties":{` + order + `,"status":{"type":"string","enum":["pending","processing","on-hold","completed","cancelled"]}}}`)},
-			{Name: "refund_order", Title: "Refund an order", Description: "Refunds an amount of an order, fully or partly, through its payment gateway (or only records it, with gateway off). Money goes back to the customer and can't be taken back. Items aren't restocked.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"amount":{"type":"string","description":"Like 12.50, in the order's currency (the preview shows it); the whole remaining amount when empty"},"reason":{"type":"string","maxLength":200},"gateway":{"type":"boolean","default":true,"description":"Refund through the payment gateway; off only records the refund in WooCommerce"}}}`)},
+			{Name: "update_order_status", Title: "Change an order's status", Description: "Sets an order to pending, processing, on-hold, completed or cancelled. WooCommerce emails the customer about most of these changes, and cancelling releases the stock; no money is refunded. Undo sets the previous status back, except after a cancellation. The run must give the status the preview showed.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["order","status"],"properties":{` + order + `,"status":{"type":"string","enum":["pending","processing","on-hold","completed","cancelled"]},"expectedStatus":{"type":"string","description":"The order's status now, as the preview shows it; needed to run, refused if the order changed since"}}}`)},
+			{Name: "refund_order", Title: "Refund an order", Description: "Refunds an amount of an order, fully or partly, through its payment gateway (or only records it, with gateway off). Money goes back to the customer and can't be taken back. Items aren't restocked. The run must give the total and earlier refunds the preview showed.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"amount":{"type":"string","description":"Like 12.50, in the order's currency (the preview shows it); the whole remaining amount when empty"},"reason":{"type":"string","maxLength":200},"gateway":{"type":"boolean","default":true,"description":"Refund through the payment gateway; off only records the refund in WooCommerce"},"expectedTotal":{"type":"string","description":"The order's total as the preview shows it, like 49.00 EUR; needed to run"},"expectedRefunded":{"type":"string","description":"What was refunded before, as the preview shows it, like 0.00 EUR; needed to run, refused if the order changed since (so a retried refund can't go through twice)"}}}`)},
 		},
 	}
 }
@@ -166,10 +167,15 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 // Close implements sdk.Module.
 func (m *Module) Close(id string) error { m.set.Delete(id); return nil }
 
-// scrub keeps credentials, customer emails and phone numbers out of error
-// text, then shortens it.
-func scrub(s string) string {
+// scrub keeps credentials, customer emails and phone numbers, and any of
+// the customer details in hide, out of error text, then shortens it.
+func scrub(s string, hide ...string) string {
 	s = rest.Redact(s)
+	for _, v := range hide {
+		if v = strings.TrimSpace(v); len(v) >= 3 {
+			s = strings.ReplaceAll(s, v, "[customer]")
+		}
+	}
 	s = emailRe.ReplaceAllString(s, "[email]")
 	s = phoneRe.ReplaceAllString(s, "[number]")
 	if len(s) > 240 {
@@ -178,15 +184,15 @@ func scrub(s string) string {
 	return s
 }
 
-func friendly(err error) error {
+func friendly(err error, hide ...string) error {
 	if err == nil {
 		return nil
 	}
 	var e *rest.Error
 	if !errors.As(err, &e) {
-		return errors.New(scrub(err.Error()))
+		return errors.New(scrub(err.Error(), hide...))
 	}
-	msg := "WooCommerce: " + scrub(e.Message)
+	msg := "WooCommerce: " + scrub(e.Message, hide...)
 	switch e.Status {
 	case http.StatusUnauthorized:
 		msg = "WooCommerce refused the consumer key and secret"
@@ -204,6 +210,14 @@ func friendly(err error) error {
 func (c *conn) do(ctx context.Context, method, path string, q url.Values, body, out any) (http.Header, error) {
 	hdr, err := c.api.Do(ctx, method, path, q, body, out)
 	return hdr, friendly(err)
+}
+
+// change sends a change to an order, keeping the order's customer details
+// out of the error: a gateway's or a plugin's message can quote the name or
+// address, and a change isn't a sensitive action.
+func (c *conn) change(ctx context.Context, o orderFull, method, path string, body, out any) error {
+	_, err := c.api.Do(ctx, method, path, nil, body, out)
+	return friendly(err, o.personal()...)
 }
 
 // Money amounts are decimal strings; they're compared in ten-thousandths.
@@ -299,6 +313,74 @@ type input struct {
 	Amount      any    `json:"amount"`
 	Reason      string `json:"reason"`
 	Gateway     *bool  `json:"gateway"`
+	// What the preview showed, checked again when the change runs.
+	ExpectedStatus   string `json:"expectedStatus"`
+	ExpectedTotal    string `json:"expectedTotal"`
+	ExpectedRefunded string `json:"expectedRefunded"`
+}
+
+// errNotPreviewed starts the error of a change run without the values its
+// preview showed.
+const errNotPreviewed = "give the values the preview showed"
+
+// expectAmount checks an amount the preview showed (like 49.00 or
+// 49.00 EUR) against the order now. Orders change between a preview and its
+// approval (another refund, an edited total), and WooCommerce has no
+// idempotency keys: naming what was refunded before is what keeps a refund
+// retried after a lost answer from going through twice.
+func expectAmount(field, given string, now int64, cur string) error {
+	g := strings.TrimSpace(given)
+	if g == "" {
+		return fmt.Errorf("%s: %s %q", errNotPreviewed, field, money(now, cur))
+	}
+	n, c, _ := strings.Cut(g, " ")
+	v, err := parseAmount(n)
+	if err != nil || (c != "" && !strings.EqualFold(strings.TrimSpace(c), cur)) {
+		return fmt.Errorf("%s is an amount like %q, as the preview showed it", field, money(now, cur))
+	}
+	if v != now {
+		return fmt.Errorf("the order changed since the preview: %s is %s now, not %s; preview it again", field, money(now, cur), g)
+	}
+	return nil
+}
+
+// expectStatus checks the status the preview showed against the order now.
+func expectStatus(given, now string) error {
+	g := strings.ToLower(strings.TrimSpace(given))
+	switch {
+	case g == "":
+		return fmt.Errorf("%s: expectedStatus %q", errNotPreviewed, now)
+	case g != now:
+		return fmt.Errorf("the order changed since the preview: its status is %s now, not %s; preview it again", now, clip(g, 40))
+	}
+	return nil
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+// runNote is added to a preview whose run would be refused as it stands.
+func runNote(errs ...error) string {
+	var missing []string
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		m, ok := strings.CutPrefix(err.Error(), errNotPreviewed+": ")
+		if !ok {
+			return " Running this call will be refused: " + err.Error() + "."
+		}
+		missing = append(missing, m)
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return " To run it, give " + strings.Join(missing, " and ") + " (the order as previewed); it's refused if the order changed."
 }
 
 func limit(n, def, max int) int {
@@ -389,16 +471,22 @@ type orderRow struct {
 	} `json:"line_items"`
 }
 
-func (o orderRow) refunded() int64 {
-	var r int64
+// refunded sums the order's refunds; ok is false when one of them isn't an
+// amount this module reads, so a refund never counts it as nothing.
+func (o orderRow) refunded() (r int64, ok bool) {
+	ok = true
 	for _, x := range o.Refunds {
-		v := amount(x.Total)
+		v, err := parseAmount(x.Total)
+		if err != nil {
+			ok = false
+			continue
+		}
 		if v < 0 {
 			v = -v
 		}
 		r += v
 	}
-	return r
+	return r, ok
 }
 
 func (o orderRow) label() string {
@@ -415,7 +503,7 @@ func orderOut(o orderRow) map[string]any {
 	}
 	out := map[string]any{"id": o.ID, "number": o.Number, "status": o.Status, "created": o.DateCreated, "total": money(amount(o.Total), o.Currency),
 		"items": items, "paymentMethod": o.PaymentMethodTitle}
-	if r := o.refunded(); r > 0 {
+	if r, _ := o.refunded(); r > 0 {
 		out["refunded"] = money(r, o.Currency)
 	}
 	if o.DatePaid != nil && *o.DatePaid != "" {
@@ -485,6 +573,17 @@ type orderFull struct {
 	CustomerNote string  `json:"customer_note"`
 	Billing      address `json:"billing"`
 	Shipping     address `json:"shipping"`
+}
+
+// personal is the customer's details on the order.
+func (o orderFull) personal() []string {
+	var out []string
+	for _, a := range []address{o.Billing, o.Shipping} {
+		out = append(out, a.FirstName, a.LastName, strings.TrimSpace(a.FirstName+" "+a.LastName), a.Company, a.Address1, a.Address2, a.City, a.Postcode, a.Email, a.Phone)
+	}
+	// Longest first, so a full name goes before its parts.
+	sort.Slice(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
+	return out
 }
 
 func (c *conn) getOrder(ctx context.Context, id int64) (orderFull, error) {
@@ -633,16 +732,24 @@ func (c *conn) updateStatus(ctx context.Context, call sdk.Call, p input) (sdk.Re
 		return sdk.Result{}, fmt.Errorf("order %s is a %s; change it in WooCommerce", o.label(), o.Status)
 	}
 	total := money(amount(o.Total), o.Currency)
+	expect := expectStatus(p.ExpectedStatus, o.Status)
 	if call.DryRun {
 		summary := fmt.Sprintf("Set order %s (total %s) from %s to %s; WooCommerce may email the customer", o.label(), total, o.Status, to)
 		if to == "cancelled" {
 			summary = fmt.Sprintf("Cancel order %s (total %s): its stock is released and no money is refunded; WooCommerce may email the customer", o.label(), total)
 		}
+		if o.Status == "cancelled" {
+			summary += "; the cancelled order becomes active again"
+		}
+		summary += "." + runNote(expect)
 		return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: "order " + o.label(), Op: "set_status",
 			Before: mustJSON(map[string]any{"status": o.Status, "total": total}), After: mustJSON(map[string]any{"status": to})}}}}, nil
 	}
+	if expect != nil {
+		return sdk.Result{}, expect
+	}
 	var after orderRow
-	if _, err := c.do(ctx, http.MethodPut, "/orders/"+strconv.FormatInt(o.ID, 10), nil, map[string]any{"status": to}, &after); err != nil {
+	if err := c.change(ctx, o, http.MethodPut, "/orders/"+strconv.FormatInt(o.ID, 10), map[string]any{"status": to}, &after); err != nil {
 		return sdk.Result{}, err
 	}
 	if after.ID != 0 && after.Status != to {
@@ -650,7 +757,8 @@ func (c *conn) updateStatus(ctx context.Context, call sdk.Call, p input) (sdk.Re
 	}
 	res, err := sdk.JSON(map[string]any{"order": o.ID, "number": o.Number, "status": to, "was": o.Status})
 	if to != "cancelled" && settable[o.Status] {
-		res.Undo = sdk.UndoWith("update_order_status", map[string]any{"order": o.ID, "status": o.Status}, "Set order "+o.label()+" back to "+o.Status)
+		// The undo runs only while the order is still where this left it.
+		res.Undo = sdk.UndoWith("update_order_status", map[string]any{"order": o.ID, "status": o.Status, "expectedStatus": to}, "Set order "+o.label()+" back to "+o.Status)
 	}
 	return res, err
 }
@@ -690,14 +798,17 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		return sdk.Result{}, err
 	}
 	cur := o.Currency
-	total := amount(o.Total)
-	refunded := o.refunded()
+	total, err := parseAmount(o.Total)
+	refunded, ok := o.refunded()
+	if err != nil || !ok || total < 0 {
+		return sdk.Result{}, fmt.Errorf("order %s's total or earlier refunds aren't amounts this module reads; refund it in WooCommerce", o.label())
+	}
 	left := total - refunded
 	if left <= 0 {
 		return sdk.Result{}, fmt.Errorf("order %s has nothing left to refund", o.label())
 	}
 	switch o.Status {
-	case "pending", "failed", "checkout-draft", "cancelled":
+	case "pending", "on-hold", "failed", "checkout-draft", "cancelled":
 		if o.DatePaid == nil || *o.DatePaid == "" {
 			return sdk.Result{}, fmt.Errorf("order %s (%s) wasn't paid, so there's nothing to refund", o.label(), o.Status)
 		}
@@ -724,11 +835,18 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if !gateway {
 		how = "recorded only (no money moves; pay it back yourself)"
 	}
+	expTotal, expRefunded := expectAmount("expectedTotal", p.ExpectedTotal, total, cur), expectAmount("expectedRefunded", p.ExpectedRefunded, refunded, cur)
 	if call.DryRun {
 		before := map[string]any{"total": money(total, cur), "refunded": money(refunded, cur), "status": o.Status}
 		after := map[string]any{"refund": money(amt, cur), "refundedAfter": money(refunded+amt, cur), "gateway": gateway}
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s of %s on order %s, %s", kind, money(amt, cur), o.label(), how),
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s of %s on order %s, %s. It can't be taken back.%s", kind, money(amt, cur), o.label(), how, runNote(expTotal, expRefunded)),
 			Changes: []sdk.Change{{Target: "order " + o.label(), Op: "refund", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
+	}
+	if expTotal != nil {
+		return sdk.Result{}, expTotal
+	}
+	if expRefunded != nil {
+		return sdk.Result{}, expRefunded
 	}
 	body := map[string]any{"amount": decimal(amt, cur), "api_refund": gateway, "api_restock": false}
 	if reason != "" {
@@ -738,7 +856,7 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		ID     int64  `json:"id"`
 		Amount string `json:"amount"`
 	}
-	if _, err := c.do(ctx, http.MethodPost, "/orders/"+strconv.FormatInt(o.ID, 10)+"/refunds", nil, body, &r); err != nil {
+	if err := c.change(ctx, o, http.MethodPost, "/orders/"+strconv.FormatInt(o.ID, 10)+"/refunds", body, &r); err != nil {
 		return sdk.Result{}, err
 	}
 	if r.ID == 0 {

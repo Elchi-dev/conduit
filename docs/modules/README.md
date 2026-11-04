@@ -147,6 +147,10 @@ recommended policies.
 | Healthchecks.io | [healthchecks.md](healthchecks.md) | developer, homelab, team |
 | Better Stack Uptime | [betterstack.md](betterstack.md) | developer, team |
 | PostHog | [posthog.md](posthog.md) | team, developer |
+| Unleash | [unleash.md](unleash.md) | developer, team |
+| Flagsmith | [flagsmith.md](flagsmith.md) | developer, team |
+| LaunchDarkly | [launchdarkly.md](launchdarkly.md) | developer, team |
+| GrowthBook | [growthbook.md](growthbook.md) | developer, team |
 | Frigate | [frigate.md](frigate.md) | homelab |
 | Mealie | [mealie.md](mealie.md) | homelab |
 | Grocy | [grocy.md](grocy.md) | homelab |
@@ -233,6 +237,10 @@ recommended policies.
 | FRITZ!Box | [fritzbox.md](fritzbox.md) | homelab |
 | ntopng | [ntopng.md](ntopng.md) | homelab, team |
 | LibreNMS | [librenms.md](librenms.md) | homelab, team |
+| Microsoft 365 | [microsoft365.md](microsoft365.md) | team, developer |
+| Google Workspace | [googleworkspace.md](googleworkspace.md) | team, developer |
+| Fastmail | [fastmail.md](fastmail.md) | developer, team |
+| Dropbox | [dropbox.md](dropbox.md) | team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
 | Standards | [standards.md](standards.md) | all |

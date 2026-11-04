@@ -145,6 +145,13 @@ var sensitiveUndo = map[string]string{
 	"sabnzbd.add_url":            "delete",             // deletes the job it queued, by id (the URL holds an indexer key)
 	"zammad.add_note":            "delete_note",        // deletes the note it added, by number
 	"zulip.send_message":         "delete_message",     // deletes the message it sent, by id
+
+	// Hosted mail, calendar and file services.
+	"dropbox.create_shared_link":       "revoke_shared_link", // revokes the file's links by its file id, never the link itself
+	"googleworkspace.create_event":     "delete_event",       // deletes the event it added, by calendar and id
+	"googleworkspace.schedule_meeting": "delete_event",       // deletes the meeting it added (attendees get a cancellation)
+	"microsoft365.create_event":        "delete_event",       // deletes the event it added, by id
+	"microsoft365.schedule_meeting":    "delete_event",       // deletes the meeting it added (attendees get a cancellation)
 }
 
 // sensitiveUndoByID lists the entries of sensitiveUndo whose undo action is
@@ -157,6 +164,8 @@ var sensitiveUndoByID = map[string]bool{
 	"freshdesk.add_note":         true, // delete_note's preview quotes the note
 	"monica.add_note":            true, // delete_note's preview quotes the note
 	"zammad.add_note":            true, // delete_note's preview quotes the note
+
+	"dropbox.create_shared_link": true, // revoke_shared_link takes a link; the token holds the file id alone
 }
 
 // TestSensitiveUndo fails when a sensitive action claims an undo the audit

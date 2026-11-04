@@ -51,10 +51,13 @@ import (
 	"github.com/elchi-dev/conduit/modules/dokploy"
 	"github.com/elchi-dev/conduit/modules/doppler"
 	"github.com/elchi-dev/conduit/modules/drone"
+	"github.com/elchi-dev/conduit/modules/dropbox"
 	"github.com/elchi-dev/conduit/modules/elasticsearch"
 	"github.com/elchi-dev/conduit/modules/esphome"
+	"github.com/elchi-dev/conduit/modules/fastmail"
 	"github.com/elchi-dev/conduit/modules/files"
 	"github.com/elchi-dev/conduit/modules/firefly"
+	"github.com/elchi-dev/conduit/modules/flagsmith"
 	"github.com/elchi-dev/conduit/modules/fly"
 	"github.com/elchi-dev/conduit/modules/freshdesk"
 	"github.com/elchi-dev/conduit/modules/freshrss"
@@ -68,9 +71,11 @@ import (
 	"github.com/elchi-dev/conduit/modules/gitea"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
+	"github.com/elchi-dev/conduit/modules/googleworkspace"
 	"github.com/elchi-dev/conduit/modules/gotify"
 	"github.com/elchi-dev/conduit/modules/grafana"
 	"github.com/elchi-dev/conduit/modules/grocy"
+	"github.com/elchi-dev/conduit/modules/growthbook"
 	"github.com/elchi-dev/conduit/modules/harbor"
 	"github.com/elchi-dev/conduit/modules/hashivault"
 	"github.com/elchi-dev/conduit/modules/headscale"
@@ -96,6 +101,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/komga"
 	"github.com/elchi-dev/conduit/modules/kopia"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
+	"github.com/elchi-dev/conduit/modules/launchdarkly"
 	"github.com/elchi-dev/conduit/modules/lemmy"
 	"github.com/elchi-dev/conduit/modules/lemonsqueezy"
 	"github.com/elchi-dev/conduit/modules/librenms"
@@ -113,6 +119,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mealie"
 	"github.com/elchi-dev/conduit/modules/meilisearch"
 	"github.com/elchi-dev/conduit/modules/metrics"
+	"github.com/elchi-dev/conduit/modules/microsoft365"
 	"github.com/elchi-dev/conduit/modules/mikrotik"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/miniflux"
@@ -211,6 +218,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/twitch"
 	"github.com/elchi-dev/conduit/modules/umami"
 	"github.com/elchi-dev/conduit/modules/unifi"
+	"github.com/elchi-dev/conduit/modules/unleash"
 	"github.com/elchi-dev/conduit/modules/unraid"
 	"github.com/elchi-dev/conduit/modules/upcloud"
 	"github.com/elchi-dev/conduit/modules/uptimekuma"
@@ -376,6 +384,10 @@ func builtins(app *App) []sdk.Module {
 		healthchecks.New(),
 		betterstack.New(),
 		posthog.New(),
+		unleash.New(),
+		launchdarkly.New(),
+		growthbook.New(),
+		flagsmith.New(),
 		hue.New(),
 		shelly.New(),
 		esphome.New(),
@@ -480,6 +492,10 @@ func builtins(app *App) []sdk.Module {
 		romm.New(),
 		bazarr.New(),
 		nzbget.New(),
+		microsoft365.New(),
+		googleworkspace.New(),
+		fastmail.New(),
+		dropbox.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

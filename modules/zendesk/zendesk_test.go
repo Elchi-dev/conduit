@@ -135,7 +135,8 @@ func TestZendeskReads(t *testing.T) {
 			t.Errorf("%s isn't sensitive", n)
 		}
 	}
-	if spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || spec["set_status"].Risk != sdk.RiskWrite || !spec["set_status"].Reversible || !spec["assign"].Reversible {
+	if spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || !spec["add_note"].Sensitive || spec["set_status"].Risk != sdk.RiskWrite || !spec["set_status"].Reversible || !spec["assign"].Reversible ||
+		spec["resolve"].Risk != sdk.RiskDestructive || !spec["resolve"].Reversible {
 		t.Fatalf("%+v", spec)
 	}
 }
@@ -162,16 +163,22 @@ func TestZendeskWrites(t *testing.T) {
 		t.Fatalf("%v %v", err, f.writes)
 	}
 
-	r, err = invoke(m, "set_status", `{"ticket":1,"status":"solved"}`, true)
-	if err != nil || r.Plan == nil || f.status != "new" {
+	r, err = invoke(m, "resolve", `{"ticket":1}`, true)
+	if err != nil || r.Plan == nil || f.status != "new" || !strings.Contains(r.Plan.Summary, "may email the requester (satisfaction survey or resolution notice)") {
 		t.Fatalf("%+v %v", r, err)
 	}
-	r, err = invoke(m, "set_status", `{"ticket":1,"status":"solved"}`, false)
+	r, err = invoke(m, "resolve", `{"ticket":1}`, false)
 	if err != nil || f.status != "solved" || r.Undo == nil || r.Undo.Action != "set_status" || !strings.Contains(string(r.Undo.Input), `"open"`) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.status != "open" {
 		t.Fatal(err, f.status)
+	}
+	// Reopening a solved ticket undoes by solving it again.
+	f.status = "solved"
+	r, err = invoke(m, "set_status", `{"ticket":1,"status":"pending"}`, false)
+	if err != nil || f.status != "pending" || r.Undo == nil || r.Undo.Action != "resolve" {
+		t.Fatalf("%+v %v", r, err)
 	}
 
 	r, err = invoke(m, "assign", `{"ticket":1,"assignee":8}`, true)
@@ -205,6 +212,7 @@ func TestZendeskValidation(t *testing.T) {
 		{"reply", `{"ticket":1,"text":"` + strings.Repeat("x", maxText+1) + `"}`},
 		{"reply", `{"ticket":1,"text":"bell\u0007"}`},
 		{"set_status", `{"ticket":1,"status":"closed"}`},
+		{"set_status", `{"ticket":1,"status":"solved"}`},
 		{"set_status", `{"ticket":1,"status":"new"}`},
 		{"assign", `{"ticket":1}`},
 		{"assign", `{"ticket":1,"assignee":"me"}`},
@@ -257,5 +265,40 @@ func TestZendeskRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "z"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// The plans, results and undo tokens of actions that aren't sensitive go in
+// the audit log, events and webhooks as they are, so they hold numbers and
+// statuses, never the ticket's subject or the requester.
+func TestZendeskPlansHoldNoCustomerData(t *testing.T) {
+	m, f := setup(t, good)
+	inputs := map[string]string{
+		"set_status": `{"ticket":1,"status":"pending"}`,
+		"resolve":    `{"ticket":1}`,
+		"assign":     `{"ticket":1,"assignee":7}`,
+	}
+	private := []string{"Printer on fire", "Jane Customer", "jane@example.com"}
+	for _, a := range m.Manifest().Actions {
+		if a.Sensitive || a.Risk == sdk.RiskRead {
+			continue
+		}
+		in, ok := inputs[a.Name]
+		if !ok {
+			t.Fatalf("no input for %s", a.Name)
+		}
+		for _, dry := range []bool{true, false} {
+			f.status, f.assignee = "open", nil
+			r, err := invoke(m, a.Name, in, dry)
+			if err != nil {
+				t.Fatalf("%s: %v", a.Name, err)
+			}
+			b, _ := json.Marshal(r)
+			for _, p := range private {
+				if strings.Contains(string(b), p) {
+					t.Errorf("%s (dry run %v) shows %q: %s", a.Name, dry, p, b)
+				}
+			}
+		}
 	}
 }

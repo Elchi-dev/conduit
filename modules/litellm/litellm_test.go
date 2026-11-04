@@ -129,7 +129,7 @@ func TestLiteLLMReads(t *testing.T) {
 		{"keys", `{"search":"ci"}`, `"masked":"sk-...Ab12"`},
 		{"keys", `{"team":"team-web"}`, `"percentUsed":45`},
 		{"budgets", ``, `"percentUsed":90`},
-		{"deployment_health", ``, `"unhealthyCount":1`},
+		{"deployment_health", `{"model":"gpt-4o"}`, `"unhealthyCount":1`},
 	} {
 		r, err := invoke(m, c.action, c.in, false)
 		out := string(r.Output)
@@ -175,7 +175,42 @@ func TestLiteLLMBlock(t *testing.T) {
 		}
 	}
 	if risk["deployment_health"].Risk != sdk.RiskWrite {
-		t.Fatal("deployment_health must be write: it calls every provider")
+		t.Fatal("deployment_health must be write: it calls a provider")
+	}
+}
+
+// deployment_health checks one model per call, and at most ten a minute per
+// instance: each check is a billed request to a provider.
+func TestLiteLLMDeploymentHealthIsBounded(t *testing.T) {
+	m, f := setup(t, "secret://m")
+	now := time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC)
+	c, _ := m.set.Get("l")
+	c.now = func() time.Time { return now }
+	for _, in := range []string{``, `{}`, `{"model":""}`, `{"model":"a\nb"}`} {
+		if _, err := invoke(m, "deployment_health", in, false); err == nil {
+			t.Fatalf("%s accepted", in)
+		}
+	}
+	if _, err := invoke(m, "deployment_health", `{"model":"no-such-model"}`, false); err == nil || !strings.Contains(err.Error(), "no model") {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(f.seen, "\n"), "GET /health") {
+		t.Fatal("a refused check reached the health endpoint")
+	}
+	for i := 0; i < 10; i++ {
+		if _, err := invoke(m, "deployment_health", `{"model":"gpt-4o"}`, false); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	if !strings.Contains(strings.Join(f.seen, "\n"), "GET /health?model=gpt-4o") {
+		t.Fatal(f.seen)
+	}
+	if _, err := invoke(m, "deployment_health", `{"model":"gpt-4o"}`, false); err == nil || !strings.Contains(err.Error(), "at most 10") {
+		t.Fatal(err)
+	}
+	now = now.Add(61 * time.Second)
+	if _, err := invoke(m, "deployment_health", `{"model":"gpt-4o"}`, false); err != nil {
+		t.Fatal(err)
 	}
 }
 

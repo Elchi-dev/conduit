@@ -19,9 +19,9 @@ queueing stays off.
 | `queue` | read | The running generation and the waiting ones, by number and prompt id, with their node counts. |
 | `history` | read, sensitive | Recent generations (`limit`, 20 by default), newest first: status, start time and duration, the prompt texts of their text-encoding nodes, and output file names (temporary previews left out). Sensitive because prompts can be private: the audit log keeps only field names. |
 | `workflows` | read | Files in the workflows folder, with size, date and whether each is usable (an Export (API) file) or why not. |
-| `interrupt` | write | Stops the running generation (its partial result is lost); the queue carries on. On recent ComfyUI it names that prompt, so it can't stop the next one by accident. |
+| `interrupt` | destructive | Stops the running generation; its partial result is lost and it has to be queued again, so it's destructive (like `clear_queue`). The preview names the generation that would stop; the queue carries on. On recent ComfyUI it names that prompt, so it can't stop the next one by accident. |
 | `clear_queue` | destructive | Removes every waiting generation (not the running one). Preview lists them. |
-| `queue_workflow` | destructive | Queues a `file` from the workflows folder, optionally with a new `seed` for every sampler. Preview lists the node count, the custom node packs it will run and any node the server lacks. |
+| `queue_workflow` | destructive | Queues a `file` from the workflows folder, optionally with a new `seed` for every sampler. Preview lists the node count, the custom node packs it will run, any node the server lacks and the file's `sha256`. A run must give that `sha256` (from the preview or `workflows`) and is refused if the file changed since, so what runs is what was approved. |
 
 **Why queueing is destructive, and only from a folder.** A ComfyUI
 workflow runs every node in it, and custom nodes are Python code on the

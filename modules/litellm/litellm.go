@@ -1,7 +1,8 @@
 // Package litellm administers a LiteLLM proxy with its master key: the
 // models it routes to, spend by model, key, team and provider, virtual keys
-// (never their values), budgets, a live health check of every deployment,
-// and blocking or unblocking a key.
+// (never their values), budgets, a live health check of one model's
+// deployments (rate limited: each check is a billed call), and blocking or
+// unblocking a key.
 package litellm
 
 import (
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
@@ -33,6 +35,34 @@ type conn struct {
 	health *rest.Client // the live deployment check takes longer
 	host   string
 	now    func() time.Time
+
+	mu     sync.Mutex
+	checks []time.Time // deployment_health calls in the last minute
+}
+
+// healthPerMinute caps deployment_health per instance: every check is a
+// real, billed request to a provider.
+const healthPerMinute = 10
+
+// allowCheck records a deployment check, or says when the next one is
+// allowed.
+func (c *conn) allowCheck() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.now()
+	kept := c.checks[:0]
+	for _, t := range c.checks {
+		if now.Sub(t) < time.Minute {
+			kept = append(kept, t)
+		}
+	}
+	c.checks = kept
+	if len(c.checks) >= healthPerMinute {
+		wait := time.Minute - now.Sub(c.checks[0])
+		return fmt.Errorf("at most %d deployment checks a minute (each is a billed call); try again in %d seconds", healthPerMinute, int(wait.Seconds())+1)
+	}
+	c.checks = append(c.checks, now)
+	return nil
 }
 
 // Module implements sdk.Module.
@@ -74,7 +104,8 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "keys", Title: "Virtual keys", Description: "Virtual keys with id, masked key, alias, team, spend, budget, expiry and whether they're blocked. Never the key values.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"team":{"type":"string","description":"Only keys of this team id"},"search":{"type":"string","description":"Only aliases containing this"}}}`)},
 			{Name: "budgets", Title: "Budgets", Description: "Budgets defined on the proxy, and every team's spend against its budget, with how much is used.", Risk: sdk.RiskRead},
-			{Name: "deployment_health", Title: "Check deployments", Description: "Runs LiteLLM's health check, which sends a tiny request to every deployment, and returns which are healthy and why the others fail. Write: each check is a real call that a paid provider bills (a few tokens) and counts against rate limits.", Risk: sdk.RiskWrite},
+			{Name: "deployment_health", Title: "Check a model's deployments", Description: "Runs LiteLLM's health check for one model (a name from models), which sends a tiny request to its deployment, and says whether it's healthy and why not. Write: each check is a real call that a paid provider bills (a few tokens) and counts against rate limits, so it's one model per call and at most 10 checks a minute.", Risk: sdk.RiskWrite,
+				Input: sdk.Schema(`{"type":"object","required":["model"],"properties":{"model":{"type":"string","maxLength":200,"description":"A model name from models, e.g. gpt-4o"}}}`)},
 			{Name: "block_key", Title: "Block a key", Description: "Blocks a virtual key: every request with it is refused until it's unblocked. Destructive: it cuts off whoever uses the key. Undo unblocks it.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
 				Input: sdk.Schema(keyIn)},
 			{Name: "unblock_key", Title: "Unblock a key", Description: "Unblocks a blocked virtual key so it can spend again. Destructive: it restores access (and spending) that someone cut off. Undo blocks it again.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
@@ -403,6 +434,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		Search string `json:"search"`
 		Key    string `json:"key"`
 		Alias  string `json:"alias"`
+		Model  string `json:"model"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
 		return sdk.Result{}, err
@@ -540,11 +572,35 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(map[string]any{"currency": "USD", "budgets": bl, "teams": tl})
 	case "deployment_health":
+		model := strings.TrimSpace(p.Model)
+		if model == "" || len(model) > 200 || strings.ContainsAny(model, "\x00\r\n\t") {
+			return sdk.Result{}, errors.New("give one model, a name from models (checking every deployment at once isn't offered: each check is billed)")
+		}
+		var known struct {
+			Data []struct {
+				ModelName string `json:"model_name"`
+			} `json:"data"`
+		}
+		if _, err := c.api.Do(ctx, http.MethodGet, "/model/info", nil, nil, &known); err != nil {
+			return sdk.Result{}, friendly(err, "model list")
+		}
+		deployments := 0
+		for _, x := range known.Data {
+			if x.ModelName == model {
+				deployments++
+			}
+		}
+		if deployments == 0 {
+			return sdk.Result{}, fmt.Errorf("the proxy has no model %q; see models for the names", clip(model, 80))
+		}
+		if err := c.allowCheck(); err != nil {
+			return sdk.Result{}, err
+		}
 		var out struct {
 			Healthy   []map[string]any `json:"healthy_endpoints"`
 			Unhealthy []map[string]any `json:"unhealthy_endpoints"`
 		}
-		if _, err := c.health.Do(ctx, http.MethodGet, "/health", nil, nil, &out); err != nil {
+		if _, err := c.health.Do(ctx, http.MethodGet, "/health", url.Values{"model": {model}}, nil, &out); err != nil {
 			return sdk.Result{}, friendly(err, "health check")
 		}
 		// Only the fields below are passed on: LiteLLM echoes each
@@ -573,7 +629,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		for _, e := range out.Unhealthy {
 			u = append(u, pick(e, true))
 		}
-		return sdk.JSON(map[string]any{"healthy": h, "unhealthy": u, "healthyCount": len(h), "unhealthyCount": len(u)})
+		return sdk.JSON(map[string]any{"model": model, "healthy": h, "unhealthy": u, "healthyCount": len(h), "unhealthyCount": len(u)})
 	case "block_key", "unblock_key":
 		block := call.Action == "block_key"
 		k, err := c.resolve(ctx, p.Key, p.Alias)

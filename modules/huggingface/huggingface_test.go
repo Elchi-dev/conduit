@@ -165,7 +165,7 @@ func TestHuggingFaceEndpointControl(t *testing.T) {
 			t.Fatalf("%s has no preview", a.Name)
 		}
 	}
-	for n, want := range map[string]sdk.Risk{"restart_space": sdk.RiskDestructive, "pause_space": sdk.RiskDestructive, "pause_endpoint": sdk.RiskDestructive, "resume_endpoint": sdk.RiskDestructive, "scale_endpoint_to_zero": sdk.RiskWrite} {
+	for n, want := range map[string]sdk.Risk{"restart_space": sdk.RiskDestructive, "pause_space": sdk.RiskDestructive, "pause_endpoint": sdk.RiskDestructive, "resume_endpoint": sdk.RiskDestructive, "scale_endpoint_to_zero": sdk.RiskDestructive} {
 		if risk[n] != want {
 			t.Fatalf("%s is %s", n, risk[n])
 		}

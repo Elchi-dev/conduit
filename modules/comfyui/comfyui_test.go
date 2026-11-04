@@ -2,6 +2,8 @@ package comfyui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -161,6 +163,9 @@ func TestComfyQueueControl(t *testing.T) {
 	if r, err := invoke(m, "clear_queue", ``, false); err != nil || f.pending != 0 || !strings.Contains(string(r.Output), `"removed":2`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
+	if r, err := invoke(m, "interrupt", ``, true); err != nil || r.Plan == nil || !f.running || !strings.Contains(r.Plan.Summary, "11111111-2222-3333-4444-555555555555") {
+		t.Fatalf("%+v %v", r, err)
+	}
 	if r, err := invoke(m, "interrupt", ``, false); err != nil || f.running || !strings.Contains(string(r.Output), `"interrupted":true`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
@@ -173,12 +178,34 @@ func TestComfyQueueControl(t *testing.T) {
 }
 
 func TestComfyQueueWorkflow(t *testing.T) {
-	m, f, _ := setup(t, Config{WorkflowsDir: "set"})
+	m, f, wf := setup(t, Config{WorkflowsDir: "set"})
+	sum := sha256.Sum256([]byte(apiWorkflow))
+	hash := hex.EncodeToString(sum[:])
 	r, err := invoke(m, "queue_workflow", `{"file":"lighthouse.json","seed":7}`, true)
-	if err != nil || r.Plan == nil || len(f.prompts) != 0 || !strings.Contains(r.Plan.Summary, "ComfyUI-Impact-Pack") || !strings.Contains(string(r.Plan.Changes[0].After), `"seed":7`) {
+	if err != nil || r.Plan == nil || len(f.prompts) != 0 || !strings.Contains(r.Plan.Summary, "ComfyUI-Impact-Pack") || !strings.Contains(string(r.Plan.Changes[0].After), `"seed":7`) ||
+		!strings.Contains(r.Plan.Summary, hash) || !strings.Contains(string(r.Plan.Changes[0].After), `"sha256":"`+hash+`"`) {
 		t.Fatalf("%+v %v", r, err)
 	}
-	r, err = invoke(m, "queue_workflow", `{"file":"lighthouse.json","seed":7}`, false)
+	if r, _ := invoke(m, "workflows", ``, false); !strings.Contains(string(r.Output), `"sha256":"`+hash+`"`) {
+		t.Fatal(string(r.Output))
+	}
+	// A run is bound to the previewed file: without its hash, or after the
+	// file changed, it's refused.
+	if _, err := invoke(m, "queue_workflow", `{"file":"lighthouse.json","seed":7}`, false); err == nil || !strings.Contains(err.Error(), hash) || len(f.prompts) != 0 {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "queue_workflow", `{"file":"lighthouse.json","sha256":"`+strings.Repeat("0", 64)+`"}`, false); err == nil || !strings.Contains(err.Error(), "changed since") || len(f.prompts) != 0 {
+		t.Fatal(err)
+	}
+	if r, err := invoke(m, "queue_workflow", `{"file":"lighthouse.json","sha256":"`+strings.Repeat("0", 64)+`"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "will be refused") {
+		t.Fatal(err, r.Plan)
+	}
+	for _, bad := range []string{"ABC", strings.Repeat("A", 64), strings.Repeat("0", 63)} {
+		if _, err := invoke(m, "queue_workflow", `{"file":"lighthouse.json","sha256":"`+bad+`"}`, false); err == nil || len(f.prompts) != 0 {
+			t.Fatal(bad, err)
+		}
+	}
+	r, err = invoke(m, "queue_workflow", `{"file":"lighthouse.json","seed":7,"sha256":"`+hash+`"}`, false)
 	if err != nil || len(f.prompts) != 1 || !strings.Contains(string(r.Output), `"number":12`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
@@ -197,8 +224,15 @@ func TestComfyQueueWorkflow(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		risk[a.Name] = a
 	}
-	if risk["queue_workflow"].Risk != sdk.RiskDestructive || risk["clear_queue"].Risk != sdk.RiskDestructive || risk["interrupt"].Risk != sdk.RiskWrite {
+	if risk["queue_workflow"].Risk != sdk.RiskDestructive || risk["clear_queue"].Risk != sdk.RiskDestructive || risk["interrupt"].Risk != sdk.RiskDestructive {
 		t.Fatal(risk)
+	}
+	// Changing the file after the preview refuses the approved call.
+	if err := os.WriteFile(filepath.Join(wf, "lighthouse.json"), []byte(strings.Replace(apiWorkflow, "KSampler", "KSamplerAdvanced", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, "queue_workflow", `{"file":"lighthouse.json","seed":7,"sha256":"`+hash+`"}`, false); err == nil || !strings.Contains(err.Error(), "changed since") || len(f.prompts) != 1 {
+		t.Fatal(err)
 	}
 }
 

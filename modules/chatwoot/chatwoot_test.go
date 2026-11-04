@@ -136,7 +136,8 @@ func TestChatwootReads(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		spec[a.Name] = a
 	}
-	if !spec["messages"].Sensitive || !spec["conversations"].Sensitive || !spec["reply"].Sensitive || spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || !spec["set_status"].Reversible {
+	if !spec["messages"].Sensitive || !spec["conversations"].Sensitive || !spec["reply"].Sensitive || spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || !spec["set_status"].Reversible ||
+		!spec["add_note"].Sensitive || !spec["delete_note"].Sensitive || spec["resolve"].Risk != sdk.RiskDestructive || spec["set_status"].Risk != sdk.RiskWrite {
 		t.Fatalf("%+v", spec)
 	}
 }
@@ -164,16 +165,23 @@ func TestChatwootWrites(t *testing.T) {
 		t.Fatalf("%v %v", err, f.writes)
 	}
 
-	if r, err := invoke(m, "set_status", `{"conversation":42,"status":"resolved"}`, true); err != nil || r.Plan == nil || f.status != "open" {
-		t.Fatal(err)
+	if r, err := invoke(m, "resolve", `{"conversation":42}`, true); err != nil || r.Plan == nil || f.status != "open" || !strings.Contains(r.Plan.Summary, "satisfaction survey or resolution notice") {
+		t.Fatal(err, r.Plan)
 	}
-	r, err = invoke(m, "set_status", `{"conversation":42,"status":"resolved"}`, false)
-	if err != nil || f.status != "resolved" || r.Undo == nil {
+	r, err = invoke(m, "resolve", `{"conversation":42}`, false)
+	if err != nil || f.status != "resolved" || r.Undo == nil || r.Undo.Action != "set_status" {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.status != "open" {
 		t.Fatal(err, f.status)
 	}
+	// Reopening a resolved conversation undoes by resolving it again.
+	f.status = "resolved"
+	r, err = invoke(m, "set_status", `{"conversation":42,"status":"pending"}`, false)
+	if err != nil || f.status != "pending" || r.Undo == nil || r.Undo.Action != "resolve" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	f.status = "open"
 
 	r, err = invoke(m, "assign", `{"conversation":42,"assignee":8}`, false)
 	if err != nil || f.assignee == nil || r.Undo == nil || !strings.Contains(string(r.Output), `"to":"Robin Agent"`) {
@@ -197,6 +205,7 @@ func TestChatwootValidation(t *testing.T) {
 		{"reply", `{"conversation":42,"text":"` + strings.Repeat("x", maxText+1) + `"}`},
 		{"delete_note", `{"conversation":42,"note":"1/../2"}`},
 		{"set_status", `{"conversation":42,"status":"snoozed"}`},
+		{"set_status", `{"conversation":42,"status":"resolved"}`},
 		{"assign", `{"conversation":42}`},
 		{"assign", `{"conversation":42,"assignee":"x"}`},
 	} {
@@ -242,5 +251,40 @@ func TestChatwootRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "c"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// The plans, results and undo tokens of actions that aren't sensitive go in
+// the audit log, events and webhooks as they are, so they hold numbers and
+// statuses, never the contact or a message.
+func TestChatwootPlansHoldNoCustomerData(t *testing.T) {
+	m, f := setup(t, "secret://cw")
+	inputs := map[string]string{
+		"set_status": `{"conversation":42,"status":"pending"}`,
+		"resolve":    `{"conversation":42}`,
+		"assign":     `{"conversation":42,"assignee":8}`,
+	}
+	private := []string{"Jane Customer", "jane@example.com", "Where is my order"}
+	for _, a := range m.Manifest().Actions {
+		if a.Sensitive || a.Risk == sdk.RiskRead {
+			continue
+		}
+		in, ok := inputs[a.Name]
+		if !ok {
+			t.Fatalf("no input for %s", a.Name)
+		}
+		for _, dry := range []bool{true, false} {
+			f.status, f.assignee = "open", nil
+			r, err := invoke(m, a.Name, in, dry)
+			if err != nil {
+				t.Fatalf("%s: %v", a.Name, err)
+			}
+			b, _ := json.Marshal(r)
+			for _, p := range private {
+				if strings.Contains(string(b), p) {
+					t.Errorf("%s (dry run %v) shows %q: %s", a.Name, dry, p, b)
+				}
+			}
+		}
 	}
 }

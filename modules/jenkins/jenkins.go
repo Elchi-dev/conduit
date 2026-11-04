@@ -104,7 +104,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `,"parameters":{"type":"object","description":"Parameter values by name; the job's defaults fill the rest","additionalProperties":{"type":["string","number","boolean"]}}}}`)},
 			{Name: "stop_build", Title: "Stop a build", Description: "Aborts a running build. Destructive: it interrupts work in flight (a deploy may be left half done).", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["job"],"properties":{` + job + `,` + num + `}}`)},
-			{Name: "cancel_queued", Title: "Cancel a queued build", Description: "Removes a waiting build from the queue.", Risk: sdk.RiskWrite, DryRun: true,
+			{Name: "cancel_queued", Title: "Cancel a queued build", Description: "Removes a waiting build from the queue. Destructive: it never runs and has to be triggered again.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"integer","minimum":1,"description":"Queue item id (see queue)"}}}`)},
 		},
 	}

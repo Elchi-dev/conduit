@@ -20,7 +20,7 @@ Containers and Compose stacks through the Docker Engine API.
 | `logs` | read | Recent lines, stdout and stderr merged with timestamps |
 | `images` | read | Tags, size, created |
 | `start`, `unpause` | write | Undo stops / pauses again |
-| `pause` | write | Undo resumes |
+| `pause` | destructive | Freezes the container's processes: what it serves is unavailable until it's resumed, like `stop`. Undo resumes |
 | `stop` | destructive | Undo starts again; dry run shows current state |
 | `restart` | destructive | Dry run shows current state |
 | `stack_action` | destructive | Start, stop, restart, pause or resume every container of a Compose project |

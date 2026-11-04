@@ -91,14 +91,16 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "ticket", Title: "Open a ticket", Description: "A ticket with requester, assignee, tags and its latest conversation entries, public and private.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket"],"properties":{` + tk + `,"conversations":{"type":"integer","minimum":1,"maximum":100,"default":20}}}`)},
 			{Name: "agents", Title: "Agents", Description: "Agents with their id and name, to assign tickets to.", Risk: sdk.RiskRead},
-			{Name: "add_note", Title: "Add a private note", Description: "A note only agents see; the requester isn't notified. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_note", Title: "Add a private note", Description: "A note only agents see; the requester isn't notified. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket","text"],"properties":{` + tk + `,` + text + `}}`)},
-			{Name: "delete_note", Title: "Delete a private note", Description: "Deletes one private note, for good. Only private notes: replies and customer messages are refused.", Risk: sdk.RiskDestructive, DryRun: true,
+			{Name: "delete_note", Title: "Delete a private note", Description: "Deletes one private note, for good. Only private notes: replies and customer messages are refused. The preview quotes the note.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket","note"],"properties":{` + tk + `,"note":{"type":["string","integer"],"description":"The note's id"}}}`)},
 			{Name: "reply", Title: "Reply to the requester", Description: "A public reply, emailed to the requester. It can't be unsent, so it's destructive. The preview shows who gets it and the text.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket","text"],"properties":{` + tk + `,` + text + `}}`)},
-			{Name: "set_status", Title: "Set the status", Description: "Open, pending, resolved or closed. Undo sets the status it had.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["ticket","status"],"properties":{` + tk + `,"status":{"type":"string","enum":["open","pending","resolved","closed"]}}}`)},
+			{Name: "set_status", Title: "Set the status", Description: "Open or pending (also reopens a resolved or closed ticket). Resolving and closing are resolve. Undo sets the status it had.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["ticket","status"],"properties":{` + tk + `,"status":{"type":"string","enum":["open","pending"]}}}`)},
+			{Name: "resolve", Title: "Resolve or close a ticket", Description: "Sets a ticket resolved (default) or closed. Freshdesk's automations may email the requester (a satisfaction survey or a resolution notice), which can't be unsent, so it's destructive. Undo sets the status it had.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["ticket"],"properties":{` + tk + `,"status":{"type":"string","enum":["resolved","closed"],"default":"resolved"}}}`)},
 			{Name: "assign", Title: "Assign a ticket", Description: "To an agent (id from agents), or unassign it. Undo gives it back to whoever had it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket"],"properties":{` + tk + `,"assignee":{"type":["string","integer"],"description":"Agent id"},"unassign":{"type":"boolean"}}}`)},
 		},
@@ -473,7 +475,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		if call.Action == "add_note" {
 			if call.DryRun {
-				return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Add a private note to ticket #%s (%s); the requester isn't notified", tid, clip(t.Subject, 100)),
+				return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Add a private note to ticket #%s; the requester isn't notified", tid),
 					Changes: []sdk.Change{{Target: "ticket #" + tid, Op: "note", After: mustJSON(map[string]any{"text": clip(body, 2000)})}}}}, nil
 			}
 			var out conversation
@@ -530,11 +532,21 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(map[string]any{"ticket": tid, "deleted": nid})
 
-	case "set_status":
-		code, ok := statusCode[p.Status]
-		if !ok {
-			return sdk.Result{}, errors.New("the status is open, pending, resolved or closed")
+	case "set_status", "resolve":
+		to := p.Status
+		if call.Action == "resolve" {
+			if to == "" {
+				to = "resolved"
+			}
+			if to != "resolved" && to != "closed" {
+				return sdk.Result{}, errors.New("resolve sets resolved or closed (set_status sets open or pending)")
+			}
+		} else if to == "resolved" || to == "closed" {
+			return sdk.Result{}, errors.New("resolving or closing a ticket may email the requester; use resolve")
+		} else if to != "open" && to != "pending" {
+			return sdk.Result{}, errors.New("the status is open or pending (resolve resolves or closes it)")
 		}
+		code := statusCode[to]
 		t, err := c.getTicket(ctx, tid)
 		if err != nil {
 			return sdk.Result{}, err
@@ -544,16 +556,24 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.JSON(map[string]any{"ticket": t.ID, "status": before, "note": "the ticket already has this status"})
 		}
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Set ticket #%s (%s) from %s to %s", tid, clip(t.Subject, 100), before, p.Status),
-				Changes: []sdk.Change{{Target: "ticket #" + tid, Op: "update", Before: mustJSON(map[string]any{"status": before}), After: mustJSON(map[string]any{"status": p.Status})}}}}, nil
+			// Ids and statuses only: this plan goes in the audit log as is.
+			summary := fmt.Sprintf("Set ticket #%s from %s to %s", tid, before, to)
+			if call.Action == "resolve" {
+				summary = fmt.Sprintf("Set ticket #%s from %s to %s; it may email the requester (satisfaction survey or resolution notice)", tid, before, to)
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary,
+				Changes: []sdk.Change{{Target: "ticket #" + tid, Op: "update", Before: mustJSON(map[string]any{"status": before}), After: mustJSON(map[string]any{"status": to})}}}}, nil
 		}
 		after, err := c.update(ctx, tid, map[string]any{"status": code})
 		if err != nil {
 			return sdk.Result{}, err
 		}
 		r, err := sdk.JSON(map[string]any{"ticket": t.ID, "from": before, "to": status(after.Status)})
-		if _, known := statusName[t.Status]; known {
+		switch before {
+		case "open", "pending":
 			r.Undo = sdk.UndoWith("set_status", map[string]any{"ticket": tid, "status": before}, fmt.Sprintf("Set ticket #%s back to %s", tid, before))
+		case "resolved", "closed":
+			r.Undo = sdk.UndoWith("resolve", map[string]any{"ticket": tid, "status": before}, fmt.Sprintf("Set ticket #%s back to %s", tid, before))
 		}
 		return r, err
 
@@ -578,7 +598,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		before, after := c.agentName(ctx, t.ResponderID), c.agentName(ctx, to)
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Assign ticket #%s (%s) from %s to %s", tid, clip(t.Subject, 100), before, after),
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Assign ticket #%s from %s to %s", tid, before, after),
 				Changes: []sdk.Change{{Target: "ticket #" + tid, Op: "assign", Before: mustJSON(map[string]any{"assignee": before}), After: mustJSON(map[string]any{"assignee": after})}}}}, nil
 		}
 		if _, err := c.update(ctx, tid, map[string]any{"responder_id": to}); err != nil {

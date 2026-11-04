@@ -65,9 +65,11 @@ sensitive itself (that action's input is logged in the clear whenever it
 runs, so it carries no secret): creating a key undone by deleting it, a
 secret write undone by restoring a version number, a share removed by its
 id. A token that holds nothing but an identifier (`id`, `name` or `names`
-with plain values) is kept even when the action it calls is sensitive: a
-recorded Firefly transaction is deleted by its id, though
-`delete_transaction`'s preview is private. An undo that would replay a value
+with plain values, or record numbers under `ticket`, `conversation`,
+`note` and `article`, positive integers only) is kept even when the action
+it calls is sensitive: a recorded Firefly transaction is deleted by its id,
+though `delete_transaction`'s preview is private, and a help desk note by
+its ticket's number and its own, though `delete_note` quotes the note. An undo that would replay a value
 (put the old value back) is dropped,
 so such an action must not declare itself `reversible` or promise an undo;
 when the old value is lost, the action is `destructive`. The daemon's risk

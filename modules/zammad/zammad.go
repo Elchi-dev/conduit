@@ -64,8 +64,13 @@ var (
 	emailRe  = regexp.MustCompile(`^[^\s@<>,;"]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,63}$`)
 )
 
-// states are the ones set_state sets; pending ones need a time.
+// states are the ones set_state and close set, with whether they need a
+// time; closing (now or at a time) is close's.
 var states = map[string]bool{"open": false, "closed": false, "new": false, "pending reminder": true, "pending close": true}
+
+// closing says whether a state closes the ticket, now or at its time, which
+// can fire Zammad's close triggers (an email to the customer).
+func closing(state string) bool { return state == "closed" || state == "pending close" }
 
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
@@ -87,14 +92,16 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["query"],"properties":{"query":{"type":"string","maxLength":500},"limit":{"type":"integer","minimum":1,"maximum":100,"default":25}}}`)},
 			{Name: "ticket", Title: "Open a ticket", Description: "A ticket with customer, owner, group and its latest articles (emails, notes, calls), internal ones included.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket"],"properties":{` + tk + `,"articles":{"type":"integer","minimum":1,"maximum":100,"default":20}}}`)},
-			{Name: "add_note", Title: "Add an internal note", Description: "A note only agents see; the customer isn't notified. Undo deletes it (Zammad lets agents delete their own notes for a few minutes).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_note", Title: "Add an internal note", Description: "A note only agents see; the customer isn't notified. Undo deletes it (Zammad lets agents delete their own notes for a few minutes).", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket","text"],"properties":{` + tk + `,` + text + `}}`)},
-			{Name: "delete_note", Title: "Delete an internal note", Description: "Deletes one internal note. Only internal notes: emails and customer articles are refused.", Risk: sdk.RiskDestructive, DryRun: true,
+			{Name: "delete_note", Title: "Delete an internal note", Description: "Deletes one internal note. Only internal notes: emails and customer articles are refused. The preview quotes the note.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket","note"],"properties":{` + tk + `,"note":{"type":["string","integer"],"description":"The note's article id"}}}`)},
 			{Name: "reply", Title: "Reply to the customer", Description: "An email to the ticket's customer. It can't be unsent, so it's destructive. The preview shows the address and the text.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["ticket","text"],"properties":{` + tk + `,` + text + `}}`)},
-			{Name: "set_state", Title: "Set the state", Description: "Open, closed, new, or pending reminder / pending close until a time. Undo sets the state it had.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["ticket","state"],"properties":{` + tk + `,"state":{"type":"string","enum":["open","closed","new","pending reminder","pending close"]},"pendingUntil":{"type":"string","format":"date-time","description":"For a pending state, e.g. 2026-11-10T09:00:00Z"}}}`)},
+			{Name: "set_state", Title: "Set the state", Description: "Open, new, or pending reminder until a future time (also reopens a closed ticket). Closing is close. Undo sets the state it had.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["ticket","state"],"properties":{` + tk + `,"state":{"type":"string","enum":["open","new","pending reminder"]},"pendingUntil":{"type":"string","format":"date-time","description":"For pending reminder, a future time, e.g. 2026-11-10T09:00:00Z"}}}`)},
+			{Name: "close", Title: "Close a ticket", Description: "Closes a ticket now, or at pendingUntil (pending close). Zammad's close triggers may email the customer (a closing notice or survey), which can't be unsent, so it's destructive. Undo sets the state it had.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["ticket"],"properties":{` + tk + `,"pendingUntil":{"type":"string","format":"date-time","description":"Close at this future time instead of now (pending close), e.g. 2026-11-10T09:00:00Z"}}}`)},
 		},
 	}
 }
@@ -450,7 +457,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		n, _ := strconv.ParseInt(tid, 10, 64)
 		if call.Action == "add_note" {
 			if call.DryRun {
-				return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Add an internal note to ticket #%s (%s); the customer isn't notified", t.Number, clip(t.Title, 100)),
+				return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Add an internal note to ticket #%s; the customer isn't notified", t.Number),
 					Changes: []sdk.Change{{Target: "ticket #" + t.Number, Op: "note", After: mustJSON(map[string]any{"text": clip(body, 2000)})}}}}, nil
 			}
 			var out article
@@ -508,10 +515,19 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(map[string]any{"ticket": tid, "deleted": nid})
 
-	case "set_state":
-		pending, ok := states[p.State]
+	case "set_state", "close":
+		state := p.State
+		if call.Action == "close" {
+			state = "closed"
+			if p.PendingUntil != "" {
+				state = "pending close"
+			}
+		} else if closing(state) {
+			return sdk.Result{}, errors.New("closing a ticket can fire Zammad's close triggers (an email to the customer); use close")
+		}
+		pending, ok := states[state]
 		if !ok {
-			return sdk.Result{}, errors.New("the state is open, closed, new, pending reminder or pending close")
+			return sdk.Result{}, errors.New("the state is open, new or pending reminder (close closes it)")
 		}
 		var until string
 		switch {
@@ -519,6 +535,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			at, err := time.Parse(time.RFC3339, strings.TrimSpace(p.PendingUntil))
 			if err != nil {
 				return sdk.Result{}, errors.New("a pending state needs pendingUntil, a time like 2026-11-10T09:00:00Z")
+			}
+			if !at.After(now()) {
+				return sdk.Result{}, errors.New("pendingUntil is in the past; Zammad would act on it at once")
 			}
 			if at.After(now().AddDate(5, 0, 0)) {
 				return sdk.Result{}, errors.New("pendingUntil is at most five years ahead")
@@ -538,11 +557,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if t.PendingTime != nil {
 			prevUntil = *t.PendingTime
 		}
-		if t.State == p.State && (!pending || prevUntil == until) {
+		if t.State == state && (!pending || prevUntil == until) {
 			return sdk.JSON(map[string]any{"ticket": t.ID, "state": t.State, "note": "the ticket already has this state"})
 		}
 		before := map[string]any{"state": t.State}
-		after := map[string]any{"state": p.State}
+		after := map[string]any{"state": state}
 		if prevUntil != "" {
 			before["pendingUntil"] = prevUntil
 		}
@@ -550,10 +569,15 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			after["pendingUntil"] = until
 		}
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Set ticket #%s (%s) from %s to %s", t.Number, clip(t.Title, 100), t.State, p.State),
+			// Numbers and states only: this plan goes in the audit log as is.
+			summary := fmt.Sprintf("Set ticket #%s from %s to %s", t.Number, t.State, state)
+			if closing(state) {
+				summary += "; Zammad's close triggers may email the customer"
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary,
 				Changes: []sdk.Change{{Target: "ticket #" + t.Number, Op: "update", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
 		}
-		body := map[string]any{"state": p.State}
+		body := map[string]any{"state": state}
 		if until != "" {
 			body["pending_time"] = until
 		}
@@ -561,18 +585,22 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if _, err := c.api.Do(ctx, http.MethodPut, "/tickets/"+tid, url.Values{"expand": {"true"}}, body, &got); err != nil {
 			return sdk.Result{}, friendly(err, "ticket "+tid)
 		}
-		r, err := sdk.JSON(map[string]any{"ticket": t.ID, "from": t.State, "to": p.State})
+		r, err := sdk.JSON(map[string]any{"ticket": t.ID, "from": t.State, "to": state})
 		if back, ok := states[t.State]; ok {
-			undo := map[string]any{"ticket": tid, "state": t.State}
+			action, undo := "set_state", map[string]any{"ticket": tid, "state": t.State}
+			if closing(t.State) {
+				action, undo = "close", map[string]any{"ticket": tid}
+			}
 			if back {
-				if pt, err := time.Parse(time.RFC3339, prevUntil); err == nil {
+				// Only a time still ahead can be set again.
+				if pt, err := time.Parse(time.RFC3339, prevUntil); err == nil && pt.After(now()) {
 					undo["pendingUntil"] = pt.UTC().Format(time.RFC3339)
 				} else {
 					undo = nil
 				}
 			}
 			if undo != nil {
-				r.Undo = sdk.UndoWith("set_state", undo, fmt.Sprintf("Set ticket #%s back to %s", t.Number, t.State))
+				r.Undo = sdk.UndoWith(action, undo, fmt.Sprintf("Set ticket #%s back to %s", t.Number, t.State))
 			}
 		}
 		return r, err

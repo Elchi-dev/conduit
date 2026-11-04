@@ -24,7 +24,7 @@ certificate, enter its SHA-256 `fingerprint`.
 | `queue` | read | Waiting builds with their queue id, why they wait and since when (never their parameters). |
 | `trigger_build` | destructive | Queues a build. A build runs the job's code with its credentials, so it's destructive. `parameters` are checked against the job's definitions: unknown names, values outside a choice list and non-boolean values for boolean parameters are refused, and so are password, credentials and file parameters (their defaults are used). The preview shows the build number and every parameter value that will be used. The answer has the queue id. No undo: use `stop_build` or `cancel_queued`. |
 | `stop_build` | destructive | Aborts a running build (work in flight, such as a deploy, stops part way); the preview names it and when it started. |
-| `cancel_queued` | write | Removes a waiting build from the queue by its id. It hasn't started, so nothing is interrupted (that's why it stays write). |
+| `cancel_queued` | destructive | Removes a waiting build from the queue by its id. It hasn't started, but it never will: someone's build (a deploy, a release) is dropped and has to be triggered again, which is destructive itself, so cancelling is too (like ComfyUI's `clear_queue`). |
 
 Jobs in folders are given as `folder/job`; paths copied from a URL
 (`job/folder/job/name`) work too.

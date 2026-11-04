@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/elchi-dev/conduit/internal/fakehost"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -101,6 +102,7 @@ func setup(t *testing.T, token string) (*Module, *fake) {
 	t.Cleanup(srv.Close)
 	m := New()
 	m.HTTP = srv.Client()
+	m.Now = func() time.Time { return time.Date(2026, 11, 4, 10, 0, 0, 0, time.UTC) }
 	raw, _ := json.Marshal(Config{Address: srv.URL + "/", Token: token})
 	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://zm": "zmtok", "secret://bad": "nope"}), "z", raw); err != nil {
 		t.Fatal(err)
@@ -139,7 +141,8 @@ func TestZammadReads(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		spec[a.Name] = a
 	}
-	if !spec["ticket"].Sensitive || !spec["reply"].Sensitive || spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || !spec["set_state"].Reversible {
+	if !spec["ticket"].Sensitive || !spec["reply"].Sensitive || spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || !spec["set_state"].Reversible ||
+		!spec["add_note"].Sensitive || !spec["delete_note"].Sensitive || spec["close"].Risk != sdk.RiskDestructive || !spec["close"].Reversible || spec["set_state"].Risk != sdk.RiskWrite {
 		t.Fatalf("%+v", spec)
 	}
 }
@@ -167,19 +170,66 @@ func TestZammadWrites(t *testing.T) {
 		t.Fatalf("%v %v", err, f.writes)
 	}
 
-	if r, err := invoke(m, "set_state", `{"ticket":42,"state":"closed"}`, true); err != nil || r.Plan == nil || f.state != "open" {
-		t.Fatal(err)
+	if r, err := invoke(m, "close", `{"ticket":42}`, true); err != nil || r.Plan == nil || f.state != "open" || !strings.Contains(r.Plan.Summary, "close triggers may email the customer") {
+		t.Fatal(err, r.Plan)
 	}
 	r, err = invoke(m, "set_state", `{"ticket":42,"state":"pending reminder","pendingUntil":"2026-11-10T09:00:00+01:00"}`, false)
 	if err != nil || f.state != "pending reminder" || f.pending != "2026-11-10T08:00:00Z" || r.Undo == nil {
 		t.Fatalf("%+v %v", r, err)
 	}
-	r, err = invoke(m, "set_state", `{"ticket":42,"state":"closed"}`, false)
-	if err != nil || f.state != "closed" || r.Undo == nil || !strings.Contains(string(r.Undo.Input), `"pendingUntil":"2026-11-10T08:00:00Z"`) {
+	r, err = invoke(m, "close", `{"ticket":42}`, false)
+	if err != nil || f.state != "closed" || r.Undo == nil || r.Undo.Action != "set_state" || !strings.Contains(string(r.Undo.Input), `"pendingUntil":"2026-11-10T08:00:00Z"`) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.state != "pending reminder" {
 		t.Fatal(err, f.state)
+	}
+	// Closing at a time is pending close; reopening undoes through close.
+	if _, err := invoke(m, "close", `{"ticket":42,"pendingUntil":"2026-11-05T09:00:00Z"}`, false); err != nil || f.state != "pending close" {
+		t.Fatal(err, f.state)
+	}
+	r, err = invoke(m, "set_state", `{"ticket":42,"state":"open"}`, false)
+	if err != nil || f.state != "open" || r.Undo == nil || r.Undo.Action != "close" || !strings.Contains(string(r.Undo.Input), `"pendingUntil":"2026-11-05T09:00:00Z"`) {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// A pending time that has passed can't be set again, so there's no undo.
+	f.state, f.pending = "pending reminder", "2026-11-01T00:00:00Z"
+	if r, err := invoke(m, "set_state", `{"ticket":42,"state":"open"}`, false); err != nil || r.Undo != nil {
+		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+// The plans, results and undo tokens of actions that aren't sensitive go in
+// the audit log, events and webhooks as they are, so they hold numbers and
+// states, never the ticket's title or the customer.
+func TestZammadPlansHoldNoCustomerData(t *testing.T) {
+	m, f := setup(t, "secret://zm")
+	inputs := map[string]string{
+		"set_state": `{"ticket":42,"state":"pending reminder","pendingUntil":"2026-11-10T09:00:00Z"}`,
+		"close":     `{"ticket":42}`,
+	}
+	private := []string{"VPN broken", "Jane", "jane@example.com", "down"}
+	for _, a := range m.Manifest().Actions {
+		if a.Sensitive || a.Risk == sdk.RiskRead {
+			continue
+		}
+		in, ok := inputs[a.Name]
+		if !ok {
+			t.Fatalf("no input for %s", a.Name)
+		}
+		for _, dry := range []bool{true, false} {
+			f.state, f.pending = "open", nil
+			r, err := invoke(m, a.Name, in, dry)
+			if err != nil {
+				t.Fatalf("%s: %v", a.Name, err)
+			}
+			b, _ := json.Marshal(r)
+			for _, p := range private {
+				if strings.Contains(string(b), p) {
+					t.Errorf("%s (dry run %v) shows %q: %s", a.Name, dry, p, b)
+				}
+			}
+		}
 	}
 }
 
@@ -197,9 +247,13 @@ func TestZammadValidation(t *testing.T) {
 		{"reply", `{"ticket":42,"text":"` + strings.Repeat("x", maxText+1) + `"}`},
 		{"delete_note", `{"ticket":42,"note":"x"}`},
 		{"set_state", `{"ticket":42,"state":"merged"}`},
-		{"set_state", `{"ticket":42,"state":"pending close"}`},
-		{"set_state", `{"ticket":42,"state":"pending close","pendingUntil":"tomorrow"}`},
-		{"set_state", `{"ticket":42,"state":"pending close","pendingUntil":"2099-01-01T00:00:00Z"}`},
+		{"set_state", `{"ticket":42,"state":"pending reminder"}`},
+		{"set_state", `{"ticket":42,"state":"pending reminder","pendingUntil":"tomorrow"}`},
+		{"set_state", `{"ticket":42,"state":"pending reminder","pendingUntil":"2099-01-01T00:00:00Z"}`},
+		{"set_state", `{"ticket":42,"state":"pending reminder","pendingUntil":"2026-11-04T09:59:00Z"}`},
+		{"set_state", `{"ticket":42,"state":"closed"}`},
+		{"set_state", `{"ticket":42,"state":"pending close","pendingUntil":"2026-11-10T09:00:00Z"}`},
+		{"close", `{"ticket":42,"pendingUntil":"2026-11-01T00:00:00Z"}`},
 		{"set_state", `{"ticket":42,"state":"open","pendingUntil":"2026-11-10T09:00:00Z"}`},
 	} {
 		if _, err := invoke(m, c.action, c.in, false); err == nil {

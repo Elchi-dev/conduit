@@ -22,7 +22,7 @@ for its Spaces and endpoints).
 | `pause_space` | destructive | Pauses a Space: it stops billing and stays off until restarted. |
 | `endpoints` | read | Inference Endpoints of `namespace` (you by default): state, model, task, hardware, provider and region, replicas ready and wanted, scaling, shortened address. |
 | `endpoint_status` | read | One endpoint by `name`. |
-| `scale_endpoint_to_zero` | write | Stops the endpoint's replicas so it stops billing; the next request wakes it. Write rather than destructive because it saves money and the endpoint comes back on its own, but the cold start can take minutes and fail requests meanwhile. |
+| `scale_endpoint_to_zero` | destructive | Stops the endpoint's replicas so it stops billing; the next request wakes it. It saves money and the endpoint comes back on its own, but it interrupts whoever uses it: the cold start can take minutes and fail requests meanwhile, so it's destructive like `pause_endpoint`. |
 | `pause_endpoint` | destructive | Pauses an endpoint: requests fail until it's resumed. |
 | `resume_endpoint` | destructive | Starts a paused or scaled-to-zero endpoint. Destructive because its hardware is billed by the hour from then on; the preview names the hardware. |
 

@@ -140,8 +140,46 @@ func TestOpenAICompatSettings(t *testing.T) {
 	}
 	// The default cap applies when none is set.
 	d, f := setup(t, Config{}, "")
-	if _, err := invoke(d, "chat", `{"model":"qwen","prompt":"hi"}`); err != nil || f.bodies[0]["max_tokens"] != float64(defaultMaxTokens) {
+	if _, err := invoke(d, "chat", `{"model":"llama-3.2-3b","prompt":"hi"}`); err != nil || f.bodies[0]["max_tokens"] != float64(defaultMaxTokens) {
 		t.Fatal(err, f.bodies)
+	}
+	for _, raw := range []string{`{"url":"http://h:1/v1","models":["../x"]}`, `{"url":"http://h:1/v1","models":[""]}`} {
+		if err := New().Configure(context.Background(), fakehost.New(nil), "x", json.RawMessage(raw)); err == nil {
+			t.Fatalf("%s accepted", raw)
+		}
+	}
+}
+
+// chat uses only the models the instance allows; with none set, only those
+// the server lists, and never a routing variant such as :online (a paid web
+// search on every call) unless the settings name it.
+func TestOpenAICompatModelAllowList(t *testing.T) {
+	m, f := setup(t, Config{}, "")
+	for _, model := range []string{"gpt-4o", "llama-3.2-3b:online", "qwen2.5-7b-instruct:nitro", "qwen2.5-7b-instruct:ONLINE"} {
+		if _, err := invoke(m, "chat", `{"model":"`+model+`","prompt":"hi"}`); err == nil {
+			t.Fatalf("%s accepted", model)
+		}
+	}
+	if len(f.bodies) != 0 {
+		t.Fatalf("a refused model reached the server: %v", f.bodies)
+	}
+	if _, err := invoke(m, "chat", `{"model":"llama-3.2-3b","prompt":"hi"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	al, f := setup(t, Config{Models: []string{"llama-3.2-3b:online", "unlisted-model"}}, "")
+	for _, model := range []string{"llama-3.2-3b", "qwen2.5-7b-instruct"} {
+		if _, err := invoke(al, "chat", `{"model":"`+model+`","prompt":"hi"}`); err == nil || !strings.Contains(err.Error(), "don't allow") {
+			t.Fatalf("%s: %v", model, err)
+		}
+	}
+	for _, model := range []string{"llama-3.2-3b:online", "unlisted-model"} {
+		if _, err := invoke(al, "chat", `{"model":"`+model+`","prompt":"hi"}`); err != nil {
+			t.Fatalf("%s: %v", model, err)
+		}
+	}
+	if len(f.bodies) != 2 || f.bodies[0]["model"] != "llama-3.2-3b:online" {
+		t.Fatal(f.bodies)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -609,11 +610,12 @@ func RedactPlan(action string, p *sdk.Plan) *sdk.Plan {
 // of the same module that isn't sensitive itself: that action's input is
 // logged in the clear whenever it runs, so its contract is that it carries
 // no secret (kv_delete takes a key, restore_version a version number). The
-// one exception is a token that holds nothing but an identifier ("id",
-// "name" or "names" with scalar values), which is no secret even when the
-// action it calls is sensitive (a transaction deleted by its id). An undo
-// that would replay a secret value (put the old value back) is dropped, and
-// such actions don't declare themselves reversible.
+// one exception is a token that holds nothing but identifiers ("id",
+// "name" or "names" with scalar values, or record numbers in refKeys),
+// which are no secret even when the action it calls is sensitive (a
+// transaction deleted by its id, a note by its ticket's number and its
+// own). An undo that would replay a secret value (put the old value back)
+// is dropped, and such actions don't declare themselves reversible.
 func keepUndo(m sdk.Module, spec sdk.ActionSpec, u *sdk.Undo) bool {
 	if u == nil || !spec.Sensitive {
 		return true
@@ -622,8 +624,18 @@ func keepUndo(m sdk.Module, spec sdk.ActionSpec, u *sdk.Undo) bool {
 	return ok && (!target.Sensitive || idOnly(u.Input))
 }
 
+// refKeys are the keys besides "id" under which an undo token names a
+// record by its number: a note is deleted by its ticket's and its own id.
+// Their values must be positive integers (a number or a string of digits),
+// so nothing but a reference fits.
+var refKeys = map[string]bool{"ticket": true, "conversation": true, "note": true, "article": true}
+
+// refIDRe matches a record number for refKeys.
+var refIDRe = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
+
 // idOnly says whether an undo input is an object holding only identifiers:
-// the keys "id", "name" and "names", with numbers or short strings.
+// the keys "id", "name" and "names", with numbers or short strings, and the
+// record references in refKeys, with positive integers.
 func idOnly(b json.RawMessage) bool {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(b, &m) != nil || len(m) == 0 {
@@ -635,6 +647,17 @@ func idOnly(b json.RawMessage) bool {
 		return json.Unmarshal(v, &n) == nil || (json.Unmarshal(v, &s) == nil && len(s) <= 200)
 	}
 	for k, v := range m {
+		if refKeys[k] {
+			var n json.Number
+			var s string
+			switch {
+			case json.Unmarshal(v, &n) == nil && refIDRe.MatchString(n.String()):
+			case json.Unmarshal(v, &s) == nil && refIDRe.MatchString(s):
+			default:
+				return false
+			}
+			continue
+		}
 		switch k {
 		case "id", "name":
 			if !scalar(v) {

@@ -73,7 +73,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "images", Title: "Images", Risk: sdk.RiskRead},
 			{Name: "start", Title: "Start", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(one)},
 			{Name: "unpause", Title: "Resume", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(one)},
-			{Name: "pause", Title: "Pause", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(one)},
+			{Name: "pause", Title: "Pause", Description: "Freezes every process in a container: what it serves is unavailable until it's resumed, so it's destructive. Undo resumes it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(one)},
 			{Name: "stop", Title: "Stop", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(one)},
 			{Name: "restart", Title: "Restart", Risk: sdk.RiskDestructive, DryRun: true, Input: sdk.Schema(one)},
 			{Name: "stack_action", Title: "Start, stop or restart a stack", Risk: sdk.RiskDestructive, DryRun: true,

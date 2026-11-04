@@ -169,7 +169,7 @@ func TestJenkinsRead(t *testing.T) {
 	// Aborting a running build interrupts work in flight; removing a build
 	// that hasn't started from the queue doesn't.
 	for _, a := range m.Manifest().Actions {
-		want, ok := map[string]sdk.Risk{"trigger_build": sdk.RiskDestructive, "stop_build": sdk.RiskDestructive, "cancel_queued": sdk.RiskWrite}[a.Name]
+		want, ok := map[string]sdk.Risk{"trigger_build": sdk.RiskDestructive, "stop_build": sdk.RiskDestructive, "cancel_queued": sdk.RiskDestructive}[a.Name]
 		if ok && a.Risk != want {
 			t.Fatalf("%s is %s, want %s", a.Name, a.Risk, want)
 		}

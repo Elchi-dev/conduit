@@ -16,6 +16,7 @@ import (
 
 	"github.com/elchi-dev/conduit/modules/bookstack"
 	"github.com/elchi-dev/conduit/modules/firefly"
+	"github.com/elchi-dev/conduit/modules/freshdesk"
 	"github.com/elchi-dev/conduit/modules/matrix"
 	"github.com/elchi-dev/conduit/modules/outline"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -33,7 +34,7 @@ func (m leakSecrets) Resolve(_ context.Context, ref string) (string, error) {
 func leakEngine(t *testing.T) *Engine {
 	t.Helper()
 	e, _, _ := newTestEngine(t)
-	e.SetSecrets(leakSecrets{"secret://ff": "tok", "secret://bs": "id:sec", "secret://ol": "tok", "secret://mx": "tok"})
+	e.SetSecrets(leakSecrets{"secret://ff": "tok", "secret://bs": "id:sec", "secret://ol": "tok", "secret://mx": "tok", "secret://fd": "tok"})
 	return e
 }
 
@@ -299,7 +300,14 @@ func TestSensitiveUndoByIDKept(t *testing.T) {
 	if !keepUndo(m, spec, sensitiveTarget) {
 		t.Fatal("an id-only token was dropped")
 	}
-	for _, in := range []string{`{"id":42,"value":"old"}`, `{"key":"db"}`, `{"id":{"nested":"x"}}`, `{}`, `"x"`} {
+	// A note is deleted by its ticket's number and its own.
+	for _, in := range []string{`{"ticket":"12","note":"345"}`, `{"conversation":7,"note":8}`, `{"ticket":3,"article":"9"}`} {
+		if !keepUndo(m, spec, &sdk.Undo{Action: "replace", Input: json.RawMessage(in)}) {
+			t.Fatalf("dropped the record references %s", in)
+		}
+	}
+	for _, in := range []string{`{"id":42,"value":"old"}`, `{"key":"db"}`, `{"id":{"nested":"x"}}`, `{}`, `"x"`,
+		`{"ticket":"12","text":"old"}`, `{"note":"Jane's card 4242"}`, `{"ticket":"0"}`, `{"note":-1}`, `{"ticket":1.5}`, `{"conversation":"12a"}`} {
 		if keepUndo(m, spec, &sdk.Undo{Action: "replace", Input: json.RawMessage(in)}) {
 			t.Fatalf("kept %s through a sensitive action", in)
 		}
@@ -314,5 +322,59 @@ func TestRedactPlan(t *testing.T) {
 	}
 	if !contains(p, "Therapy") {
 		t.Fatal("RedactPlan changed its argument")
+	}
+}
+
+// A help desk's previews of actions that aren't sensitive (status,
+// resolving, assignment) go in the audit log as they are, so they carry no
+// subject or requester; notes are sensitive, and a note's undo, which holds
+// only the ticket's and the note's numbers, is still kept.
+func TestHelpDeskPlansCarryNoCustomerData(t *testing.T) {
+	e := leakEngine(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v2/tickets/1":
+			w.Write([]byte(`{"id":1,"subject":"Refund card 4111-1111 for Jane Customer","status":2,"requester_id":50,"responder_id":null,"requester":{"id":50,"name":"Jane Customer","email":"jane@example.com"}}`))
+		case "GET /api/v2/tickets/1/conversations":
+			w.Write([]byte(`[{"id":9,"body_text":"Customer Jane Customer DOB 1980-01-02","private":true,"source":2}]`))
+		case "GET /api/v2/agents/7":
+			w.Write([]byte(`{"id":7,"contact":{"name":"Sam Agent"}}`))
+		case "POST /api/v2/tickets/1/notes":
+			w.WriteHeader(201)
+			w.Write([]byte(`{"id":10,"private":true,"source":2}`))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	m := freshdesk.New()
+	m.Base, m.HTTP = srv.URL, srv.Client()
+	if err := e.Register(m); err != nil {
+		t.Fatal(err)
+	}
+	id := saveInst(t, e, "freshdesk", `{"domain":"acme","apiKey":"secret://fd"}`)
+	ctx := context.Background()
+	private := []string{"4111-1111", "Jane Customer", "jane@example.com", "DOB 1980"}
+	for _, c := range []struct{ action, in string }{
+		{"set_status", `{"ticket":1,"status":"pending"}`},
+		{"resolve", `{"ticket":1}`},
+		{"assign", `{"ticket":1,"assignee":7}`},
+		{"delete_note", `{"ticket":1,"note":9}`},
+		{"add_note", `{"ticket":1,"text":"Jane Customer's card is 4111-1111"}`},
+	} {
+		out, err := e.Invoke(ctx, user, sdk.Call{Instance: id, Action: c.action, DryRun: true, Input: json.RawMessage(c.in)}, InvokeOptions{})
+		if err != nil || out.Result.Plan == nil {
+			t.Fatalf("%s: %v", c.action, err)
+		}
+		noLeak(t, e, out.Audit.Seq, private...)
+	}
+	out, err := e.Invoke(ctx, user, sdk.Call{Instance: id, Action: "add_note", Input: json.RawMessage(`{"ticket":1,"text":"Jane Customer's card is 4111-1111"}`)}, InvokeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	noLeak(t, e, out.Audit.Seq, private...)
+	ent, _ := e.Audit.Get(ctx, out.Audit.Seq)
+	if ent.Undo == nil || ent.Undo.Action != "delete_note" || string(ent.Undo.Input) != `{"note":"10","ticket":"1"}` {
+		t.Fatalf("the note's undo should be kept by its numbers: %+v", ent.Undo)
 	}
 }

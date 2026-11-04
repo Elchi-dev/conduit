@@ -8,6 +8,7 @@ package comfyui
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -59,6 +60,7 @@ const maxWorkflowBytes = 4 << 20
 var (
 	fileRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,120}\.json$`)
 	promptRe = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
+	shaRe    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // Manifest implements sdk.Module.
@@ -76,11 +78,11 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "queue", Title: "Queue", Description: "The generation running now and the ones waiting, by number and id.", Risk: sdk.RiskRead},
 			{Name: "history", Title: "Recent generations", Description: "Recent generations, newest first: status, how long they took, the prompt texts and the output file names. Sensitive: prompts can be private.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}}}`)},
-			{Name: "workflows", Title: "Saved workflows", Description: "Workflow files in the workflows folder that queue_workflow can run, with whether each is in the API format it needs.", Risk: sdk.RiskRead},
-			{Name: "interrupt", Title: "Interrupt", Description: "Stops the generation running now (its partial result is lost); the waiting ones carry on.", Risk: sdk.RiskWrite},
+			{Name: "workflows", Title: "Saved workflows", Description: "Workflow files in the workflows folder that queue_workflow can run, with whether each is in the API format it needs and its sha256.", Risk: sdk.RiskRead},
+			{Name: "interrupt", Title: "Interrupt", Description: "Stops the generation running now; its partial result is lost and it has to be queued again, so it's destructive. The waiting ones carry on. The preview names the one that would stop.", Risk: sdk.RiskDestructive, DryRun: true},
 			{Name: "clear_queue", Title: "Clear the queue", Description: "Removes every waiting generation (not the running one). Destructive: they're gone and have to be queued again.", Risk: sdk.RiskDestructive, DryRun: true},
-			{Name: "queue_workflow", Title: "Queue a workflow", Description: "Queues a workflow file from the workflows folder, optionally with a new seed. Destructive: a workflow runs every node in it, and custom nodes are code that runs on the server. The preview lists the custom node packs it uses.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["file"],"properties":{"file":{"type":"string","description":"A file name from workflows, e.g. portrait.json"},"seed":{"type":"integer","minimum":0,"maximum":9007199254740991,"description":"Replaces the seed of every sampler in it"}}}`)},
+			{Name: "queue_workflow", Title: "Queue a workflow", Description: "Queues a workflow file from the workflows folder, optionally with a new seed. Destructive: a workflow runs every node in it, and custom nodes are code that runs on the server. The preview lists the custom node packs it uses and the file's sha256, which the run must give: it's refused if the file changed since.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["file"],"properties":{"file":{"type":"string","description":"A file name from workflows, e.g. portrait.json"},"seed":{"type":"integer","minimum":0,"maximum":9007199254740991,"description":"Replaces the seed of every sampler in it"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The file's sha256 from the preview or workflows; needed to run, refused if the file changed"}}}`)},
 		},
 	}
 }
@@ -274,40 +276,46 @@ func texts(g map[string]node) []string {
 	return out
 }
 
-// loadWorkflow reads a workflow file from the workflows folder. os.Root
+// loadWorkflow reads a workflow file from the workflows folder, with the
+// sha256 of its bytes (what's queued is exactly what was hashed). os.Root
 // refuses names that leave the folder, symlinks included.
-func (c *conn) loadWorkflow(file string) (map[string]node, error) {
+func (c *conn) loadWorkflow(file string) (map[string]node, string, error) {
 	if c.dir == "" {
-		return nil, errors.New("queueing is off: set a workflows folder in this instance's settings")
+		return nil, "", errors.New("queueing is off: set a workflows folder in this instance's settings")
 	}
 	if !fileRe.MatchString(file) || strings.Contains(file, "..") {
-		return nil, errors.New("give a file name from workflows, like portrait.json")
+		return nil, "", errors.New("give a file name from workflows, like portrait.json")
 	}
 	root, err := os.OpenRoot(c.dir)
 	if err != nil {
-		return nil, fmt.Errorf("workflows folder: %w", err)
+		return nil, "", fmt.Errorf("workflows folder: %w", err)
 	}
 	defer root.Close()
 	f, err := root.Open(file)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, errors.New("there's no such workflow in the workflows folder")
+			return nil, "", errors.New("there's no such workflow in the workflows folder")
 		}
-		return nil, errors.New("that workflow can't be read from the workflows folder")
+		return nil, "", errors.New("that workflow can't be read from the workflows folder")
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil || !st.Mode().IsRegular() {
-		return nil, errors.New("that isn't a workflow file")
+		return nil, "", errors.New("that isn't a workflow file")
 	}
 	if st.Size() > maxWorkflowBytes {
-		return nil, errors.New("that workflow is over 4 MB")
+		return nil, "", errors.New("that workflow is over 4 MB")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxWorkflowBytes+1))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return parseWorkflow(b)
+	if len(b) > maxWorkflowBytes {
+		return nil, "", errors.New("that workflow is over 4 MB")
+	}
+	sum := sha256.Sum256(b)
+	g, err := parseWorkflow(b)
+	return g, hex.EncodeToString(sum[:]), err
 }
 
 func parseWorkflow(b []byte) (map[string]node, error) {
@@ -355,12 +363,13 @@ func (c *conn) workflows() ([]map[string]any, error) {
 			r["bytes"] = info.Size()
 			r["modified"] = info.ModTime().UTC().Format(time.RFC3339)
 		}
-		if g, err := c.loadWorkflow(e.Name()); err != nil {
+		if g, sum, err := c.loadWorkflow(e.Name()); err != nil {
 			r["usable"] = false
 			r["problem"] = err.Error()
 		} else {
 			r["usable"] = true
 			r["nodes"] = len(g)
+			r["sha256"] = sum
 		}
 		out = append(out, r)
 	}
@@ -426,9 +435,10 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return sdk.Result{}, err
 	}
 	var p struct {
-		Limit int    `json:"limit"`
-		File  string `json:"file"`
-		Seed  *int64 `json:"seed"`
+		Limit  int    `json:"limit"`
+		File   string `json:"file"`
+		Seed   *int64 `json:"seed"`
+		SHA256 string `json:"sha256"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
 		return sdk.Result{}, err
@@ -555,6 +565,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
+		if call.DryRun {
+			if len(run) == 0 {
+				return sdk.Result{Plan: &sdk.Plan{Summary: "Nothing is running on " + c.host + ", so nothing would stop", Changes: []sdk.Change{}}}, nil
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Stop generation #%d (%s) on %s; its partial result is lost", run[0].Number, run[0].PromptID, c.host),
+				Changes: []sdk.Change{{Target: fmt.Sprintf("#%d %s", run[0].Number, run[0].PromptID), Op: "interrupt"}}}}, nil
+		}
 		if len(run) == 0 {
 			return sdk.JSON(map[string]any{"interrupted": false, "note": "nothing is running"})
 		}
@@ -591,9 +608,19 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if p.Seed != nil && (*p.Seed < 0 || *p.Seed > 1<<53-1) {
 			return sdk.Result{}, errors.New("the seed is 0 to 9007199254740991")
 		}
-		g, err := c.loadWorkflow(p.File)
+		if p.SHA256 != "" && !shaRe.MatchString(p.SHA256) {
+			return sdk.Result{}, errors.New("sha256 is the file's 64 lowercase hex digits, from the preview or workflows")
+		}
+		g, sum, err := c.loadWorkflow(p.File)
 		if err != nil {
 			return sdk.Result{}, err
+		}
+		// The run is bound to the bytes that were previewed and approved.
+		if !call.DryRun && p.SHA256 == "" {
+			return sdk.Result{}, fmt.Errorf("give the file's sha256 (%s now, from the preview or workflows), so that what runs is what was approved", sum)
+		}
+		if p.SHA256 != "" && p.SHA256 != sum && !call.DryRun {
+			return sdk.Result{}, fmt.Errorf("%s changed since it was previewed (its sha256 is %s now, not %s), so this is refused", p.File, sum, p.SHA256)
 		}
 		reseeded := 0
 		if p.Seed != nil {
@@ -606,7 +633,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if err != nil {
 				return sdk.Result{}, err
 			}
-			after := map[string]any{"nodes": len(g), "customNodePacks": packs}
+			after := map[string]any{"nodes": len(g), "customNodePacks": packs, "sha256": sum}
 			if p.Seed != nil {
 				after["seed"] = *p.Seed
 			}
@@ -614,14 +641,17 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 				after["missingNodes"] = unknown
 			}
 			a, _ := json.Marshal(after)
-			sum := fmt.Sprintf("Queue %s (%d nodes) on %s", p.File, len(g), c.host)
+			summary := fmt.Sprintf("Queue %s (%d nodes, sha256 %s) on %s", p.File, len(g), sum, c.host)
 			if len(packs) > 0 {
-				sum += ", running code from the custom node packs " + strings.Join(packs, ", ")
+				summary += ", running code from the custom node packs " + strings.Join(packs, ", ")
 			}
 			if len(unknown) > 0 {
-				sum += "; the server lacks " + strings.Join(unknown, ", ") + ", so it will be refused"
+				summary += "; the server lacks " + strings.Join(unknown, ", ") + ", so it will be refused"
 			}
-			return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: p.File, Op: "queue", After: a}}}}, nil
+			if p.SHA256 != "" && p.SHA256 != sum {
+				summary += fmt.Sprintf("; the file changed (its sha256 isn't %s any more), so running this call will be refused", p.SHA256)
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: p.File, Op: "queue", After: a}}}}, nil
 		}
 		cid := make([]byte, 16)
 		_, _ = rand.Read(cid)
@@ -633,7 +663,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if _, err := c.api.Do(ctx, http.MethodPost, "/prompt", nil, map[string]any{"prompt": g, "client_id": "conduit-" + hex.EncodeToString(cid)}, &out); err != nil {
 			return sdk.Result{}, friendly(err)
 		}
-		res := map[string]any{"promptId": out.PromptID, "number": out.Number, "file": p.File}
+		res := map[string]any{"promptId": out.PromptID, "number": out.Number, "file": p.File, "sha256": sum}
 		if reseeded > 0 {
 			res["seed"] = *p.Seed
 		}

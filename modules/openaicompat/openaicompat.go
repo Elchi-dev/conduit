@@ -1,7 +1,8 @@
 // Package openaicompat talks to any server with an OpenAI-compatible API
 // (LM Studio, LocalAI, vLLM, llama.cpp's server, Jan, text-generation-webui
 // and many hosted ones): the models it serves, whether it answers, and a
-// chat completion whose length is capped by a setting.
+// chat completion whose length is capped by a setting, to a model the
+// settings allow (or, with none listed, one the server lists itself).
 package openaicompat
 
 import (
@@ -31,6 +32,9 @@ type Config struct {
 	MaxTokens int `json:"maxTokens"`
 	// TimeoutSeconds bounds one chat call (default 120, 5 to 600).
 	TimeoutSeconds int `json:"timeoutSeconds"`
+	// Models are the model ids chat may use. Empty: only ids the server
+	// lists at /models, without a routing variant such as :online.
+	Models []string `json:"models"`
 }
 
 type conn struct {
@@ -38,6 +42,7 @@ type conn struct {
 	chat      *rest.Client
 	host      string
 	maxTokens int
+	allowed   map[string]bool // Config.Models; empty: what the server lists
 }
 
 // Module implements sdk.Module.
@@ -60,6 +65,12 @@ const (
 
 var modelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$`)
 
+// variantRe matches the routing variants some hosted servers (OpenRouter)
+// accept after any model id without listing them: :online adds a paid web
+// search to every call, others pick pricier providers or longer outputs.
+// They're used only when the instance's models name them.
+var variantRe = regexp.MustCompile(`(?i):(online|nitro|floor|exacto|thinking|extended|beta)$`)
+
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
@@ -70,10 +81,11 @@ func (m *Module) Manifest() sdk.Manifest {
 			"url":{"type":"string","default":"http://127.0.0.1:1234/v1","description":"API base before /models, e.g. http://127.0.0.1:1234/v1 (LM Studio), http://127.0.0.1:8080/v1 (llama.cpp, LocalAI), http://127.0.0.1:8000/v1 (vLLM), http://127.0.0.1:1337/v1 (Jan)"},
 			"apiKey":{"type":"string","x-secret":true,"description":"Only if the server asks for an API key"},
 			"maxTokens":{"type":"integer","minimum":1,"maximum":8192,"default":512,"description":"Longest answer chat may ask for, in tokens"},
-			"timeoutSeconds":{"type":"integer","minimum":5,"maximum":600,"default":120,"description":"How long one chat may take"}}}`),
+			"timeoutSeconds":{"type":"integer","minimum":5,"maximum":600,"default":120,"description":"How long one chat may take"},
+			"models":{"type":"array","items":{"type":"string"},"maxItems":200,"description":"Model ids chat may use. Empty: only models the server lists, and never a variant such as :online (a paid web search on each call) unless it's named here"}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "models", Title: "Models", Description: "The models the server offers, with owner where it says.", Risk: sdk.RiskRead},
-			{Name: "chat", Title: "Chat", Description: "Sends one message (and an optional system prompt) to a model and returns its answer and token counts. The answer is capped at the instance's max tokens. Write: it uses the server's compute, and on a paid endpoint it costs money.", Risk: sdk.RiskWrite, Sensitive: true,
+			{Name: "chat", Title: "Chat", Description: "Sends one message (and an optional system prompt) to a model and returns its answer and token counts. The answer is capped at the instance's max tokens, and the model is one the instance's models allow (with none set, one the server lists, without a variant such as :online). Write: it uses the server's compute, and on a paid endpoint it costs money.", Risk: sdk.RiskWrite, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["model","prompt"],"properties":{"model":{"type":"string","description":"A model id from models"},"prompt":{"type":"string","x-multiline":true,"maxLength":16000},"system":{"type":"string","x-multiline":true,"maxLength":4000},"maxTokens":{"type":"integer","minimum":1,"maximum":8192,"description":"At most the instance's max tokens"},"temperature":{"type":"number","minimum":0,"maximum":2}}}`)},
 		},
 	}
@@ -110,6 +122,17 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	case c.TimeoutSeconds < 5 || c.TimeoutSeconds > 600:
 		return errors.New("the timeout is 5 to 600 seconds")
 	}
+	if len(c.Models) > 200 {
+		return errors.New("list at most 200 models")
+	}
+	allowed := map[string]bool{}
+	for _, id := range c.Models {
+		id = strings.TrimSpace(id)
+		if !modelRe.MatchString(id) || strings.Contains(id, "//") || strings.Contains(id, "..") {
+			return fmt.Errorf("%q isn't a model id", id)
+		}
+		allowed[id] = true
+	}
 	ref := c.APIKey
 	auth := func(ctx context.Context, r *http.Request) error {
 		if ref == "" {
@@ -135,7 +158,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	chat := rest.New(base, auth)
 	chat.HTTP = rest.SameHostOnly(client)
 	chat.HTTP.Timeout = time.Duration(c.TimeoutSeconds) * time.Second
-	m.set.Put(id, &conn{api: api, chat: chat, host: u.Host, maxTokens: c.MaxTokens})
+	m.set.Put(id, &conn{api: api, chat: chat, host: u.Host, maxTokens: c.MaxTokens, allowed: allowed})
 	return nil
 }
 
@@ -179,6 +202,30 @@ func (m *Module) Health(ctx context.Context, id string) sdk.Health {
 		return sdk.Health{Status: "degraded", Message: c.host + " answers but offers no models (none loaded?)"}
 	}
 	return sdk.Health{Status: "ok", Message: fmt.Sprintf("%s offers %d model(s)", c.host, len(l.Data))}
+}
+
+// allow says whether chat may use a model: one the settings list, or with
+// none listed, one the server lists itself (never a routing variant).
+func (c *conn) allow(ctx context.Context, model string) error {
+	if len(c.allowed) > 0 {
+		if !c.allowed[model] {
+			return fmt.Errorf("this instance's settings don't allow the model %s", model)
+		}
+		return nil
+	}
+	if variantRe.MatchString(model) {
+		return fmt.Errorf("%s is a routing variant (it can add paid features such as web search); name it in the instance's models to allow it", model)
+	}
+	l, err := c.models(ctx)
+	if err != nil {
+		return err
+	}
+	for _, x := range l.Data {
+		if x.ID == model {
+			return nil
+		}
+	}
+	return fmt.Errorf("the server doesn't list the model %s; see models, or name it in the instance's models", model)
 }
 
 func clip(s string, n int) (string, bool) {
@@ -244,6 +291,9 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		if p.Temperature != nil && (*p.Temperature < 0 || *p.Temperature > 2) {
 			return sdk.Result{}, errors.New("temperature is 0 to 2")
+		}
+		if err := c.allow(ctx, p.Model); err != nil {
+			return sdk.Result{}, err
 		}
 		msgs := []map[string]string{}
 		if strings.TrimSpace(p.System) != "" {

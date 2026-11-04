@@ -79,14 +79,16 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "messages", Title: "Open a conversation", Description: "A conversation's contact, status and assignee with its latest messages, including private notes.", Risk: sdk.RiskRead, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation"],"properties":{` + cv + `}}`)},
 			{Name: "agents", Title: "Agents", Description: "The account's agents with their id, name and availability, to assign conversations to.", Risk: sdk.RiskRead},
-			{Name: "add_note", Title: "Add a private note", Description: "A note only agents see; the contact isn't sent anything. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "add_note", Title: "Add a private note", Description: "A note only agents see; the contact isn't sent anything. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation","text"],"properties":{` + cv + `,` + text + `}}`)},
-			{Name: "delete_note", Title: "Delete a private note", Description: "Deletes one private note. Only private notes: messages to or from the contact are refused.", Risk: sdk.RiskDestructive, DryRun: true,
+			{Name: "delete_note", Title: "Delete a private note", Description: "Deletes one private note. Only private notes: messages to or from the contact are refused. The preview quotes the note.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation","note"],"properties":{` + cv + `,"note":{"type":["string","integer"],"description":"The note's message id"}}}`)},
 			{Name: "reply", Title: "Reply to the contact", Description: "Sends a message to the contact on the conversation's channel. It can't be unsent, so it's destructive. The preview shows who gets it, how, and the text.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation","text"],"properties":{` + cv + `,` + text + `}}`)},
-			{Name: "set_status", Title: "Resolve or reopen", Description: "Sets a conversation resolved, open or pending. Undo sets the status it had.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["conversation","status"],"properties":{` + cv + `,"status":{"type":"string","enum":["resolved","open","pending"]}}}`)},
+			{Name: "set_status", Title: "Reopen or set pending", Description: "Sets a conversation open or pending (also reopens a resolved one). Resolving is resolve. Undo sets the status it had.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["conversation","status"],"properties":{` + cv + `,"status":{"type":"string","enum":["open","pending"]}}}`)},
+			{Name: "resolve", Title: "Resolve a conversation", Description: "Sets a conversation resolved. Chatwoot may message the contact (a satisfaction survey, or the inbox's resolution message), which can't be unsent, so it's destructive. Undo sets the status it had.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["conversation"],"properties":{` + cv + `}}`)},
 			{Name: "assign", Title: "Assign a conversation", Description: "To an agent (id from agents), or unassign it. Undo gives it back to whoever had it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["conversation"],"properties":{` + cv + `,"assignee":{"type":["string","integer"],"description":"Agent id"},"unassign":{"type":"boolean"}}}`)},
 		},
@@ -510,39 +512,50 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(map[string]any{"conversation": cid, "deleted": nid})
 
-	case "set_status":
-		switch p.Status {
-		case "resolved", "open", "pending":
-		default:
-			return sdk.Result{}, errors.New("the status is resolved, open or pending")
+	case "set_status", "resolve":
+		to := p.Status
+		switch {
+		case call.Action == "resolve":
+			to = "resolved"
+		case to == "resolved":
+			return sdk.Result{}, errors.New("resolving a conversation may message the contact; use resolve")
+		case to != "open" && to != "pending":
+			return sdk.Result{}, errors.New("the status is open or pending (resolve resolves it)")
 		}
 		cv, err := c.get(ctx, cid)
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		if cv.Status == p.Status {
+		if cv.Status == to {
 			return sdk.JSON(map[string]any{"conversation": cv.ID, "status": cv.Status, "note": "the conversation already has this status"})
 		}
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Set conversation %s with %s from %s to %s", cid, name(cv.Meta.Sender), cv.Status, p.Status),
-				Changes: []sdk.Change{{Target: "conversation " + cid, Op: "update", Before: mustJSON(map[string]any{"status": cv.Status}), After: mustJSON(map[string]any{"status": p.Status})}}}}, nil
+			// Ids and statuses only: this plan goes in the audit log as is.
+			summary := fmt.Sprintf("Set conversation %s from %s to %s", cid, cv.Status, to)
+			if to == "resolved" {
+				summary = fmt.Sprintf("Resolve conversation %s (now %s); it may message the contact (satisfaction survey or resolution notice)", cid, cv.Status)
+			}
+			return sdk.Result{Plan: &sdk.Plan{Summary: summary,
+				Changes: []sdk.Change{{Target: "conversation " + cid, Op: "update", Before: mustJSON(map[string]any{"status": cv.Status}), After: mustJSON(map[string]any{"status": to})}}}}, nil
 		}
 		var a struct {
 			Payload struct {
 				CurrentStatus string `json:"current_status"`
 			} `json:"payload"`
 		}
-		if _, err := c.api.Do(ctx, http.MethodPost, c.path("/conversations/"+cid+"/toggle_status"), nil, map[string]any{"status": p.Status}, &a); err != nil {
+		if _, err := c.api.Do(ctx, http.MethodPost, c.path("/conversations/"+cid+"/toggle_status"), nil, map[string]any{"status": to}, &a); err != nil {
 			return sdk.Result{}, friendly(err, "conversation "+cid)
 		}
 		now := a.Payload.CurrentStatus
 		if now == "" {
-			now = p.Status
+			now = to
 		}
 		r, err := sdk.JSON(map[string]any{"conversation": cv.ID, "from": cv.Status, "to": now})
 		switch cv.Status {
-		case "open", "pending", "resolved":
+		case "open", "pending":
 			r.Undo = sdk.UndoWith("set_status", map[string]any{"conversation": cid, "status": cv.Status}, fmt.Sprintf("Set conversation %s back to %s", cid, cv.Status))
+		case "resolved":
+			r.Undo = sdk.UndoWith("resolve", map[string]any{"conversation": cid}, fmt.Sprintf("Resolve conversation %s again", cid))
 		}
 		return r, err
 

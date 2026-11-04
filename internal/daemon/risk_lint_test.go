@@ -11,17 +11,18 @@ import (
 // destructiveName matches action names that say they do something an agent
 // approved only for write must not do: delete, stop or abort running work,
 // run or ship code, apply infrastructure, move money, change access, blind
-// monitoring, or reveal a secret. A verb counts only as the whole name or its
+// monitoring, interrupt, cancel, suspend or pause running work, scale it to
+// zero, or reveal a secret. A verb counts only as the whole name or its
 // first word (stop, stop_build), so listings such as deployments or deploys
 // don't match.
 var destructiveName = regexp.MustCompile(`^(` +
 	`deploy|redeploy|rollback|restart|stop|delete|remove|purge|drain|revoke|deactivate|` +
 	`refund|apply|merge|approve|transfer|shutdown|reboot|poweroff|wipe|terminate|kill|` +
-	`unseal|seal|dispatch|reveal` +
+	`unseal|seal|dispatch|reveal|interrupt|abort|cancel|suspend|pause|scale_to_zero` +
 	`)(_|$)|^(` +
 	`cancel_build|cancel_run|stop_pipeline|disable_user|enable_client|activate_user|` +
 	`set_secret|run_pipeline|trigger_build|trigger_deploy|queue_plan` +
-	`)$`)
+	`)$|^scale(_[a-z]+)*_to_zero$`)
 
 // riskLintAllow lists the genuine exceptions, as "module.action", each with
 // why it isn't destructive. Keep it short: raising the risk is the default
@@ -37,7 +38,23 @@ var riskLintAllow = map[string]string{
 
 	// Media playback, nothing is lost or interrupted beyond what's playing.
 	"kodi.stop":        "stops media playback on a player",
+	"spotify.pause":    "pauses playback; undo resumes it",
 	"spotify.transfer": "moves playback to another of the user's devices",
+
+	// Pausing one monitor is write with an undo that resumes it (pausing all
+	// of them isn't offered): it silences one check, it stops no work.
+	"healthchecks.pause_check":  "pauses one check's alerts; undo resumes it",
+	"uptimerobot.pause_monitor": "pauses one monitor; undo resumes it",
+
+	// Pauses that lose nothing, stop no service anyone uses, and carry on
+	// where they left off when the undo resumes them.
+	"qbittorrent.pause":         "pauses downloads; undo resumes them where they were",
+	"syncthing.pause":           "pauses syncing one folder or device; it catches up on resume (undo)",
+	"unraid.pause_parity_check": "pauses the parity check; undo resumes it from where it was",
+	"listmonk.pause_campaign":   "stops sending (it messages nobody); emails sent stay sent, and the undo, send_campaign, is destructive itself",
+
+	// Cancels an operation that disrupts work, so it restores rather than stops.
+	"nomad.cancel_drain": "ends a drain: the node takes work again, nothing running stops",
 
 	// Metadata that's re-added as easily as it's removed (each has an undo).
 	"github.remove_labels":    "removes labels from an issue; adding them is write too",
@@ -86,7 +103,10 @@ func TestRiskLintPattern(t *testing.T) {
 		"enable_client": true, "set_secret": true, "dispatch_workflow": true, "seal": true,
 		"reveal": true, "reveal_secret": true, "revealed": false,
 		"deployments": false, "deploys": false, "stopwatch": false, "set_secrets_note": false,
-		"cancel_queued": false, "enable_workflow": false, "unmute_monitor": false,
+		"enable_workflow": false, "unmute_monitor": false,
+		"interrupt": true, "abort_job": true, "cancel": true, "cancel_queued": true, "suspend_vm": true, "pause": true,
+		"pause_monitor": true, "scale_to_zero": true, "scale_endpoint_to_zero": true, "interrupted": false, "paused": false, "unpause": false,
+		"cancellations": false, "suspended_users": false, "resume": false,
 	} {
 		if got := destructiveName.MatchString(name); got != want {
 			t.Errorf("%s: %v", name, got)
@@ -104,17 +124,24 @@ func TestRiskLintPattern(t *testing.T) {
 // nothing but an identifier ("id", "name", "names") when the action it calls
 // is sensitive; those are listed in sensitiveUndoByID.
 var sensitiveUndo = map[string]string{
+	"chatwoot.add_note":          "delete_note",        // deletes the note it added, by number
 	"consul.kv_create":           "kv_delete",          // deletes the key it created
 	"firefly.create_transaction": "delete_transaction", // deletes the transaction it recorded, by id
+	"freshdesk.add_note":         "delete_note",        // deletes the note it added, by number
 	"hashivault.write_secret":    "restore_version",    // restores the version that was current
 	"nextcloud.share":            "unshare",            // removes the link by its id
+	"zammad.add_note":            "delete_note",        // deletes the note it added, by number
 }
 
 // sensitiveUndoByID lists the entries of sensitiveUndo whose undo action is
 // sensitive itself, which the engine keeps only because the token is
-// {"id": …} alone (see keepUndo in internal/core).
+// {"id": …} alone, or record numbers ({"ticket": …, "note": …}) alone (see
+// keepUndo in internal/core).
 var sensitiveUndoByID = map[string]bool{
+	"chatwoot.add_note":          true, // delete_note's preview quotes the note
 	"firefly.create_transaction": true, // delete_transaction's preview shows the transaction
+	"freshdesk.add_note":         true, // delete_note's preview quotes the note
+	"zammad.add_note":            true, // delete_note's preview quotes the note
 }
 
 // TestSensitiveUndo fails when a sensitive action claims an undo the audit

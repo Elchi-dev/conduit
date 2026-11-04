@@ -18,19 +18,23 @@ agents); this module is for checking and trying them.
 
 An API key (in the vault) only if the server asks for one. **Max tokens**
 (512 by default, at most 8192) caps every chat answer; **timeout** (120
-seconds by default, 5 to 600) bounds one chat.
+seconds by default, 5 to 600) bounds one chat. **Models** lists the model
+ids `chat` may use; left empty, it may use only the ids the server lists at
+`/models`, and never a routing variant such as OpenRouter's `:online`
+(which adds a paid web search to every call) unless you name it here.
 
 | Action | Risk | Notes |
 | --- | --- | --- |
 | `models` | read | Model ids with their owner where the server says. |
-| `chat` | write, sensitive | Sends `prompt` (up to 16,000 characters) and an optional `system` prompt to `model`, with optional `temperature` (0 to 2) and `maxTokens` (at most the instance's cap, which is also the default). Returns the answer, reasoning text when the server gives it, finish reason, token counts and how long it took. |
+| `chat` | write, sensitive | Sends `prompt` (up to 16,000 characters) and an optional `system` prompt to `model`, with optional `temperature` (0 to 2) and `maxTokens` (at most the instance's cap, which is also the default). `model` must be one the instance's models allow (see Setup). Returns the answer, reasoning text when the server gives it, finish reason, token counts and how long it took. |
 
 **Why chat is write and sensitive.** It changes nothing, but every call
 uses the server's compute, and on a paid endpoint it costs money; as a
 read, an agent with read-only access could run up a bill or tie up a GPU.
 Prompts and answers can hold private material, so the audit log keeps
-only field names. The cap is a setting rather than an input, so an agent
-can ask for less but never more.
+only field names. The cap and the models are settings rather than inputs, so an agent
+can ask for less but never more, and can't pick a pricier model or a
+variant with paid extras.
 
 **Security.** Requests go only to the configured host: request paths are
 fixed (`/models`, `/chat/completions`), redirects are followed within the

@@ -144,7 +144,8 @@ func TestFreshdeskReads(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		spec[a.Name] = a
 	}
-	if !spec["ticket"].Sensitive || !spec["reply"].Sensitive || spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || spec["delete_note"].Risk != sdk.RiskDestructive {
+	if !spec["ticket"].Sensitive || !spec["reply"].Sensitive || spec["reply"].Risk != sdk.RiskDestructive || spec["add_note"].Risk != sdk.RiskWrite || spec["delete_note"].Risk != sdk.RiskDestructive ||
+		!spec["add_note"].Sensitive || !spec["delete_note"].Sensitive || spec["set_status"].Risk != sdk.RiskWrite || spec["resolve"].Risk != sdk.RiskDestructive {
 		t.Fatalf("%+v", spec)
 	}
 }
@@ -179,16 +180,25 @@ func TestFreshdeskWrites(t *testing.T) {
 		t.Fatalf("%v %v", err, f.writes)
 	}
 
-	if r, err := invoke(m, "set_status", `{"ticket":1,"status":"resolved"}`, true); err != nil || r.Plan == nil || f.status != 2 {
-		t.Fatal(err)
+	if r, err := invoke(m, "resolve", `{"ticket":1}`, true); err != nil || r.Plan == nil || f.status != 2 || !strings.Contains(r.Plan.Summary, "may email the requester (satisfaction survey or resolution notice)") {
+		t.Fatal(err, r.Plan)
 	}
-	r, err = invoke(m, "set_status", `{"ticket":1,"status":"resolved"}`, false)
-	if err != nil || f.status != 4 || r.Undo == nil {
+	r, err = invoke(m, "resolve", `{"ticket":1}`, false)
+	if err != nil || f.status != 4 || r.Undo == nil || r.Undo.Action != "set_status" {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.status != 2 {
 		t.Fatal(err, f.status)
 	}
+	if _, err := invoke(m, "resolve", `{"ticket":1,"status":"closed"}`, false); err != nil || f.status != 5 {
+		t.Fatal(err, f.status)
+	}
+	// Reopening a closed ticket undoes by closing it again.
+	r, err = invoke(m, "set_status", `{"ticket":1,"status":"pending"}`, false)
+	if err != nil || f.status != 3 || r.Undo == nil || r.Undo.Action != "resolve" || !strings.Contains(string(r.Undo.Input), `"closed"`) {
+		t.Fatalf("%+v %v", r, err)
+	}
+	f.status = 2
 
 	r, err = invoke(m, "assign", `{"ticket":1,"assignee":8}`, true)
 	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "from nobody to Robin Agent") {
@@ -219,6 +229,9 @@ func TestFreshdeskValidation(t *testing.T) {
 		{"reply", `{"ticket":1,"text":"` + strings.Repeat("x", maxText+1) + `"}`},
 		{"delete_note", `{"ticket":1,"note":"../tickets/1"}`},
 		{"set_status", `{"ticket":1,"status":"deleted"}`},
+		{"set_status", `{"ticket":1,"status":"resolved"}`},
+		{"set_status", `{"ticket":1,"status":"closed"}`},
+		{"resolve", `{"ticket":1,"status":"open"}`},
 		{"assign", `{"ticket":1,"assignee":"sam"}`},
 	} {
 		if _, err := invoke(m, c.action, c.in, false); err == nil {
@@ -261,5 +274,41 @@ func TestFreshdeskRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "f"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
+	}
+}
+
+// The plans, results and undo tokens of actions that aren't sensitive go in
+// the audit log, events and webhooks as they are, so they hold numbers and
+// statuses, never the ticket's subject, the requester or a note.
+func TestFreshdeskPlansHoldNoCustomerData(t *testing.T) {
+	m, f := setup(t, "secret://fd")
+	f.convs = append(f.convs, map[string]any{"id": 101, "body_text": "Card ends 4242", "private": true, "source": 2})
+	inputs := map[string]string{
+		"set_status": `{"ticket":1,"status":"pending"}`,
+		"resolve":    `{"ticket":1}`,
+		"assign":     `{"ticket":1,"assignee":8}`,
+	}
+	private := []string{"Refund please", "Jane Customer", "jane@example.com", "money back", "4242"}
+	for _, a := range m.Manifest().Actions {
+		if a.Sensitive || a.Risk == sdk.RiskRead {
+			continue
+		}
+		in, ok := inputs[a.Name]
+		if !ok {
+			t.Fatalf("no input for %s", a.Name)
+		}
+		for _, dry := range []bool{true, false} {
+			f.status, f.responder = 2, nil
+			r, err := invoke(m, a.Name, in, dry)
+			if err != nil {
+				t.Fatalf("%s: %v", a.Name, err)
+			}
+			b, _ := json.Marshal(r)
+			for _, p := range private {
+				if strings.Contains(string(b), p) {
+					t.Errorf("%s (dry run %v) shows %q: %s", a.Name, dry, p, b)
+				}
+			}
+		}
 	}
 }

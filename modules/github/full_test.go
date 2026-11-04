@@ -475,3 +475,16 @@ func TestAccessAndProtectionAreDestructive(t *testing.T) {
 		}
 	}
 }
+
+func TestPutFileRefusesActionsCode(t *testing.T) {
+	for _, p := range []string{".github/workflows/ci.yml", "/.github/workflows/x.yaml", ".GitHub/Workflows/a.yml", ".github//workflows/b.yml", ".github/actions/setup/action.yml", "action.yml", "tools/action.yaml", ".github/dependabot.yml"} {
+		if !runsCode(p) {
+			t.Errorf("%s not refused", p)
+		}
+	}
+	for _, p := range []string{"README.md", "docs/workflows/ci.yml", ".github/CODEOWNERS", "actions.md"} {
+		if runsCode(p) {
+			t.Errorf("%s refused", p)
+		}
+	}
+}

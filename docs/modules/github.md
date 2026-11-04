@@ -32,7 +32,7 @@ area, "write" for the rest. Metadata (read) is always included.
 | Deleting and transferring | `delete_repo`, `transfer_repo` | Administration (write) | `delete_repo`, `repo` |
 | Branches | `branches`, `branch`, `create_branch`, `delete_branch`, `rename_branch` | Contents | `repo` |
 | Branch protection | `branch_protection`, `set_branch_protection`, `delete_branch_protection` | Administration | `repo` |
-| Files, commits, tags | `file`, `tree`, `put_file`, `delete_file`, `commits`, `commit`, `compare`, `tags`, `create_tag`, `delete_tag` | Contents (plus Workflows to change files under `.github/workflows`) | `repo` (plus `workflow`) |
+| Files, commits, tags | `file`, `tree`, `put_file`, `delete_file`, `commits`, `commit`, `compare`, `tags`, `create_tag`, `delete_tag` | Contents | `repo` |
 | Checks | `checks` | Checks, Commit statuses (read) | `repo` |
 | Releases | `releases`, `release`, `create_release`, `update_release`, `delete_release`, `upload_release_asset`, `delete_release_asset` | Contents | `repo` |
 | Pull requests | `pull_requests`, `pull_request`, `create_pr`, `update_pr`, `close_pr`, `reopen_pr`, `review_pr`, `review_comment`, `delete_review_comment`, `request_reviewers`, `remove_reviewers`, `update_pr_branch`, `merge` | Pull requests (merging also needs Contents write) | `repo` |
@@ -89,7 +89,9 @@ generic API call. Undo is offered where it's natural:
   recreating it as it was.
 - `put_file` and `delete_file` commit; their undo commits the previous
   content back (or deletes a file that was new). Files over 1 MB aren't kept
-  for undo.
+  for undo. `put_file` doesn't change GitHub Actions code (workflows, local
+  actions, `action.yml`, the Dependabot config), because that code runs
+  with the repository's secrets: open a pull request for a person to review.
 - Settings changes (`update_repo`, `set_topics`, `set_branch_protection`,
   `update_issue`, `update_pr`, `update_label`, `update_milestone`,
   `update_release`, `update_hook`, `set_environment`, collaborator, team and

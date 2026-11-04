@@ -449,6 +449,9 @@ func init() {
 			if err != nil {
 				return sdk.Result{}, err
 			}
+			if runsCode(p.Path) {
+				return sdk.Result{}, fmt.Errorf("%s defines GitHub Actions, which run with the repository's secrets; change it through a pull request a person reviews", p.Path)
+			}
 			if err := needText("message", p.Message); err != nil {
 				return sdk.Result{}, err
 			}
@@ -862,4 +865,18 @@ func boundFiles(fs []ghFile, n int) []ghFile {
 		out[i] = f
 	}
 	return out
+}
+
+// runsCode reports whether a repository path is GitHub Actions code: a
+// workflow, a local action or a Dependabot config. Committing one runs code
+// with the repository's secrets, so put_file refuses it.
+func runsCode(p string) bool {
+	q := strings.ToLower(strings.Trim(strings.ReplaceAll(p, "\\", "/"), "/"))
+	for strings.Contains(q, "//") {
+		q = strings.ReplaceAll(q, "//", "/")
+	}
+	q = strings.TrimPrefix(q, "./")
+	return strings.HasPrefix(q, ".github/workflows/") || strings.HasPrefix(q, ".github/actions/") ||
+		q == ".github/dependabot.yml" || q == ".github/dependabot.yaml" ||
+		strings.HasSuffix(q, "/action.yml") || strings.HasSuffix(q, "/action.yaml") || q == "action.yml" || q == "action.yaml"
 }

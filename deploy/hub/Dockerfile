@@ -9,6 +9,8 @@ COPY scripts ./scripts
 COPY site/package.json site/pnpm-lock.yaml ./site/
 RUN cd site && pnpm install --frozen-lockfile
 COPY site ./site
+# The marketplace pages share the app's readme renderer.
+COPY web/src/lib/markdown.ts ./web/src/lib/markdown.ts
 RUN cd site && pnpm build
 
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build

@@ -444,13 +444,16 @@ func (b *Broker) Send(ctx context.Context, topic string, qos byte, retain bool, 
 type Collector struct {
 	RetainedOnly bool
 	MaxN, MaxB   int
-	mu           sync.Mutex
-	msgs         []Message
-	seen         map[string]int // RetainedOnly: topic → index in msgs
-	bytes        int
-	last         time.Time
-	stop         string
-	full         chan struct{}
+	// Settle, when set, replaces the broker's settle time: a large retained
+	// message can take longer than that to arrive in full.
+	Settle time.Duration
+	mu     sync.Mutex
+	msgs   []Message
+	seen   map[string]int // RetainedOnly: topic → index in msgs
+	bytes  int
+	last   time.Time
+	stop   string
+	full   chan struct{}
 }
 
 // Add takes one message.
@@ -557,7 +560,11 @@ func (s *Session) Collect(ctx context.Context, filters []string, qos byte, k *Co
 				if last.Before(acked) {
 					last = acked
 				}
-				if now.Sub(last) >= s.b.Settle {
+				wait := s.b.Settle
+				if k.Settle > wait {
+					wait = k.Settle
+				}
+				if now.Sub(last) >= wait {
 					return "", nil // the retained messages are all in
 				}
 			}
@@ -580,6 +587,11 @@ func (b *Broker) CurrentLarge(ctx context.Context, topic string) (*Message, erro
 
 func (b *Broker) current(ctx context.Context, topic string, max int) (*Message, error) {
 	k := &Collector{RetainedOnly: true, MaxN: 1, MaxB: max}
+	if max > MaxCollect {
+		// Up to 16 MiB on a slow link: wait longer for it to start arriving.
+		// MaxN 1 still ends the read as soon as it's in.
+		k.Settle = b.Timeout / 2
+	}
 	s, err := b.connect(ctx, max+64<<10)
 	if err != nil {
 		return nil, err

@@ -47,6 +47,24 @@ state.
 
 Read-only tools carry `readOnlyHint`, destructive ones `destructiveHint`.
 
+## Instructions, resources and prompts
+
+Modules can give agents context beyond tools by implementing
+`sdk.AgentContext` (`pkg/sdk/agent.go`):
+
+- a sentence appended to the server's `instructions` in the `initialize`
+  result (the Standards module asks agents to call `standards__for_task`
+  before frontend, writing or code work);
+- **resources** (`resources/list`, `resources/read`), e.g.
+  `conduit://standards/accessibility`;
+- **prompts** (`prompts/list`, `prompts/get`), named like tools
+  (`standards__frontend-kit`).
+
+Only modules the key may invoke are listed. Every resource and prompt is
+backed by one of the module's read actions; reading it runs that action as
+the agent, through the agent rules and into the timeline. Entries that
+point at anything but a read action are ignored.
+
 ## How approvals look to an agent
 
 A call that needs approval returns at once with an approval id (also in

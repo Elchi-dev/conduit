@@ -26,6 +26,7 @@ const navAdmin = [
   { href: "/assistant", label: t("Assistant and agents") },
   { href: "/people", label: t("People") },
   { href: "/keys", label: t("API keys") },
+  { href: "/networks", label: t("Networks") },
   { href: "/settings", label: t("Settings") },
 ];
 

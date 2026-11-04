@@ -14,7 +14,7 @@ info:
 
     Authenticate with `Authorization: Bearer <token>`:
     - `chs_…` session token from `POST /sessions` (a person; full access),
-    - `chd_…` device token from `POST /devices/pair` (relay, sync, registry reads),
+    - `chd_…` device token from `POST /devices/pair` (relay, sync, registry reads, and rating, reviewing and reporting modules for its account),
     - `chk_…` hub API key from `POST /keys` (only its scopes).
 servers:
   - url: http://localhost:7700/v1
@@ -449,7 +449,7 @@ paths:
               required: [scopes]
               properties:
                 name: { type: string }
-                scopes: { type: array, items: { type: string, enum: [orgs:read, devices:read, sync, registry:read, registry:publish, releases:publish] } }
+                scopes: { type: array, items: { type: string, enum: [orgs:read, devices:read, sync, registry:read, registry:review, registry:publish, releases:publish] } }
       responses:
         "201":
           description: Created
@@ -468,16 +468,26 @@ paths:
     get:
       tags: [registry]
       security: []
-      summary: Search modules
-      parameters: [{ name: q, in: query, schema: { type: string } }]
+      summary: Search the marketplace
+      description: Listed (not delisted) packages. `relevance` ranks name matches over tag matches over description matches. The total number of matches is in the `X-Total-Count` header.
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string }, description: A category id from GET /registry/categories }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, installs, rating, newest, updated], default: relevance }, description: "rating sorts by a weighted average (two imaginary 3-star ratings added)" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
       responses:
-        "200": { description: Packages, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Package" } } } } }
+        "200":
+          description: Packages
+          headers: { X-Total-Count: { schema: { type: integer } } }
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Package" } } } }
+        "400": { $ref: "#/components/responses/Error" }
   /registry/packages/{name}:
     get:
       tags: [registry]
       security: []
-      summary: A module with all versions and its author key
-      description: Package names contain a slash (`handle/module`); escape it as `%2F`. Pass `download=1` when installing to count a download.
+      summary: A module with its listing, all versions and its author key
+      description: Package names contain a slash (`handle/module`); escape it as `%2F`. Delisted packages are still answered (with `delisted` and the reason) so daemons that have them can warn. `download=1` is accepted for older daemons and counts nothing; installs are counted with POST /registry/installs.
       parameters:
         - { $ref: "#/components/parameters/PackageName" }
         - { name: download, in: query, schema: { type: string } }
@@ -492,6 +502,16 @@ paths:
                   package: { $ref: "#/components/schemas/Package" }
                   authorKey: { type: string }
                   versions: { type: array, items: { $ref: "#/components/schemas/PackageVersion" } }
+                  readme: { type: string, description: "Markdown. Clients render it without raw HTML: tags show as text" }
+                  screenshots: { type: array, items: { $ref: "#/components/schemas/Screenshot" } }
+                  author:
+                    type: object
+                    properties:
+                      handle: { type: string }
+                      verified: { type: boolean }
+                      banned: { type: boolean }
+                      banReason: { type: string }
+                      createdAt: { type: string, format: date-time }
         "404": { $ref: "#/components/responses/Error" }
   /registry/authors:
     post:
@@ -535,6 +555,220 @@ paths:
         - { name: version, in: path, required: true, schema: { type: string } }
       responses:
         "204": { description: Yanked }
+  /registry/categories:
+    get:
+      tags: [registry]
+      security: []
+      summary: The marketplace categories, with how many listed packages each has
+      responses:
+        "200": { description: Categories, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Category" } } } } }
+  /registry/packages/{name}/listing:
+    put:
+      tags: [registry]
+      summary: Edit a package's listing (its author, scope registry:publish)
+      description: Fields left out stay as they are. The readme is Markdown up to 64 KiB, at most 3 categories and 8 tags, links must be https. Answers the package as GET /registry/packages/{name} does.
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string, maxLength: 300 }
+                readme: { type: string }
+                categories: { type: array, maxItems: 3, items: { type: string } }
+                tags: { type: array, maxItems: 8, items: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,23}$" } }
+                homepage: { type: string, format: uri }
+                source: { type: string, format: uri }
+                license: { type: string, description: SPDX identifier or expression }
+      responses:
+        "200": { description: The package, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/icon:
+    put:
+      tags: [registry]
+      summary: Set the package icon (its author; PNG or WebP, at most 128 KiB)
+      description: SVG and other formats are refused, since they can carry scripts.
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      requestBody: { $ref: "#/components/requestBodies/Image" }
+      responses:
+        "200": { description: Set, content: { application/json: { schema: { type: object, properties: { icon: { type: string, description: Media id } } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [registry]
+      summary: Remove the package icon (its author)
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      responses:
+        "204": { description: Removed }
+  /registry/packages/{name}/screenshots:
+    post:
+      tags: [registry]
+      summary: Add a screenshot (its author; PNG or WebP, at most 1 MiB, at most 6)
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      requestBody: { $ref: "#/components/requestBodies/Image" }
+      responses:
+        "201": { description: The screenshots now, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Screenshot" } } } } }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/screenshots/{id}:
+    delete:
+      tags: [registry]
+      summary: Remove a screenshot (its author)
+      parameters: [{ $ref: "#/components/parameters/PackageName" }, { $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/media/{id}:
+    get:
+      tags: [registry]
+      security: []
+      summary: An icon or screenshot
+      description: Served as image/png or image/webp (sniffed again on the way out) with a sandboxing content security policy; cacheable forever, since ids are content hashes.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: The image, content: { image/png: { schema: { type: string, format: binary } }, image/webp: { schema: { type: string, format: binary } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/installs:
+    post:
+      tags: [registry]
+      security: []
+      summary: Count an anonymous install, uninstall or still-installed heartbeat
+      description: "`daemon` is an opaque id the daemon derives for each package (so packages can't be linked to one daemon); the hub hashes it again. Each event counts once per daemon per package per day. `downloads` counts installs, `installs` the daemons that sent an install or heartbeat in the last 45 days and no uninstall since. Rate-limited per address."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, event, daemon]
+              properties:
+                name: { type: string }
+                version: { type: string }
+                event: { type: string, enum: [install, uninstall, heartbeat] }
+                daemon: { type: string, pattern: "^[A-Za-z0-9_-]{16,128}$" }
+      responses:
+        "202": { description: Received, content: { application/json: { schema: { type: object, properties: { counted: { type: boolean } } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /registry/advisories:
+    post:
+      tags: [registry]
+      security: []
+      summary: Whether installed versions were yanked or their packages delisted
+      description: Daemons ask about their installed modules (at most 200) periodically and warn the person, with the reason, when a version was yanked or a package removed from the marketplace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                modules: { type: array, maxItems: 200, items: { type: object, required: [name, version], properties: { name: { type: string }, version: { type: string } } } }
+      responses:
+        "200": { description: One advisory per known-shaped name, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Advisory" } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/reviews:
+    get:
+      tags: [registry]
+      security: []
+      summary: Ratings and reviews, written ones first, newest first
+      parameters:
+        - { $ref: "#/components/parameters/PackageName" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: Reviews
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [average, count, histogram, items]
+                properties:
+                  average: { type: number }
+                  count: { type: integer }
+                  histogram: { type: array, items: { type: integer }, minItems: 5, maxItems: 5, description: Ratings of 1 to 5 stars }
+                  items: { type: array, items: { $ref: "#/components/schemas/Review" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/reviews/mine:
+    get:
+      tags: [registry]
+      summary: Your rating and review of a package
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      responses:
+        "200": { description: Yours, content: { application/json: { schema: { $ref: "#/components/schemas/Review" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [registry]
+      summary: Rate and optionally review a package, or change your rating (scope registry:review)
+      description: One per account per package; a confirmed email address is needed and authors can't rate their own packages. Paired daemons can do this for their account. Rate-limited per account.
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                body: { type: string, maxLength: 2000, description: Plain text }
+                version: { type: string, description: The version you used }
+      responses:
+        "200": { description: Changed, content: { application/json: { schema: { $ref: "#/components/schemas/Review" } } } }
+        "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/Review" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [registry]
+      summary: Withdraw your rating and review
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      responses:
+        "204": { description: Withdrawn }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/reviews/{id}/reply:
+    post:
+      tags: [registry]
+      summary: Reply to a review as the package's author (an empty body removes the reply)
+      parameters: [{ $ref: "#/components/parameters/PackageName" }, { $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { body: { type: string, maxLength: 2000 } } } } }
+      responses:
+        "200": { description: Replied, content: { application/json: { schema: { $ref: "#/components/schemas/Review" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /registry/packages/{name}/reports:
+    post:
+      tags: [registry]
+      summary: Report a package or one of its versions to the hub's operators (scope registry:review)
+      description: One open report per account per package; a confirmed email address is needed. `other` needs details. Malware reports email the operators. Rate-limited per account.
+      parameters: [{ $ref: "#/components/parameters/PackageName" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                version: { type: string }
+                reason: { $ref: "#/components/schemas/ModerationReason" }
+                details: { type: string, maxLength: 2000 }
+      responses:
+        "201": { description: Reported, content: { application/json: { schema: { type: object, properties: { id: { type: string }, status: { type: string } } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
 
   /updates/{component}/{channel}/{platform}:
     get:
@@ -629,6 +863,115 @@ paths:
       responses:
         "200": { description: Switched on, content: { application/json: { schema: { $ref: "#/components/schemas/Account" } } } }
         "403": { $ref: "#/components/responses/Error" }
+  /admin/reports:
+    get:
+      tags: [admin]
+      summary: The marketplace reports queue (hub admins only); open malware reports first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, resolved, all], default: open } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: A page of reports
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, items]
+                properties:
+                  total: { type: integer }
+                  items: { type: array, items: { $ref: "#/components/schemas/AdminReport" } }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/reports/{id}/resolve:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [admin]
+      summary: Resolve a report (hub admins only)
+      description: "`dismiss` closes it. `yank` yanks the reported version (or `version`). `delist` removes the package from the marketplace and closes its other open reports. `ban` bans the author: the handle and key stay as a tombstone, all their packages are delisted and they can't publish. The reason defaults to the report's; the author is told by email."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [dismiss, yank, delist, ban] }
+                reason: { $ref: "#/components/schemas/ModerationReason" }
+                note: { type: string, maxLength: 500, description: Shown to daemons and the author }
+                version: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/registry/packages/{name}/delist:
+    parameters: [{ $ref: "#/components/parameters/PackageName" }]
+    post:
+      tags: [admin]
+      summary: Remove a package from the marketplace (hub admins only)
+      requestBody: { $ref: "#/components/requestBodies/Moderation" }
+      responses:
+        "204": { description: Delisted }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/registry/packages/{name}/relist:
+    parameters: [{ $ref: "#/components/parameters/PackageName" }]
+    post:
+      tags: [admin]
+      summary: List a delisted package again (hub admins only)
+      responses:
+        "204": { description: Listed }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/registry/packages/{name}/versions/{version}/yank:
+    parameters: [{ $ref: "#/components/parameters/PackageName" }, { name: version, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [admin]
+      summary: Yank a version with a reason (hub admins only)
+      requestBody: { $ref: "#/components/requestBodies/Moderation" }
+      responses:
+        "204": { description: Yanked }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/registry/packages/{name}/versions/{version}/unyank:
+    parameters: [{ $ref: "#/components/parameters/PackageName" }, { name: version, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [admin]
+      summary: Undo an operator's yank (hub admins only; an author's own yank stays)
+      responses:
+        "204": { description: Restored }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/registry/authors/{handle}/ban:
+    parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [admin]
+      summary: Ban an author (hub admins only)
+      description: The handle and key are kept as a tombstone so nobody can register the handle, and daemons that pinned the key refuse anyone else's builds. All their packages are delisted with the reason; they can't publish, rotate their key or edit listings.
+      requestBody: { $ref: "#/components/requestBodies/Moderation" }
+      responses:
+        "204": { description: Banned }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/registry/authors/{handle}/unban:
+    parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [admin]
+      summary: Lift a ban (hub admins only); packages stay delisted until listed again one by one
+      responses:
+        "204": { description: Lifted }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/registry/authors/{handle}/verify:
+    parameters: [{ name: handle, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [admin]
+      summary: Give or take an author's verified badge (hub admins only)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [verified], properties: { verified: { type: boolean } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/Status" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /sessions/2fa:
     post:
       tags: [accounts]
@@ -723,6 +1066,24 @@ components:
             properties:
               payload: { type: string, description: Base64 of the exact JSON bytes that were signed }
               signature: { type: string, description: Base64 ed25519 signature over those bytes }
+    Image:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { type: string, description: Base64 PNG or WebP }
+              caption: { type: string, maxLength: 140, description: Screenshots only }
+    Moderation:
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              reason: { $ref: "#/components/schemas/ModerationReason" }
+              note: { type: string, maxLength: 500, description: Shown to daemons and the author }
   responses:
     Error:
       description: Error
@@ -788,6 +1149,8 @@ components:
         syncBytes: { type: integer }
         packages: { type: integer }
         releases: { type: integer }
+        openReports: { type: integer, description: Marketplace reports waiting for an operator }
+        delisted: { type: integer }
     Org:
       type: object
       properties:
@@ -835,9 +1198,22 @@ components:
         owner: { type: string }
         description: { type: string }
         homepage: { type: string }
+        source: { type: string }
+        license: { type: string }
         latest: { type: string }
-        downloads: { type: integer }
+        downloads: { type: integer, description: Installs ever, one per daemon per day }
+        installs: { type: integer, description: Daemons that have it now }
+        rating: { type: number, description: Average of 1 to 5; 0 without ratings }
+        ratingCount: { type: integer }
+        categories: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        icon: { type: string, description: "Media id for GET /registry/media/{id}" }
+        verified: { type: boolean, description: The author is verified by the hub's operators }
+        createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        delisted: { type: boolean }
+        delistReason: { $ref: "#/components/schemas/ModerationReason" }
+        delistNote: { type: string }
     PackageVersion:
       type: object
       properties:
@@ -845,7 +1221,69 @@ components:
         payload: { type: string, description: Base64 of the signed VersionPayload JSON }
         signature: { type: string }
         yanked: { type: boolean }
+        yankedBy: { type: string, enum: [author, operator] }
+        yankReason: { $ref: "#/components/schemas/ModerationReason" }
+        yankNote: { type: string }
         createdAt: { type: string, format: date-time }
+    ModerationReason:
+      type: string
+      enum: [malware, broken, spam, impersonation, license, other]
+    Category:
+      type: object
+      required: [id, label, count]
+      properties:
+        id: { type: string }
+        label: { type: string, description: English; clients translate by id }
+        count: { type: integer }
+    Screenshot:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        caption: { type: string }
+    Advisory:
+      type: object
+      required: [name, version, status]
+      properties:
+        name: { type: string }
+        version: { type: string }
+        status: { type: string, enum: [ok, yanked, delisted, missing] }
+        by: { type: string, enum: [author, operator] }
+        reason: { $ref: "#/components/schemas/ModerationReason" }
+        note: { type: string }
+        latest: { type: string }
+    Review:
+      type: object
+      required: [id, author, rating, body, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        author: { type: string, description: The reviewer's display name; may be empty. Never an email address }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        body: { type: string }
+        version: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        reply: { type: string, description: The author's reply }
+        replyAt: { type: string }
+    AdminReport:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        version: { type: string }
+        reason: { $ref: "#/components/schemas/ModerationReason" }
+        details: { type: string }
+        status: { type: string, enum: [open, dismissed, actioned] }
+        action: { type: string, enum: [dismiss, yank, delist, ban] }
+        note: { type: string }
+        reporter: { type: string, description: The reporter's email; empty when the account is gone }
+        resolvedBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: string }
+        owner: { type: string }
+        delisted: { type: boolean }
+        authorState: { type: string, enum: [ok, verified, banned] }
+        openReports: { type: integer, description: Open reports about the same package }
     ReleasePayload:
       type: object
       properties:

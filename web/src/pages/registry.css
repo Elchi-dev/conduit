@@ -1,0 +1,355 @@
+/* The marketplace page (Registry.tsx). Amber stays for "needs you": a
+   flagged installed module. Red only for malware. */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.reg-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+.reg-search {
+  min-width: min(280px, 100%);
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
+.reg-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.reg-cat {
+  font: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 11px;
+  cursor: pointer;
+}
+.reg-cat:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.reg-cat[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.reg-cat[aria-pressed="true"] .muted {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.reg-row {
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+}
+.reg-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: var(--panel-2);
+}
+.reg-icon.placeholder {
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: var(--t-lg);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.reg-meta {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  white-space: nowrap;
+}
+.reg-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--t-xs);
+  color: var(--ok);
+}
+
+.reg-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.reg-stars-track {
+  position: relative;
+  display: inline-block;
+  color: var(--line-strong);
+  letter-spacing: 1px;
+  line-height: 1;
+}
+.reg-stars-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.reg-detail {
+  padding: 4px 14px 18px 66px;
+  gap: 14px;
+}
+.reg-facts {
+  display: grid;
+  gap: 6px;
+}
+.reg-facts p {
+  margin: 0;
+}
+
+.reg-shots {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scroll-snap-type: x mandatory;
+}
+.reg-shots figure {
+  margin: 0;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+.reg-shots img {
+  display: block;
+  height: 180px;
+  width: auto;
+  max-width: 80vw;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+}
+
+/* Readmes: plain, readable, never wider than a comfortable line. */
+.md {
+  max-width: 72ch;
+  font-size: var(--t-md);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  color: var(--ink);
+  margin: 1.4em 0 0.4em;
+  line-height: 1.3;
+}
+.md h3 {
+  font-size: var(--t-lg);
+}
+.md h4,
+.md h5,
+.md h6 {
+  font-size: var(--t-md);
+}
+.md p,
+.md ul,
+.md ol,
+.md blockquote,
+.md pre {
+  margin: 0 0 0.8em;
+}
+.md ul,
+.md ol {
+  padding-left: 1.4em;
+}
+.md code {
+  font-family: var(--font-data);
+  font-size: 0.9em;
+  background: var(--panel-2);
+  border-radius: var(--r-sm);
+  padding: 1px 4px;
+}
+.md pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md blockquote {
+  border-left: 2px solid var(--line-strong);
+  padding-left: 12px;
+  color: var(--muted);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 1.2em 0;
+}
+.md a {
+  color: var(--ink);
+}
+
+.reg-reviews {
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  max-width: 72ch;
+}
+.reg-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: center;
+}
+.reg-average {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+.reg-average-num {
+  font-size: var(--t-2xl);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.reg-hist {
+  display: grid;
+  gap: 3px;
+  min-width: 180px;
+  flex: 1 1 180px;
+  max-width: 300px;
+}
+.reg-hist-row {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.reg-hist-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.reg-hist-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+}
+
+.reg-rate {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.reg-rate legend {
+  margin-bottom: 4px;
+}
+.reg-rate label {
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--line-strong);
+  padding: 2px;
+}
+.reg-rate label.on {
+  color: var(--ink);
+}
+.reg-rate input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.reg-rate label:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-radius: var(--r-sm);
+}
+
+.reg-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.reg-review-body {
+  margin: 4px 0 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.reg-reply {
+  margin: 8px 0 0 14px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+}
+.reg-reasons {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.reg-reasons legend {
+  margin-bottom: 6px;
+}
+
+.reg-advisory {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-color: color-mix(in srgb, var(--signal) 60%, var(--line));
+  border-left: 3px solid var(--signal);
+}
+.reg-advisory.danger {
+  border-color: color-mix(in srgb, var(--fault) 60%, var(--line));
+  border-left-color: var(--fault);
+  background: color-mix(in srgb, var(--fault) 7%, var(--panel));
+}
+.reg-flag {
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
+@media (max-width: 640px) {
+  .reg-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+  }
+  .reg-row > .btn {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .reg-meta {
+    grid-column: 2;
+    justify-items: start;
+    display: flex;
+    gap: 10px;
+  }
+  .reg-detail {
+    padding-left: 14px;
+  }
+}

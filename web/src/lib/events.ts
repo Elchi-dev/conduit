@@ -43,6 +43,7 @@ export function useLiveEvents(enabled: boolean) {
         notify(n?.title || t("Conduit"), n?.message);
       }
       if (ev.type.startsWith("instance.")) qc.invalidateQueries({ queryKey: ["instances"] });
+      if (ev.type === "games.started" || ev.type === "games.stopped") qc.invalidateQueries({ queryKey: ["games"] });
       if (ev.type.startsWith("panic.")) qc.invalidateQueries({ queryKey: ["policy"] });
     };
     // Through the relay, the same stream arrives as end-to-end encrypted
@@ -65,6 +66,8 @@ export function useLiveEvents(enabled: boolean) {
       "panic.off",
       "notify.desktop",
       "update.available",
+      "games.started",
+      "games.stopped",
     ]) {
       es.addEventListener(t, onAny as EventListener);
     }

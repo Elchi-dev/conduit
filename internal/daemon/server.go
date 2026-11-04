@@ -21,6 +21,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/remote"
 	"github.com/elchi-dev/conduit/internal/update"
 	"github.com/elchi-dev/conduit/internal/vault"
+	"github.com/elchi-dev/conduit/internal/wgnet"
 )
 
 // Server is the daemon's HTTP API.
@@ -46,7 +47,9 @@ type Server struct {
 	Webhooks *webhooks.Service
 	// Sync may be nil in tests.
 	Sync *syncer.Service
-	Log  *slog.Logger
+	// Networks may be nil in tests.
+	Networks *wgnet.Manager
+	Log      *slog.Logger
 	// SetupToken must be presented to create the owner account. It is printed
 	// to the log and written to <data>/setup-token on first start.
 	SetupToken string

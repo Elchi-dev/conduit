@@ -1,0 +1,10 @@
+auto_patching_enabled_by_player: true
+locale_data:
+    available_locales:
+    - "en_US"
+    default_locale: "en_US"
+patching_policy: "automatic"
+product_install_full_path: "C:/Riot Games/VALORANT/live"
+product_install_root: "C:/Riot Games"
+shortcut_name: "VALORANT.lnk"
+should_repair: false

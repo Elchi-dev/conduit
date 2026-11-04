@@ -19,6 +19,7 @@ import { Modules } from "./pages/Modules";
 import { PolicyPage } from "./pages/Policy";
 import { Settings } from "./pages/Settings";
 import { Timeline } from "./pages/Timeline";
+import { Networks } from "./pages/Networks";
 import { t } from "./i18n";
 
 export default function App() {
@@ -90,6 +91,7 @@ export default function App() {
         <Route path="/people" component={People} />
         <Route path="/keys" component={Keys} />
         <Route path="/settings" component={Settings} />
+        <Route path="/networks" component={Networks} />
         <Route>
           <div className="page">
             <h1>{t("Not found")}</h1>

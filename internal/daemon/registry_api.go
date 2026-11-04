@@ -48,6 +48,9 @@ type InstalledModule struct {
 	Network     []string  `json:"network"`
 	InstalledAt time.Time `json:"installedAt"`
 	Latest      string    `json:"latest,omitempty"`
+	// Advisory is set when the hub yanked this version or removed the
+	// package from the marketplace (answered, never stored).
+	Advisory *regAdvisory `json:"advisory,omitempty"`
 }
 
 type regVersionPayload struct {
@@ -64,19 +67,46 @@ type regVersionPayload struct {
 }
 
 type regPackage struct {
-	Package struct {
-		Name        string `json:"name"`
-		Owner       string `json:"owner"`
-		Description string `json:"description"`
-		Latest      string `json:"latest"`
-	} `json:"package"`
-	AuthorKey string `json:"authorKey"`
+	Package   regListing `json:"package"`
+	AuthorKey string     `json:"authorKey"`
 	Versions  []struct {
 		Version   string `json:"version"`
 		Payload   string `json:"payload"`
 		Signature string `json:"signature"`
 		Yanked    bool   `json:"yanked"`
 	} `json:"versions"`
+	Readme      string `json:"readme"`
+	Screenshots []struct {
+		ID      string `json:"id"`
+		Caption string `json:"caption,omitempty"`
+	} `json:"screenshots"`
+	Author struct {
+		Verified bool `json:"verified"`
+		Banned   bool `json:"banned"`
+	} `json:"author"`
+}
+
+// regListing is the marketplace side of a package (see
+// docs/protocol/marketplace.md). None of it is signed: it's shown, never
+// trusted for what gets installed.
+type regListing struct {
+	Name         string   `json:"name"`
+	Owner        string   `json:"owner"`
+	Description  string   `json:"description"`
+	Latest       string   `json:"latest"`
+	Source       string   `json:"source,omitempty"`
+	License      string   `json:"license,omitempty"`
+	Downloads    int64    `json:"downloads"`
+	Installs     int64    `json:"installs"`
+	Rating       float64  `json:"rating"`
+	RatingCount  int64    `json:"ratingCount"`
+	Categories   []string `json:"categories"`
+	Tags         []string `json:"tags"`
+	Icon         string   `json:"icon,omitempty"`
+	Verified     bool     `json:"verified"`
+	Delisted     bool     `json:"delisted,omitempty"`
+	DelistReason string   `json:"delistReason,omitempty"`
+	DelistNote   string   `json:"delistNote,omitempty"`
 }
 
 func (s *Server) registryRoutes() []route {
@@ -86,6 +116,12 @@ func (s *Server) registryRoutes() []route {
 		{"GET /api/v1/registry/installed", s.need("admin:*:*", s.registryInstalled)},
 		{"POST /api/v1/registry/install", s.need("admin:*:*", s.registryInstall)},
 		{"DELETE /api/v1/registry/installed", s.need("admin:*:*", s.registryRemove)},
+		{"GET /api/v1/registry/categories", s.need("admin:*:*", s.registryCategories)},
+		{"GET /api/v1/registry/media/{id}", s.need("admin:*:*", s.registryMedia)},
+		{"GET /api/v1/registry/reviews", s.need("admin:*:*", s.registryReviews)},
+		{"PUT /api/v1/registry/reviews", s.need("admin:*:*", s.registryRate)},
+		{"DELETE /api/v1/registry/reviews", s.need("admin:*:*", s.registryUnrate)},
+		{"POST /api/v1/registry/reports", s.need("admin:*:*", s.registryReport)},
 	}
 }
 
@@ -150,10 +186,20 @@ func (s *Server) registrySearch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
-	var out json.RawMessage
-	if _, err := regGet(r.Context(), base+"/v1/registry/packages?q="+url.QueryEscape(r.URL.Query().Get("q")), 4<<20, &out); err != nil {
+	// Search, category, sort and paging pass through to the hub.
+	q := url.Values{}
+	for _, k := range []string{"q", "category", "sort", "limit", "offset"} {
+		if v := r.URL.Query().Get(k); v != "" {
+			q.Set(k, v)
+		}
+	}
+	var out []regListing
+	if _, err := regGet(r.Context(), base+"/v1/registry/packages?"+q.Encode(), 4<<20, &out); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	if out == nil {
+		out = []regListing{}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -162,23 +208,40 @@ func (s *Server) registrySearch(w http.ResponseWriter, r *http.Request) {
 // for) unyanked version whose signature checks out against the author key,
 // and that key. A pinned key, if any, must match.
 func (s *Server) verifiedVersion(ctx context.Context, name, want string) (regVersionPayload, string, error) {
+	vp, _, key, err := s.verifiedPackage(ctx, name, want)
+	return vp, key, err
+}
+
+// verifiedPackage is verifiedVersion that also answers the package's
+// listing. Packages removed from the marketplace aren't offered.
+func (s *Server) verifiedPackage(ctx context.Context, name, want string) (regVersionPayload, regPackage, string, error) {
 	var vp regVersionPayload
+	var pkg regPackage
 	if !regNameRe.MatchString(name) {
-		return vp, "", errors.New("module names look like author/module")
+		return vp, pkg, "", errors.New("module names look like author/module")
 	}
 	base, err := s.registryBase(ctx)
 	if err != nil {
-		return vp, "", err
+		return vp, pkg, "", err
 	}
-	var pkg regPackage
-	if _, err := regGet(ctx, base+"/v1/registry/packages/"+name, 4<<20, &pkg); err != nil {
-		return vp, "", err
+	// The slash in the name is escaped: the hub routes it as one segment.
+	if _, err := regGet(ctx, base+pkgPath(name), 4<<20, &pkg); err != nil {
+		return vp, pkg, "", err
 	}
+	if pkg.Package.Delisted {
+		return vp, pkg, "", fmt.Errorf("this package was removed from the marketplace (%s)", reasonText(pkg.Package.DelistReason))
+	}
+	vp, key, err := verifyPackage(s.installedModules(ctx), name, want, pkg)
+	return vp, pkg, key, err
+}
+
+func verifyPackage(installed []InstalledModule, name, want string, pkg regPackage) (regVersionPayload, string, error) {
+	var vp regVersionPayload
 	key, err := base64.StdEncoding.DecodeString(pkg.AuthorKey)
 	if err != nil || len(key) != ed25519.PublicKeySize {
 		return vp, "", errors.New("the registry sent no valid author key")
 	}
-	for _, m := range s.installedModules(ctx) {
+	for _, m := range installed {
 		if m.Name == name && m.AuthorKey != pkg.AuthorKey {
 			return vp, "", errors.New("this package is now signed with a different author key than when you installed it; refusing (remove it first if the author really changed keys)")
 		}
@@ -226,7 +289,7 @@ type regPermissions struct {
 }
 
 func (s *Server) registryPackage(w http.ResponseWriter, r *http.Request) {
-	vp, key, err := s.verifiedVersion(r.Context(), r.URL.Query().Get("name"), r.URL.Query().Get("version"))
+	vp, pkg, key, err := s.verifiedPackage(r.Context(), r.URL.Query().Get("name"), r.URL.Query().Get("version"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -239,7 +302,7 @@ func (s *Server) registryPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"name": vp.Name, "version": vp.Version, "description": vp.Description, "homepage": vp.Homepage,
 		"authorKey": key, "fingerprint": keyFingerprint(key), "network": nonNilStrings(perm.Permissions.Network), "memoryMB": perm.Permissions.MemoryMB,
-		"installable": hasWasm})
+		"installable": hasWasm, "listing": listingOf(pkg)})
 }
 
 func nonNilStrings(v []string) []string {
@@ -271,6 +334,14 @@ func (s *Server) registryInstalled(w http.ResponseWriter, r *http.Request) {
 			if vp, _, err := s.verifiedVersion(r.Context(), list[i].Name, ""); err == nil {
 				list[i].Latest = vp.Version
 			}
+		}
+		_ = s.checkAdvisories(r.Context())
+	}
+	adv := s.storedAdvisories(r.Context())
+	for i := range list {
+		if a, ok := adv.Modules[list[i].Name]; ok && a.Status != "ok" && a.Version == list[i].Version {
+			a := a
+			list[i].Advisory = &a
 		}
 	}
 	writeJSON(w, http.StatusOK, list)
@@ -397,6 +468,7 @@ func (s *Server) registryInstall(w http.ResponseWriter, r *http.Request) {
 		Network: nonNilStrings(perm.Permissions.Network), InstalledAt: time.Now().UTC()}
 	list = append(list, im)
 	_ = s.saveInstalled(ctx, list)
+	s.installPing(vp.Name, vp.Version, "install")
 	s.auditConfig(r, "module_installed", "", map[string]any{"name": vp.Name, "version": vp.Version, "module": id, "network": im.Network, "fingerprint": im.Fingerprint})
 	writeJSON(w, http.StatusOK, im)
 }
@@ -426,6 +498,8 @@ func (s *Server) registryRemove(w http.ResponseWriter, r *http.Request) {
 		_ = os.Remove(p)
 		_ = os.Remove(strings.TrimSuffix(p, ".wasm") + ".json")
 		_ = s.saveInstalled(r.Context(), append(list[:i], list[i+1:]...))
+		s.installPing(name, x.Version, "uninstall")
+		s.forgetAdvisory(r.Context(), name)
 		s.auditConfig(r, "module_removed", "", map[string]string{"name": name})
 		w.WriteHeader(http.StatusNoContent)
 		return

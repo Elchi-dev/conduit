@@ -14,11 +14,12 @@ instance. Accounts belong to one hub and are never shared between hubs.
 | Party | Token | Prefix | Can |
 | --- | --- | --- | --- |
 | Person | session | `chs_` | everything on their account; 30 days |
-| Daemon or client device | device token | `chd_` | relay, sync, registry reads |
+| Daemon or client device | device token | `chd_` | relay, sync, registry reads, and rating, reviewing and reporting modules for its account |
 | Developer script | hub API key | `chk_` | only its scopes |
 
 Hub API key scopes: `orgs:read`, `devices:read`, `sync`, `registry:read`,
-`registry:publish`, `releases:publish` (admins only). Keys and devices can't
+`registry:review` (rate, review and report modules), `registry:publish`,
+`releases:publish` (admins only). Keys and devices can't
 create keys, change orgs, make pairing codes or unpair other devices.
 
 Tokens are stored as SHA-256 hashes. Passwords use Argon2id (the same
@@ -262,7 +263,17 @@ ed25519 over those bytes. The hub verifies before storing, serves the payload
 unchanged, and returns the author key with the package, so daemons verify
 again and don't have to trust the hub. Names are `handle/module`; versions are
 immutable semver and can be yanked. "Latest" skips yanked versions and
-prefers releases over pre-releases.
+prefers releases over pre-releases. Package names contain a slash: escape it
+as `%2F` in paths.
+
+On top of the registry sits the marketplace ([marketplace.md](marketplace.md)):
+unsigned listing metadata (readme, categories, tags, links, license, PNG or
+WebP icon and screenshots), search with categories and sorting, anonymous
+install counts, ratings and reviews, reports, and moderation by the hub's
+operators: yanking a version with a reason, delisting a package, banning an
+author (whose handle and key stay as a tombstone) and verifying authors.
+Versions record who yanked them and why (`yankedBy`, `yankReason`); daemons
+ask `POST /registry/advisories` about installed versions and warn the person.
 
 ## Update feed
 

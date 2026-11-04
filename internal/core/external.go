@@ -113,6 +113,23 @@ func (x *External) handle(ctx context.Context, method string, params json.RawMes
 	return nil, &sdk.RPCError{Code: -32601, Message: "method not found: " + method}
 }
 
+// Host returns the host of a configured instance. With instance "" it
+// returns the only configured instance's host, or nil when there are
+// several (the caller can't tell which one is meant).
+func (x *External) Host(instance string) sdk.Host {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if instance != "" {
+		return x.hosts[instance]
+	}
+	if len(x.hosts) == 1 {
+		for _, h := range x.hosts {
+			return h
+		}
+	}
+	return nil
+}
+
 // Manifest implements sdk.Module.
 func (x *External) Manifest() sdk.Manifest { return x.manifest }
 

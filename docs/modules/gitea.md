@@ -21,3 +21,11 @@ server address, such as `https://git.example.com`.
 
 `repo` is always `owner/name` using Gitea's allowed characters, and numbers
 must be positive, so input can't reach other API paths.
+
+**Servers inside a WireGuard network.** A Forgejo or Gitea server that is
+only reachable through WireGuard (a homelab box, a server behind a VPN) works
+without any VPN client on this machine: add the network under Networks
+(paste its wg-quick file), then pick it in the connection's settings
+(Network). The module's API calls to the network's addresses then go through
+Conduit's own userspace tunnel. See
+[docs/architecture/networks.md](../architecture/networks.md).

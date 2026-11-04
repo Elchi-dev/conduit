@@ -58,6 +58,13 @@ servers). Each configuration is an *instance* with its own id.
   reverse them. The audit log keeps it, so any entry with an undo token gets an
   Undo button.
 
+## Agent context
+
+A built-in module can also implement `sdk.AgentContext` to offer agents MCP
+resources, MCP prompts and a line in the MCP server's instructions. Each
+entry names a read action that produces its content, so the permission
+engine and audit log apply. See `docs/api/mcp.md`.
+
 ## Built-in vs external modules
 
 - **Built-in** modules implement `sdk.Module` and are compiled into the daemon.

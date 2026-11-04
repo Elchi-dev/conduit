@@ -34,6 +34,7 @@ tags:
   - name: events
   - name: webhooks
   - name: sync
+  - name: networks
 paths:
   /version:
     get:
@@ -820,6 +821,20 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ambient" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+  /games/covers/{id}:
+    get:
+      operationId: gameCover
+      tags: [modules]
+      summary: A game's cover image
+      description: Served from the launcher's local cache, or downloaded once from its image server and kept. Needs modules:games:read. The id is a library id such as `steam:570`.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The image, content: { image/jpeg: { schema: { type: string, format: binary } }, image/png: { schema: { type: string, format: binary } }, image/webp: { schema: { type: string, format: binary } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: The image server couldn't be reached, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /system/update:
     get:
       operationId: updateStatus
@@ -1379,11 +1394,17 @@ paths:
     get:
       operationId: searchRegistry
       tags: [modules]
-      summary: Search the linked hub's module registry
+      summary: Search the linked hub's module marketplace
+      description: Search, category filter, sorting and paging pass through to the hub (see the hub's GET /registry/packages).
       parameters:
         - { name: q, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, installs, rating, newest, updated] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
       responses:
-        "200": { description: The hub's answer, content: { application/json: { schema: { type: array, items: { type: object, additionalProperties: true } } } } }
+        "200": { description: The hub's answer, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/RegistryListing" } } } } }
+        "502": { description: The hub didn't answer }
         "409": { description: Not linked to a hub and no registry set }
   /registry/package:
     get:
@@ -1411,6 +1432,23 @@ paths:
                   network: { type: array, items: { type: string }, description: Hosts the module may reach }
                   memoryMB: { type: integer }
                   installable: { type: boolean, description: True when there's a sandboxed (WebAssembly) build }
+                  listing:
+                    type: object
+                    description: The marketplace listing from the hub. Not signed; shown, never trusted. Render the readme without raw HTML.
+                    properties:
+                      owner: { type: string }
+                      readme: { type: string }
+                      screenshots: { type: array, items: { type: object, properties: { id: { type: string }, caption: { type: string } } } }
+                      categories: { type: array, items: { type: string } }
+                      tags: { type: array, items: { type: string } }
+                      rating: { type: number }
+                      ratingCount: { type: integer }
+                      installs: { type: integer }
+                      downloads: { type: integer }
+                      verified: { type: boolean }
+                      license: { type: string }
+                      source: { type: string }
+                      icon: { type: string }
         "400": { $ref: "#/components/responses/BadRequest" }
   /registry/install:
     post:
@@ -1438,9 +1476,10 @@ paths:
     get:
       operationId: installedModules
       tags: [modules]
-      summary: Modules installed from a registry
+      summary: Modules installed from a registry, with the hub's warnings about yanked versions and delisted packages
+      description: The daemon asks the hub about installed versions a few minutes after starting and every six hours, and raises a `registry.advisory` event (forwarded as a notification) for each newly flagged one.
       parameters:
-        - { name: check, in: query, schema: { type: string, enum: ["1"] }, description: Also look up the newest version }
+        - { name: check, in: query, schema: { type: string, enum: ["1"] }, description: Also look up the newest version and ask the hub again now }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/InstalledModule" } } } } }
     delete:
@@ -1451,6 +1490,98 @@ paths:
         - { name: name, in: query, required: true, schema: { type: string } }
       responses:
         "204": { description: Removed }
+  /registry/categories:
+    get:
+      operationId: registryCategories
+      tags: [modules]
+      summary: The marketplace categories of the linked hub
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: object, properties: { id: { type: string }, label: { type: string }, count: { type: integer } } } } } } }
+        "409": { description: Not linked to a hub and no registry set }
+  /registry/media/{id}:
+    get:
+      operationId: registryMedia
+      tags: [modules]
+      summary: A package icon or screenshot from the hub, passed on only if it is PNG or WebP
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, pattern: "^[0-9a-f]{32}$" } }]
+      responses:
+        "200": { description: The image, content: { image/png: { schema: { type: string, format: binary } }, image/webp: { schema: { type: string, format: binary } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { description: The hub didn't answer or sent something else }
+  /registry/reviews:
+    get:
+      operationId: registryReviews
+      tags: [modules]
+      summary: Ratings and reviews of a package, and yours when this daemon is paired with an account on the hub
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [average, count, histogram, items, canReview]
+                properties:
+                  average: { type: number }
+                  count: { type: integer }
+                  histogram: { type: array, items: { type: integer } }
+                  items: { type: array, items: { $ref: "#/components/schemas/RegistryReview" } }
+                  mine: { oneOf: [{ $ref: "#/components/schemas/RegistryReview" }, { type: "null" }] }
+                  canReview: { type: boolean, description: This daemon is paired with an account on the hub }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    put:
+      operationId: rateModule
+      tags: [modules]
+      summary: Rate and optionally review a package as the account this daemon is paired with (signed-in people only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, rating]
+              properties:
+                name: { type: string }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                body: { type: string, maxLength: 2000 }
+                version: { type: string }
+      responses:
+        "200": { description: Changed, content: { application/json: { schema: { $ref: "#/components/schemas/RegistryReview" } } } }
+        "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/RegistryReview" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Not paired with an account on the hub, or the package was removed }
+    delete:
+      operationId: unrateModule
+      tags: [modules]
+      summary: Withdraw your rating and review (signed-in people only)
+      parameters: [{ name: name, in: query, required: true, schema: { type: string } }]
+      responses:
+        "204": { description: Withdrawn }
+  /registry/reports:
+    post:
+      operationId: reportModule
+      tags: [modules]
+      summary: Report a package or version to the hub's operators (signed-in people only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, reason]
+              properties:
+                name: { type: string }
+                version: { type: string }
+                reason: { type: string, enum: [malware, broken, spam, impersonation, license, other] }
+                details: { type: string, maxLength: 2000 }
+      responses:
+        "201": { description: Reported }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Already reported, or not paired with an account on the hub }
   /vault/folders:
     get:
       operationId: vaultFolders
@@ -1470,6 +1601,80 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/VaultFolder" } } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /networks:
+    get:
+      operationId: listNetworks
+      tags: [networks]
+      summary: WireGuard networks module instances can be attached to (admins)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Network" } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createNetwork
+      tags: [networks]
+      summary: Add a network from a wg-quick file or fields (people only)
+      description: Raw keys (the interface private key, peer preshared keys) are moved into the vault under networks/<id>/ and only referenced (secret://) from then on. Audited as network_created.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NetworkInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Network" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /networks/{id}:
+    get:
+      operationId: getNetwork
+      tags: [networks]
+      summary: One network (keys are references, never values)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Network" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateNetwork
+      tags: [networks]
+      summary: Change a network (people only); its tunnel restarts on next use
+      description: An empty privateKey keeps the current key. Audited as network_saved.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NetworkInput" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Network" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteNetwork
+      tags: [networks]
+      summary: Remove a network and the keys Conduit stored for it (people only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Instances are still attached to it, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /networks/{id}/status:
+    get:
+      operationId: networkStatus
+      tags: [networks]
+      summary: Whether the tunnel is up, and each peer's last handshake and traffic
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { name: connect, in: query, description: "1 starts a stopped tunnel first", schema: { type: string, enum: ["1"] } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/NetworkStatus" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /networks/{id}/restart:
+    post:
+      operationId: restartNetwork
+      tags: [networks]
+      summary: Take the tunnel down and bring it up again (people only)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/NetworkStatus" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     bearer:
@@ -1484,6 +1689,64 @@ components:
     Forbidden: { description: Missing scope or forbidden by policy, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    NetworkPeer:
+      type: object
+      required: [publicKey, allowedIPs]
+      properties:
+        name: { type: string }
+        publicKey: { type: string, description: Base64 WireGuard public key }
+        presharedKey: { type: string, description: "secret:// reference (on input also a raw key, moved into the vault)" }
+        endpoint: { type: string, description: "host:port; names are resolved when the tunnel starts" }
+        allowedIPs: { type: array, items: { type: string }, description: CIDR ranges carried through the tunnel }
+        persistentKeepalive: { type: integer, description: Seconds, 0 for off }
+    Network:
+      type: object
+      required: [id, name, privateKey, addresses, peers, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        privateKey: { type: string, description: "secret:// reference to the interface's private key" }
+        publicKey: { type: string, description: Derived from the private key; add it on the other side }
+        addresses: { type: array, items: { type: string } }
+        dns: { type: array, items: { type: string } }
+        mtu: { type: integer }
+        listenPort: { type: integer }
+        peers: { type: array, items: { $ref: "#/components/schemas/NetworkPeer" } }
+        instances: { type: array, items: { type: string }, description: Instances attached to it }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    NetworkInput:
+      type: object
+      properties:
+        name: { type: string }
+        conf: { type: string, description: A wg-quick .conf file; replaces the fields below }
+        privateKey: { type: string, description: "A raw key (moved into the vault) or a secret:// reference; empty on a change keeps the current key" }
+        generateKey: { type: boolean, description: Make a new private key }
+        addresses: { type: array, items: { type: string } }
+        dns: { type: array, items: { type: string } }
+        mtu: { type: integer }
+        listenPort: { type: integer }
+        peers: { type: array, items: { $ref: "#/components/schemas/NetworkPeer" } }
+    NetworkStatus:
+      type: object
+      required: [id, running, peers]
+      properties:
+        id: { type: string }
+        running: { type: boolean }
+        error: { type: string }
+        since: { type: string, format: date-time }
+        peers:
+          type: array
+          items:
+            type: object
+            properties:
+              publicKey: { type: string }
+              name: { type: string }
+              endpoint: { type: string }
+              lastHandshake: { type: string, format: date-time }
+              handshakeAgeSeconds: { type: integer, description: "-1 before the first handshake" }
+              rxBytes: { type: integer }
+              txBytes: { type: integer }
     VaultFolder:
       type: object
       required: [prefix, roles, users, automations]
@@ -1504,6 +1767,50 @@ components:
         network: { type: array, items: { type: string } }
         installedAt: { type: string, format: date-time }
         latest: { type: string }
+        advisory: { $ref: "#/components/schemas/RegistryAdvisory" }
+    RegistryAdvisory:
+      type: object
+      description: The hub yanked this version or removed the package from the marketplace
+      required: [name, version, status]
+      properties:
+        name: { type: string }
+        version: { type: string }
+        status: { type: string, enum: [yanked, delisted, missing] }
+        by: { type: string, enum: [author, operator] }
+        reason: { type: string, enum: [malware, broken, spam, impersonation, license, other] }
+        note: { type: string }
+        latest: { type: string }
+    RegistryListing:
+      type: object
+      required: [name, owner, description, downloads]
+      properties:
+        name: { type: string }
+        owner: { type: string }
+        description: { type: string }
+        latest: { type: string }
+        source: { type: string }
+        license: { type: string }
+        downloads: { type: integer }
+        installs: { type: integer }
+        rating: { type: number }
+        ratingCount: { type: integer }
+        categories: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        icon: { type: string }
+        verified: { type: boolean }
+    RegistryReview:
+      type: object
+      required: [id, author, rating, body, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        author: { type: string }
+        rating: { type: integer }
+        body: { type: string }
+        version: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        reply: { type: string }
+        replyAt: { type: string }
     BackupSchedule:
       type: object
       required: [enabled, folder, passphrase, keep, hour]
@@ -1807,6 +2114,7 @@ components:
         name: { type: string }
         config: { type: object, additionalProperties: true }
         enabled: { type: boolean }
+        network: { type: string, description: The network its outbound connections go through (absent for none) }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         health: { $ref: "#/components/schemas/Health" }
@@ -1817,6 +2125,7 @@ components:
         name: { type: string }
         config: { type: object, additionalProperties: true }
         enabled: { type: boolean }
+        network: { type: string, description: "Attach to a network (\"\" detaches); left out it stays" }
     Change:
       type: object
       required: [target, op]

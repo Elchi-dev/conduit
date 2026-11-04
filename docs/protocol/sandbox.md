@@ -63,9 +63,8 @@ or handle one message at a time.
 
 ## Status
 
-Loading from `<data>/modules/` works; installing `wasm` artifacts from the
-hub registry, and showing a module's permissions for approval before it
-loads, come next.
+Loading from `<data>/modules/` works, and so does installing `wasm`
+artifacts from a hub's marketplace with the permissions shown first (below).
 
 ## Installing from a registry
 
@@ -93,3 +92,27 @@ builds (artifact platform `wasm`). Only signed-in people can install.
 
 Native (non-sandboxed) modules are never installed from a registry: install
 those by hand after reading them.
+
+### The marketplace
+
+The same page is the hub's marketplace ([marketplace.md](marketplace.md)):
+categories, sorting by relevance, installs, rating or date, the readme
+(rendered without raw HTML), screenshots, ratings and reviews, and a report
+dialog. Rating, reviewing and reporting need the daemon to be paired with an
+account on the hub, and a signed-in person (not an agent or key); they count
+for that account.
+
+- **Install counts.** Installing, removing and a weekly heartbeat send the hub
+  an anonymous ping with an id derived per package from a secret only the
+  daemon knows. Set `registry.pings` to `off` to stop them.
+- **Yanked and delisted modules.** A few minutes after start and every six
+  hours the daemon asks the hub whether installed versions were yanked or
+  their packages delisted. Flagged modules get a warning with the reason
+  ("removed from the marketplace: malware") and the operator's note, and a
+  button to remove them; each newly flagged one raises a
+  `registry.advisory` event, forwarded as a notification (urgent for
+  malware). Nothing is removed without a person: the module stays sandboxed
+  until someone removes it.
+- Delisted packages can't be installed or updated.
+- Icons and screenshots reach the app through the daemon
+  (`/api/v1/registry/media/{id}`), only as PNG or WebP.

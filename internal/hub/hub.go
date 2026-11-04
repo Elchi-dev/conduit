@@ -94,6 +94,8 @@ type Server struct {
 	logins        *ratelimit.Window // failed sign-ins per account
 	twoFactor     *totp.Challenges  // password sign-ins waiting for a code
 	relayConnects *ratelimit.Window // new relay client connections per address
+	reviewWrites  *ratelimit.Window // ratings, reviews and replies per account
+	reportWrites  *ratelimit.Window // marketplace reports per account
 }
 
 // New opens the database and prepares a hub.
@@ -110,7 +112,9 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Server, error) {
 	return &Server{cfg: cfg, db: db, mail: m, log: log, relay: newRelayHub(), now: time.Now,
 		logins:        ratelimit.New(10, 15*time.Minute, 50000),
 		twoFactor:     totp.NewChallenges(),
-		relayConnects: ratelimit.New(120, 10*time.Minute, 50000)}, nil
+		relayConnects: ratelimit.New(120, 10*time.Minute, 50000),
+		reviewWrites:  ratelimit.New(30, time.Hour, 50000),
+		reportWrites:  ratelimit.New(10, time.Hour, 50000)}, nil
 }
 
 // Close releases the database.
@@ -171,7 +175,7 @@ func headers(h http.Handler) http.Handler {
 			hd.Set("Access-Control-Allow-Origin", "*")
 			hd.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match")
 			hd.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			hd.Set("Access-Control-Expose-Headers", "ETag")
+			hd.Set("Access-Control-Expose-Headers", "ETag, X-Total-Count")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -238,12 +242,36 @@ func (s *Server) routes() []route {
 		{"GET /v1/registry/authors/{handle}", s.getAuthor},
 		{"POST /v1/registry/packages/{name}/versions", s.auth(s.publishVersion)},
 		{"POST /v1/registry/packages/{name}/versions/{version}/yank", s.auth(s.yankVersion)},
+		{"GET /v1/registry/categories", s.listCategories},
+		{"PUT /v1/registry/packages/{name}/listing", s.auth(s.putListing)},
+		{"PUT /v1/registry/packages/{name}/icon", s.auth(s.putIcon)},
+		{"DELETE /v1/registry/packages/{name}/icon", s.auth(s.deleteIcon)},
+		{"POST /v1/registry/packages/{name}/screenshots", s.auth(s.addScreenshot)},
+		{"DELETE /v1/registry/packages/{name}/screenshots/{id}", s.auth(s.deleteScreenshot)},
+		{"GET /v1/registry/media/{id}", s.getMedia},
+		{"POST /v1/registry/installs", s.limited("install-ping", 300, s.installPing)},
+		{"POST /v1/registry/advisories", s.limited("advisories", 120, s.advisories)},
+		{"GET /v1/registry/packages/{name}/reviews", s.listReviews},
+		{"GET /v1/registry/packages/{name}/reviews/mine", s.auth(s.myReview)},
+		{"PUT /v1/registry/packages/{name}/reviews/mine", s.auth(s.putReview)},
+		{"DELETE /v1/registry/packages/{name}/reviews/mine", s.auth(s.deleteReview)},
+		{"POST /v1/registry/packages/{name}/reviews/{id}/reply", s.auth(s.replyReview)},
+		{"POST /v1/registry/packages/{name}/reports", s.auth(s.reportPackage)},
 
 		{"GET /v1/admin/stats", s.auth(s.adminStats)},
 		{"GET /v1/admin/accounts", s.auth(s.adminAccounts)},
 		{"POST /v1/admin/accounts/{id}/disable", s.auth(s.adminDisable)},
 		{"POST /v1/admin/accounts/{id}/enable", s.auth(s.adminEnable)},
 		{"DELETE /v1/admin/accounts/{id}", s.auth(s.adminDelete)},
+		{"GET /v1/admin/reports", s.auth(s.adminReports)},
+		{"POST /v1/admin/reports/{id}/resolve", s.auth(s.adminResolveReport)},
+		{"POST /v1/admin/registry/packages/{name}/delist", s.auth(s.adminDelist)},
+		{"POST /v1/admin/registry/packages/{name}/relist", s.auth(s.adminRelist)},
+		{"POST /v1/admin/registry/packages/{name}/versions/{version}/yank", s.auth(s.adminYank)},
+		{"POST /v1/admin/registry/packages/{name}/versions/{version}/unyank", s.auth(s.adminUnyank)},
+		{"POST /v1/admin/registry/authors/{handle}/ban", s.auth(s.adminBan)},
+		{"POST /v1/admin/registry/authors/{handle}/unban", s.auth(s.adminUnban)},
+		{"POST /v1/admin/registry/authors/{handle}/verify", s.auth(s.adminVerify)},
 
 		{"GET /v1/updates/{component}/{channel}/{platform}", s.latestRelease},
 		{"POST /v1/releases", s.auth(s.publishRelease)},

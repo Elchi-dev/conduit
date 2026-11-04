@@ -56,6 +56,10 @@ func (s *Server) Handler() http.Handler {
 	routes = append(routes, s.discoverRoutes()...)
 	routes = append(routes, s.registryRoutes()...)
 	routes = append(routes, s.vaultFolderRoutes()...)
+	routes = append(routes, s.gamesRoutes()...)
+	if s.Networks != nil {
+		routes = append(routes, s.networkRoutes()...)
+	}
 	if s.Remote != nil {
 		// Direct, end-to-end encrypted connections from paired devices on
 		// the local network (the handshake authenticates them).
@@ -564,6 +568,9 @@ func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
 		Name    string          `json:"name"`
 		Config  json.RawMessage `json:"config"`
 		Enabled *bool           `json:"enabled"`
+		// Network attaches the instance to a daemon network ("" detaches);
+		// left out, it stays as it is.
+		Network *string `json:"network"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -578,6 +585,7 @@ func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.ID, in.Module, in.Enabled, code = id, old.Module, old.Enabled, http.StatusOK
+		in.Network = old.Network
 		if in.Name == "" {
 			in.Name = old.Name
 		}
@@ -588,6 +596,19 @@ func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		in.Enabled = *req.Enabled
 	}
+	if req.Network != nil {
+		in.Network = strings.TrimSpace(*req.Network)
+		if in.Network != "" {
+			if s.Networks == nil {
+				writeErr(w, http.StatusBadRequest, "networks are not available")
+				return
+			}
+			if _, err := s.Networks.Get(r.Context(), in.Network); err != nil {
+				writeErr(w, http.StatusBadRequest, "no such network: "+in.Network)
+				return
+			}
+		}
+	}
 	if err := s.checkConfigRefs(r, req.Config); err != nil {
 		writeErr(w, http.StatusForbidden, err.Error())
 		return
@@ -597,7 +618,7 @@ func (s *Server) saveInstance(w http.ResponseWriter, r *http.Request) {
 		engineErr(w, err)
 		return
 	}
-	s.auditConfig(r, "instance_saved", saved.ID, map[string]any{"module": saved.Module, "name": saved.Name, "enabled": saved.Enabled})
+	s.auditConfig(r, "instance_saved", saved.ID, map[string]any{"module": saved.Module, "name": saved.Name, "enabled": saved.Enabled, "network": saved.Network})
 	writeJSON(w, code, saved)
 }
 

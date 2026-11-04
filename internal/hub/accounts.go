@@ -86,8 +86,9 @@ func (s *Server) authenticate(ctx context.Context, tok string) (caller, error) {
 			return c, errors.New("unauthenticated")
 		}
 		_, _ = s.db.Exec(ctx, `UPDATE devices SET last_seen_at = ? WHERE id = ?`, ts(s.now()), c.DeviceID)
-		// Devices may use the relay, sync and the registry, nothing else.
-		c.Scopes = []string{"relay", "sync", "registry:read", "updates"}
+		// Devices may use the relay, sync and the registry (including rating,
+		// reviewing and reporting for their account), nothing else.
+		c.Scopes = []string{"relay", "sync", "registry:read", "registry:review", "updates"}
 	case strings.HasPrefix(tok, keyPrefix):
 		var scopes string
 		var revoked int

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/netip"
 	"sort"
 	"strings"
 	"sync"
@@ -30,13 +32,16 @@ type SecretResolver interface {
 
 // Instance is a configured instance of a module.
 type Instance struct {
-	ID        string          `json:"id"`
-	Module    string          `json:"module"`
-	Name      string          `json:"name"`
-	Config    json.RawMessage `json:"config"`
-	Enabled   bool            `json:"enabled"`
-	CreatedAt time.Time       `json:"createdAt"`
-	UpdatedAt time.Time       `json:"updatedAt"`
+	ID      string          `json:"id"`
+	Module  string          `json:"module"`
+	Name    string          `json:"name"`
+	Config  json.RawMessage `json:"config"`
+	Enabled bool            `json:"enabled"`
+	// Network is the daemon network (internal/wgnet) the instance's
+	// outbound connections go through; "" for none.
+	Network   string    `json:"network,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Engine is the heart of the daemon: it owns the modules and runs every call
@@ -58,6 +63,23 @@ type Engine struct {
 	modules   map[string]sdk.Module
 	instances map[string]Instance
 	secrets   SecretResolver
+	networks  Networks
+}
+
+// Networks carries instances' connections through the daemon's networks
+// (userspace WireGuard tunnels, internal/wgnet).
+type Networks interface {
+	// Dial connects to addr through network id: destinations inside the
+	// network go through its tunnel, others directly if direct allows
+	// them (nil allows all).
+	Dial(ctx context.Context, id, network, addr string, direct func(netip.Addr) bool) (net.Conn, error)
+}
+
+// SetNetworks installs the daemon's networks.
+func (e *Engine) SetNetworks(n Networks) {
+	e.mu.Lock()
+	e.networks = n
+	e.mu.Unlock()
 }
 
 // NewEngine assembles an engine on top of an open store.
@@ -130,7 +152,7 @@ func (e *Engine) Module(id string) (sdk.Module, bool) {
 // Start loads stored instances and configures each enabled one. A failing
 // instance is logged and left unhealthy; it does not stop the daemon.
 func (e *Engine) Start(ctx context.Context) error {
-	rows, err := e.Store.DB.QueryContext(ctx, `SELECT id, module, name, config, enabled, created_at, updated_at FROM instances`)
+	rows, err := e.Store.DB.QueryContext(ctx, `SELECT id, module, name, config, enabled, network, created_at, updated_at FROM instances`)
 	if err != nil {
 		return err
 	}
@@ -138,7 +160,7 @@ func (e *Engine) Start(ctx context.Context) error {
 	for rows.Next() {
 		var in Instance
 		var cfg, c, u string
-		if err := rows.Scan(&in.ID, &in.Module, &in.Name, &cfg, &in.Enabled, &c, &u); err != nil {
+		if err := rows.Scan(&in.ID, &in.Module, &in.Name, &cfg, &in.Enabled, &in.Network, &c, &u); err != nil {
 			rows.Close()
 			return err
 		}
@@ -219,9 +241,9 @@ func (e *Engine) SaveInstance(ctx context.Context, in Instance) (Instance, error
 	} else if m, ok := e.Module(in.Module); ok {
 		_ = m.Close(in.ID)
 	}
-	_, err := e.Store.DB.ExecContext(ctx, `INSERT INTO instances (id, module, name, config, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET name = excluded.name, config = excluded.config, enabled = excluded.enabled, updated_at = excluded.updated_at`,
-		in.ID, in.Module, in.Name, string(in.Config), in.Enabled, in.CreatedAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+	_, err := e.Store.DB.ExecContext(ctx, `INSERT INTO instances (id, module, name, config, enabled, network, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET name = excluded.name, config = excluded.config, enabled = excluded.enabled, network = excluded.network, updated_at = excluded.updated_at`,
+		in.ID, in.Module, in.Name, string(in.Config), in.Enabled, in.Network, in.CreatedAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return in, err
 	}
@@ -571,6 +593,62 @@ func ConfigRefs(cfg json.RawMessage) map[string]bool {
 	}
 	walk(v)
 	return out
+}
+
+// Network implements sdk.NetHost: the network the instance is attached to.
+func (h *host) Network() string {
+	h.e.mu.RLock()
+	defer h.e.mu.RUnlock()
+	return h.e.instances[h.instance].Network
+}
+
+// DialContext implements sdk.NetHost. The instance's network is looked up
+// on every dial, so a client made at Configure time follows later changes.
+func (h *host) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return h.DialFiltered(ctx, network, addr, nil)
+}
+
+// DialFiltered dials like DialContext; destinations outside the instance's
+// network (or every destination, without one) are dialled directly only if
+// direct allows them (nil allows all). The sandbox uses it to keep its
+// reserved-address checks for everything but the network's own ranges.
+func (h *host) DialFiltered(ctx context.Context, network, addr string, direct func(netip.Addr) bool) (net.Conn, error) {
+	h.e.mu.RLock()
+	nets := h.e.networks
+	id := h.e.instances[h.instance].Network
+	h.e.mu.RUnlock()
+	if id != "" {
+		if nets == nil {
+			return nil, fmt.Errorf("network %s is not available", id)
+		}
+		return nets.Dial(ctx, id, network, addr, direct)
+	}
+	return dialDirect(ctx, network, addr, direct)
+}
+
+// dialDirect resolves addr and dials the first address direct allows.
+func dialDirect(ctx context.Context, network, addr string, direct func(netip.Addr) bool) (net.Conn, error) {
+	d := net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	if direct == nil {
+		return d.DialContext(ctx, network, addr)
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	for _, ip := range ips {
+		if !direct(ip.Unmap()) {
+			return nil, fmt.Errorf("%s resolves to a local or reserved address", host)
+		}
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("%s has no address", host)
+	}
+	return d.DialContext(ctx, network, net.JoinHostPort(ips[0].Unmap().String(), port))
 }
 
 func (h *host) Publish(_ context.Context, ev sdk.Event) {

@@ -31,6 +31,8 @@ type AdminStats struct {
 	SyncBytes     int64 `json:"syncBytes"`
 	Packages      int   `json:"packages"`
 	Releases      int   `json:"releases"`
+	OpenReports   int   `json:"openReports"`
+	Delisted      int   `json:"delisted"`
 }
 
 // AdminAccount is one row of the console's account table.
@@ -71,6 +73,8 @@ func (s *Server) adminStats(w http.ResponseWriter, r *http.Request) {
 	count(&st.SyncBlobs, `SELECT COUNT(*) FROM sync_blobs`)
 	count(&st.Packages, `SELECT COUNT(*) FROM registry_packages`)
 	count(&st.Releases, `SELECT COUNT(*) FROM releases`)
+	count(&st.OpenReports, `SELECT COUNT(*) FROM registry_reports WHERE status = 'open'`)
+	count(&st.Delisted, `SELECT COUNT(*) FROM registry_packages WHERE delisted = 1`)
 	var bytes sql.NullInt64
 	_ = s.db.Row(ctx, `SELECT SUM(LENGTH(data)) FROM sync_blobs`).Scan(&bytes)
 	st.SyncBytes = bytes.Int64
@@ -254,12 +258,14 @@ func (s *Server) deleteAccountData(ctx context.Context, id string) error {
 		`DELETE FROM account_totp WHERE account_id = ?`,
 		`DELETE FROM account_recovery_codes WHERE account_id = ?`,
 		`UPDATE registry_authors SET account_id = 'deleted:' || account_id WHERE account_id = ?`,
+		`DELETE FROM registry_reviews WHERE account_id = ?`,
 		`DELETE FROM org_members WHERE account_id = ?`,
 	} {
 		if _, err := s.db.Exec(ctx, q, id); err != nil {
 			return fmt.Errorf("%s: %w", strings.Fields(q)[2], err)
 		}
 	}
+	s.recountAllRatings(ctx)
 	// Organisations left without members go too.
 	if _, err := s.db.Exec(ctx, `DELETE FROM orgs WHERE id NOT IN (SELECT org_id FROM org_members)`); err != nil {
 		return err

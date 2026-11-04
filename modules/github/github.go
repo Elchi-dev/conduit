@@ -1,5 +1,10 @@
-// Package github manages GitHub (or GitHub Enterprise): repositories, pull
-// requests, issues and Actions runs.
+// Package github manages GitHub (or GitHub Enterprise) with an access token
+// alone: repositories and their settings, branches and protection, files
+// and commits, releases and tags, pull requests and reviews, issues, labels
+// and milestones, Actions (runs, logs, workflows, secrets, variables),
+// webhooks, access, deploy keys, environments, organizations, search,
+// notifications and gists, plus generic REST and GraphQL actions whose risk
+// follows the HTTP method. See docs/modules/github.md.
 package github
 
 import (
@@ -12,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -48,14 +54,14 @@ const repoProp = `"repo":{"type":"string","description":"owner/name; defaults to
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "github", Name: "GitHub", Version: "0.1.0", Category: "Development", Icon: "git",
-		Description: "Repositories, pull requests, issues and Actions runs on GitHub or GitHub Enterprise.",
+		ID: "github", Name: "GitHub", Version: "0.2.0", Category: "Development", Icon: "git",
+		Description: "Everything a maintainer does on GitHub or GitHub Enterprise: repositories, branches, files, releases, pull requests, issues, Actions, secrets, access and more.",
 		Presets:     []string{"developer", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["token"],"properties":{
-			"token":{"type":"string","x-secret":true,"description":"A fine-grained token with read access (add write for issues, comments, re-runs and merges)"},
+			"token":{"type":"string","x-secret":true,"description":"A fine-grained or classic personal access token; grant the permissions of the areas you want managed (see the GitHub module docs)"},
 			"api":{"type":"string","description":"API URL for GitHub Enterprise, e.g. https://github.example.com/api/v3"},
 			"repos":{"type":"array","items":{"type":"string"},"description":"Repositories to watch, as owner/name"}}}`),
-		Actions: []sdk.ActionSpec{
+		Actions: append([]sdk.ActionSpec{
 			{Name: "repos", Title: "Repositories", Description: "Your repositories, most recently pushed first.", Risk: sdk.RiskRead},
 			{Name: "pull_requests", Title: "Pull requests", Description: "Open pull requests in a repository, or everywhere you're involved.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + repoProp + `}}`)},
@@ -77,7 +83,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["repo","commentId"],"properties":{"repo":{"type":"string"},"commentId":{"type":"integer"}}}`)},
 			{Name: "merge", Title: "Merge a pull request", Description: "Merges if GitHub says it can be merged.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["repo","number"],"properties":{"repo":{"type":"string"},"number":{"type":"integer"},"method":{"type":"string","enum":["merge","squash","rebase"],"default":"squash"}}}`)},
-		},
+		}, tableSpecs()...),
 		Resources: []sdk.ResourceSpec{{Kind: "pull_request", Title: "Pull requests", ListAction: "pull_requests", ViewHint: "table"}},
 	}
 }
@@ -115,6 +121,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	api.Header.Set("Accept", "application/vnd.github+json")
 	if m.HTTP != nil {
 		api.HTTP = m.HTTP
+	} else {
+		// Through the instance's network when it has one (an Enterprise
+		// server inside a private network).
+		api.HTTP = sdk.HTTPClient(h, 30*time.Second)
 	}
 	m.set.Put(id, &account{cfg: c, api: api})
 	return nil
@@ -248,6 +258,15 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 	a, err := m.set.Get(c.Instance)
 	if err != nil {
 		return sdk.Result{}, err
+	}
+	if act, ok := actionTable[c.Action]; ok {
+		var p args
+		// The generic API actions decode their own input (its query and
+		// body are objects there).
+		if err := sdk.Decode(c, &p); err != nil && !strings.HasPrefix(c.Action, "api_") {
+			return sdk.Result{}, err
+		}
+		return act.run(ctx, a, p, c)
 	}
 	var p in
 	if err := sdk.Decode(c, &p); err != nil {

@@ -1,0 +1,6 @@
+-- The games table of Lutris' pga.db (columns as Lutris creates them).
+CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT, sortname TEXT, slug TEXT, installer_slug TEXT, parent_slug TEXT, platform TEXT, runner TEXT, executable TEXT, directory TEXT, updated DATETIME, lastplayed INTEGER, installed INTEGER, installed_at INTEGER, year INTEGER, configpath TEXT, has_custom_banner INTEGER, has_custom_icon INTEGER, has_custom_coverart_big INTEGER, playtime REAL, hidden INTEGER, service TEXT, service_id TEXT, discord_id TEXT);
+INSERT INTO games (id, name, slug, installer_slug, platform, runner, executable, directory, lastplayed, installed, installed_at, year, configpath, playtime, hidden, service, service_id) VALUES
+  (3, 'Diablo II: Lord of Destruction', 'diablo-ii-lord-of-destruction', 'diablo-ii-lord-of-destruction-cd', 'Windows', 'wine', 'drive_c/Program Files (x86)/Diablo II/Game.exe', '/home/ana/Games/diablo-ii', 1761500000, 1, 1750000000, 2001, 'diablo-ii-lord-of-destruction-1750000000', 12.5, 0, NULL, NULL),
+  (4, 'Portal 2', 'portal-2', 'portal-2-steam', 'Linux', 'steam', NULL, NULL, 0, 1, 1750000000, 2011, 'portal-2-1750000000', 0, 0, 'steam', '620'),
+  (5, 'Quake', 'quake', NULL, 'Linux', 'linux', NULL, NULL, 0, 0, NULL, 1996, NULL, 0, 0, NULL, NULL);

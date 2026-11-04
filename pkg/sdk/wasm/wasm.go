@@ -18,6 +18,10 @@ type Request struct {
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    []byte            `json:"body,omitempty"`
+	// Instance is the instance the request is made for (Call.Instance), so
+	// the host sends it through that instance's network. It may be left
+	// out when the module has a single instance.
+	Instance string `json:"instance,omitempty"`
 }
 
 // Response is the host's answer.

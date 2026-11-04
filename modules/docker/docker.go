@@ -124,10 +124,9 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 		if cfg.Address == "" {
 			return errors.New("address is required for tcp mode")
 		}
-		dial = func(ctx context.Context) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "tcp", cfg.Address)
-		}
+		// Through the instance's network when it has one.
+		netDial := sdk.DialContext(h)
+		dial = func(ctx context.Context) (net.Conn, error) { return netDial(ctx, "tcp", cfg.Address) }
 	default:
 		return fmt.Errorf("unknown mode %q", cfg.Mode)
 	}

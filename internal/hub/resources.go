@@ -356,7 +356,7 @@ func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
 // --- hub API keys --------------------------------------------------------------
 
 // HubScopes are what a hub API key can be granted.
-var HubScopes = []string{"orgs:read", "devices:read", "sync", "registry:read", "registry:publish", "releases:publish"}
+var HubScopes = []string{"orgs:read", "devices:read", "sync", "registry:read", "registry:review", "registry:publish", "releases:publish"}
 
 type HubKey struct {
 	ID        string    `json:"id"`

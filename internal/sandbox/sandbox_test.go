@@ -3,11 +3,13 @@ package sandbox
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -110,5 +112,66 @@ func TestReserved(t *testing.T) {
 		if reserved(net.ParseIP(s)) {
 			t.Errorf("%s should be allowed", s)
 		}
+	}
+}
+
+// netFake is a host whose instance is attached to a daemon network that
+// contains 127.0.0.0/8.
+type netFake struct {
+	*fakehost.Host
+	dials []string
+}
+
+func (n *netFake) Network() string { return "net_test" }
+
+func (n *netFake) DialFiltered(ctx context.Context, network, addr string, direct func(netip.Addr) bool) (net.Conn, error) {
+	n.dials = append(n.dials, addr)
+	host, _, _ := net.SplitHostPort(addr)
+	ip := netip.MustParseAddr(host)
+	if !ip.IsLoopback() && !direct(ip) { // outside the "network": the sandbox rules apply
+		return nil, errors.New("refused")
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, network, addr)
+}
+
+func TestNetworkRequests(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "inside")
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	base := srv.Client()
+	tr := base.Transport.(*http.Transport).Clone()
+	tr.DialContext = noPrivate
+	plain := &http.Client{Transport: tr}
+	nh := &netHost{perms: Permissions{Network: []string{u.Hostname(), "10.9.9.9"}}, client: plain}
+	nf := &netFake{Host: fakehost.New(nil)}
+	nh.hosts = func(instance string) sdk.Host {
+		if instance == "on-net" {
+			return nf
+		}
+		return fakehost.New(nil)
+	}
+	req := func(instance, target string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"url": target, "instance": instance})
+		var out map[string]any
+		_ = json.Unmarshal(nh.do(context.Background(), b), &out)
+		return out
+	}
+	// Without a network, loopback stays unreachable.
+	if r := req("off-net", srv.URL); !strings.Contains(r["error"].(string), "reserved") {
+		t.Fatalf("off network: %v", r)
+	}
+	// On the network, its own range is reachable through it.
+	if r := req("on-net", srv.URL); r["status"] != float64(200) {
+		t.Fatalf("on network: %v", r)
+	}
+	// Private addresses outside the network's ranges stay refused.
+	if r := req("on-net", "https://10.9.9.9/"); r["error"] == nil {
+		t.Fatalf("outside the network: %v", r)
+	}
+	if len(nf.dials) != 2 {
+		t.Fatalf("dials %v", nf.dials)
 	}
 }

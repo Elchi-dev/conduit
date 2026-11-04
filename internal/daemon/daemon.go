@@ -29,6 +29,7 @@ import (
 	"github.com/elchi-dev/conduit/internal/update"
 	"github.com/elchi-dev/conduit/internal/vault"
 	"github.com/elchi-dev/conduit/internal/version"
+	"github.com/elchi-dev/conduit/internal/wgnet"
 	"github.com/elchi-dev/conduit/modules/games"
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/pkg/sdk"
@@ -84,6 +85,8 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	sum := sha256.Sum256([]byte(dataDir))
 	v := vault.New(store, vault.OSKeychain{Account: hex.EncodeToString(sum[:8])})
 	engine.SetSecrets(v)
+	nets := wgnet.NewManager(store.DB, v.Resolve, log)
+	engine.SetNetworks(nets)
 	autos := automation.New(engine)
 	providers := ai.NewProviders(store, v)
 	assistant := &ai.Agent{DB: store.DB, Providers: providers}
@@ -105,6 +108,7 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 	app.Server.Sync = app.Sync
 	app.Updates = update.New(dataDir, log)
 	app.Server.Updates = app.Updates
+	app.Server.Networks = nets
 	rem.Handler = app.Server.Handler()
 	if v.UnlockFromKeychain(ctx) {
 		log.Info("vault unlocked from the system keychain")
@@ -132,6 +136,9 @@ func Open(ctx context.Context, dataDir string, log *slog.Logger) (*App, error) {
 // Close releases the daemon's resources.
 func (a *App) Close() {
 	a.Engine.Close()
+	if a.Server != nil && a.Server.Networks != nil {
+		a.Server.Networks.Close()
+	}
 	a.Store.Close()
 }
 
@@ -182,6 +189,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 	go app.Server.Webhooks.Run(ctx)
 	go runSync(ctx, app)
 	go runBackups(ctx, app.Server)
+	go runRegistryChecks(ctx, app.Server) // yanked or delisted installed modules
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

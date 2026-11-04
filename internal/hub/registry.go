@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -44,14 +45,29 @@ type Artifact struct {
 	SHA256   string `json:"sha256"`
 }
 
+// Package is a marketplace listing as search and the package page show it.
 type Package struct {
 	Name        string    `json:"name"`
 	Owner       string    `json:"owner"`
 	Description string    `json:"description"`
 	Homepage    string    `json:"homepage,omitempty"`
+	Source      string    `json:"source,omitempty"`
+	License     string    `json:"license,omitempty"`
 	Latest      string    `json:"latest,omitempty"`
-	Downloads   int64     `json:"downloads"`
+	Downloads   int64     `json:"downloads"` // installs ever (one per daemon per day)
+	Installs    int64     `json:"installs"`  // daemons that have it now
+	Rating      float64   `json:"rating"`    // average of 1–5, 0 without ratings
+	RatingCount int64     `json:"ratingCount"`
+	Categories  []string  `json:"categories"`
+	Tags        []string  `json:"tags"`
+	Icon        string    `json:"icon,omitempty"` // media id: GET /v1/registry/media/{id}
+	Verified    bool      `json:"verified"`       // the author is verified by the hub's operators
+	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+	// Delisted packages are hidden from search; daemons warn whoever has one.
+	Delisted     bool   `json:"delisted,omitempty"`
+	DelistReason string `json:"delistReason,omitempty"`
+	DelistNote   string `json:"delistNote,omitempty"`
 }
 
 type PackageVersion struct {
@@ -59,7 +75,17 @@ type PackageVersion struct {
 	Payload   string    `json:"payload"`   // base64 of the exact signed bytes
 	Signature string    `json:"signature"` // base64 ed25519 signature
 	Yanked    bool      `json:"yanked"`
+	YankedBy  string    `json:"yankedBy,omitempty"`   // author or operator
+	Reason    string    `json:"yankReason,omitempty"` // for operator yanks: malware, broken, …
+	Note      string    `json:"yankNote,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// authorState answers whether a handle may publish.
+func (s *Server) authorBanned(ctx context.Context, handle string) bool {
+	var b int
+	_ = s.db.Row(ctx, `SELECT banned FROM registry_authors WHERE handle = ?`, handle).Scan(&b)
+	return b == 1
 }
 
 func (s *Server) registerAuthor(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +117,10 @@ func (s *Server) registerAuthor(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var existing string
 	if s.db.Row(ctx, `SELECT handle FROM registry_authors WHERE account_id = ?`, c.Account.ID).Scan(&existing) == nil {
+		if s.authorBanned(ctx, existing) {
+			writeErr(w, 403, "this author handle is banned from publishing on this hub")
+			return
+		}
 		if existing != req.Handle {
 			writeErr(w, 409, "your account already publishes as "+existing)
 			return
@@ -138,6 +168,10 @@ func (s *Server) publishVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	if m[1] != handle {
 		writeErr(w, 403, "you publish as "+handle+", so your packages are named "+handle+"/…")
+		return
+	}
+	if s.authorBanned(ctx, handle) {
+		writeErr(w, 403, "this author handle is banned from publishing on this hub")
 		return
 	}
 	var req struct {
@@ -191,7 +225,11 @@ func (s *Server) publishVersion(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "this package belongs to "+owner)
 		return
 	} else {
-		_, _ = s.db.Exec(ctx, `UPDATE registry_packages SET description = ?, homepage = ?, updated_at = ? WHERE name = ?`, truncate(p.Description, 300), p.Homepage, now, name)
+		// The signed description and homepage update the listing only when
+		// set, so a listing edited on the hub isn't blanked by a release.
+		_, _ = s.db.Exec(ctx, `UPDATE registry_packages SET description = CASE WHEN ? = '' THEN description ELSE ? END,
+			homepage = CASE WHEN ? = '' THEN homepage ELSE ? END, updated_at = ? WHERE name = ?`,
+			p.Description, truncate(p.Description, 300), p.Homepage, p.Homepage, now, name)
 	}
 	arts, _ := json.Marshal(p.Artifacts)
 	if _, err := s.db.Exec(ctx, `INSERT INTO registry_versions (name, version, payload, artifacts, signature, created_at) VALUES (?,?,?,?,?,?)`,
@@ -217,7 +255,9 @@ func (s *Server) yankVersion(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "no such package of yours")
 		return
 	}
-	res, _ := s.db.Exec(ctx, `UPDATE registry_versions SET yanked = 1 WHERE name = ? AND version = ?`, name, r.PathValue("version"))
+	// An operator's yank (with its reason) stays as it is.
+	res, _ := s.db.Exec(ctx, `UPDATE registry_versions SET yanked = 1, yanked_by = CASE WHEN yanked_by = 'operator' THEN yanked_by ELSE 'author' END,
+		yanked_at = CASE WHEN yanked_at = '' THEN ? ELSE yanked_at END WHERE name = ? AND version = ?`, ts(s.now()), name, r.PathValue("version"))
 	if n, _ := res.RowsAffected(); n == 0 {
 		writeErr(w, 404, "no such version")
 		return
@@ -225,36 +265,12 @@ func (s *Server) yankVersion(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func (s *Server) searchPackages(w http.ResponseWriter, r *http.Request) {
-	q := "%" + strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))) + "%"
-	rows, err := s.db.Query(r.Context(), `SELECT name, owner, description, homepage, downloads, updated_at FROM registry_packages
-		WHERE LOWER(name) LIKE ? OR LOWER(description) LIKE ? ORDER BY downloads DESC, name LIMIT 100`, q, q)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	defer rows.Close()
-	out := []Package{}
-	for rows.Next() {
-		var p Package
-		var up string
-		if rows.Scan(&p.Name, &p.Owner, &p.Description, &p.Homepage, &p.Downloads, &up) == nil {
-			p.UpdatedAt = parseTS(up)
-			out = append(out, p)
-		}
-	}
-	rows.Close()
-	for i := range out {
-		vs := s.versions(r, out[i].Name)
-		if l := latest(vs); l != "" {
-			out[i].Latest = l
-		}
-	}
-	writeJSON(w, 200, out)
+func (s *Server) versions(r *http.Request, name string) []PackageVersion {
+	return s.versionsOf(r.Context(), name)
 }
 
-func (s *Server) versions(r *http.Request, name string) []PackageVersion {
-	rows, err := s.db.Query(r.Context(), `SELECT version, payload, signature, yanked, created_at FROM registry_versions WHERE name = ?`, name)
+func (s *Server) versionsOf(ctx context.Context, name string) []PackageVersion {
+	rows, err := s.db.Query(ctx, `SELECT version, payload, signature, yanked, yanked_by, yank_reason, yank_note, created_at FROM registry_versions WHERE name = ?`, name)
 	if err != nil {
 		return nil
 	}
@@ -264,8 +280,11 @@ func (s *Server) versions(r *http.Request, name string) []PackageVersion {
 		var v PackageVersion
 		var y int
 		var cr string
-		if rows.Scan(&v.Version, &v.Payload, &v.Signature, &y, &cr) == nil {
+		if rows.Scan(&v.Version, &v.Payload, &v.Signature, &y, &v.YankedBy, &v.Reason, &v.Note, &cr) == nil {
 			v.Yanked, v.CreatedAt = y == 1, parseTS(cr)
+			if v.Yanked && v.YankedBy == "" {
+				v.YankedBy = "author" // yanked before the marketplace kept track
+			}
 			out = append(out, v)
 		}
 	}
@@ -285,29 +304,6 @@ func latest(vs []PackageVersion) string {
 		}
 	}
 	return ""
-}
-
-func (s *Server) getPackage(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	var p Package
-	var up string
-	if err := s.db.Row(r.Context(), `SELECT name, owner, description, homepage, downloads, updated_at FROM registry_packages WHERE name = ?`, name).
-		Scan(&p.Name, &p.Owner, &p.Description, &p.Homepage, &p.Downloads, &up); err != nil {
-		writeErr(w, 404, "no such package")
-		return
-	}
-	p.UpdatedAt = parseTS(up)
-	vs := s.versions(r, name)
-	p.Latest = latest(vs)
-	var key string
-	_ = s.db.Row(r.Context(), `SELECT public_key FROM registry_authors WHERE handle = ?`, p.Owner).Scan(&key)
-	if r.URL.Query().Get("download") == "1" {
-		_, _ = s.db.Exec(r.Context(), `UPDATE registry_packages SET downloads = downloads + 1 WHERE name = ?`, name)
-	}
-	if vs == nil {
-		vs = []PackageVersion{}
-	}
-	writeJSON(w, 200, map[string]any{"package": p, "authorKey": key, "versions": vs})
 }
 
 // semverLess orders versions; a pre-release sorts before its release.

@@ -34,6 +34,7 @@ takes the same path:
 | AI layer: tools, MCP, providers, assistant, bridge | `internal/ai` | [ai.md](ai.md) |
 | Web app | `web/`, `internal/ui` | [web.md](web.md) |
 | WebAssembly sandbox | `internal/sandbox`, `pkg/sdk/wasm` | [../protocol/sandbox.md](../protocol/sandbox.md) |
+| Networks (userspace WireGuard for modules) | `internal/wgnet`, `pkg/sdk/net.go` | [networks.md](networks.md) |
 | Self-update | `internal/update`, `tools/release` | [../protocol/updates.md](../protocol/updates.md) |
 | Website | `site/` | [site/README.md](../../site/README.md) |
 | Desktop and Android shell | `apps/desktop` | [desktop.md](desktop.md) |

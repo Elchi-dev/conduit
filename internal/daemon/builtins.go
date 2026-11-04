@@ -29,6 +29,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/mastodon"
 	"github.com/elchi-dev/conduit/modules/metrics"
+	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
@@ -44,6 +45,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/servers"
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/spotify"
+	"github.com/elchi-dev/conduit/modules/standards"
 	"github.com/elchi-dev/conduit/modules/system"
 	"github.com/elchi-dev/conduit/modules/tailscale"
 	"github.com/elchi-dev/conduit/modules/truenas"
@@ -64,6 +66,9 @@ func builtins(app *App) []sdk.Module {
 	}
 	if app.Games == nil {
 		app.Games = games.New()
+		if app.DataDir != "" {
+			app.Games.DataDir = filepath.Join(app.DataDir, "games") // play sessions, added games, cover cache
+		}
 	}
 	notesDir := ""
 	if app.DataDir != "" {
@@ -117,9 +122,11 @@ func builtins(app *App) []sdk.Module {
 		mastodon.New(),
 		vaultwarden.New(),
 		containerregistry.New(),
+		milanote.New(),
 		files.New(),
 		app.Games,
 		notes.New(notesDir),
+		standards.New(app.dataSub("standards")),
 		&automation.Module{S: app.Automations},
 		&briefModule{app: app},
 		app.ambient(),
@@ -134,6 +141,7 @@ var singletons = map[string]string{
 	automation.InstanceID: "Automations",
 	briefID:               "Daily brief",
 	notes.InstanceID:      "Notes",
+	standards.InstanceID:  "Standards",
 	ambientID:             "Ambient status",
 }
 

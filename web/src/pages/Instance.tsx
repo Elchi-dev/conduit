@@ -6,7 +6,9 @@ import { PlanView } from "../components/PlanView";
 import { defaults, SchemaForm, type JSONSchema } from "../components/SchemaForm";
 import { ResultView } from "../components/ResultView";
 import { PinButton } from "../components/Tiles";
+import { NetworkPicker } from "./Networks";
 import { VaultGate } from "../modules/vault/VaultGate";
+import { modulePages } from "../modules";
 import { ago } from "../lib/format";
 import { t } from "../i18n";
 import "./pages.css";
@@ -30,6 +32,7 @@ export function InstancePage({ id }: { id: string }) {
   });
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [plain, setPlain] = useState(false);
 
   useEffect(() => {
     const a = new URLSearchParams(search).get("action");
@@ -55,6 +58,7 @@ export function InstancePage({ id }: { id: string }) {
   if (!inst.data || !mod.data) return <div className="page" />;
   const i = inst.data;
   const m = mod.data;
+  const Page = plain ? undefined : modulePages[m.id];
   const action = m.actions.find((a) => a.name === selected);
   const h = i.health;
 
@@ -74,17 +78,23 @@ export function InstancePage({ id }: { id: string }) {
           </p>
         </div>
         <div className="inline">
+          {modulePages[m.id] && (
+            <button className="btn quiet" onClick={() => setPlain(!plain)} aria-pressed={plain}>
+              {plain ? t("Back to the module's page") : t("All actions")}
+            </button>
+          )}
           <button className="btn" onClick={() => setEditing(!editing)}>
             {editing ? t("Close settings") : t("Settings")}
           </button>
         </div>
       </div>
 
-      {editing && <InstanceSettings id={id} schema={m.configSchema as JSONSchema} initial={i.config as Record<string, unknown>} name={i.name} enabled={i.enabled} onDelete={() => confirm(t("Disconnect {name}? Its history stays in the timeline.", { name: i.name })) && del.mutate()} />}
+      {editing && <InstanceSettings id={id} schema={m.configSchema as JSONSchema} initial={i.config as Record<string, unknown>} name={i.name} enabled={i.enabled} network={(i as { network?: string }).network} onDelete={() => confirm(t("Disconnect {name}? Its history stays in the timeline.", { name: i.name })) && del.mutate()} />}
 
       {m.id === "vault" && <VaultGate />}
+      {Page && <Page instance={id} />}
 
-      <div className="instance-grid">
+      {!Page && (<div className="instance-grid">
         <nav className="actions panel" aria-label={t("Actions")}>
           {(["read", "write", "destructive"] as const).map((risk) => {
             const list = m.actions.filter((a) => a.risk === risk);
@@ -119,7 +129,7 @@ export function InstancePage({ id }: { id: string }) {
             </div>
           )}
         </section>
-      </div>
+      </div>)}
     </div>
   );
 }
@@ -182,6 +192,7 @@ function InstanceSettings({
   initial,
   name: initialName,
   enabled,
+  network,
   onDelete,
 }: {
   id: string;
@@ -189,6 +200,7 @@ function InstanceSettings({
   initial: Record<string, unknown>;
   name: string;
   enabled: boolean;
+  network?: string;
   onDelete: () => void;
 }) {
   const qc = useQueryClient();
@@ -212,6 +224,7 @@ function InstanceSettings({
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
       <SchemaForm schema={schema} value={config} onChange={setConfig} idPrefix={`edit-${id}`} />
+      <NetworkPicker instance={id} current={network} />
       {save.error && <div className="error">{save.error.message}</div>}
       <div className="spread">
         <button type="button" className="btn danger" onClick={onDelete}>

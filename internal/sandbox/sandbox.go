@@ -6,7 +6,10 @@
 // `conduit.http_request` function, which allows only the hosts the module
 // was granted, over HTTPS, with size and time limits. Secrets still go
 // through the normal host callback, so a module only sees the vault
-// references in its own instance settings.
+// references in its own instance settings. An instance attached to a daemon
+// network has its requests carried through that network's tunnel; there the
+// network's own address ranges are reachable even when private, while every
+// other destination keeps the reserved-address rules.
 //
 // The runtime is wazero (pure Go, no cgo), so the daemon stays one static
 // binary.
@@ -22,6 +25,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -34,6 +38,7 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 
 	"github.com/elchi-dev/conduit/internal/core"
+	"github.com/elchi-dev/conduit/pkg/sdk"
 )
 
 // Permissions are what a sandboxed module may do beyond computing.
@@ -88,10 +93,70 @@ const (
 
 // netHost implements conduit.http_request for one module.
 type netHost struct {
-	perms   Permissions
-	client  *http.Client
-	mu      sync.Mutex
-	pending []byte
+	perms        Permissions
+	client       *http.Client
+	allowPrivate bool
+	redirect     func(*http.Request, []*http.Request) error
+	mu           sync.Mutex
+	pending      []byte
+	// hosts finds an instance's host (set once the module is connected).
+	hosts func(instance string) sdk.Host
+	// nets holds one client per daemon network, so pooled connections
+	// never cross from one network to another.
+	nets map[string]*http.Client
+}
+
+// netDialer is what the engine's host offers for instances attached to a
+// daemon network (internal/wgnet).
+type netDialer interface {
+	Network() string
+	DialFiltered(ctx context.Context, network, addr string, direct func(netip.Addr) bool) (net.Conn, error)
+}
+
+type dialerKey struct{}
+
+// direct decides which destinations outside an instance's network may be
+// dialled: the network's own ranges are reachable through its tunnel even
+// when private, but everything else keeps the reserved-address rules.
+func (n *netHost) direct(ip netip.Addr) bool {
+	return n.allowPrivate || !reserved(net.IP(ip.AsSlice()))
+}
+
+// clientFor picks the client for a request made for instance.
+func (n *netHost) clientFor(ctx context.Context, instance string) (context.Context, *http.Client) {
+	n.mu.Lock()
+	hosts := n.hosts
+	n.mu.Unlock()
+	if hosts == nil {
+		return ctx, n.client
+	}
+	nd, ok := hosts(instance).(netDialer)
+	if !ok || nd.Network() == "" {
+		return ctx, n.client
+	}
+	id := nd.Network()
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	c := n.nets[id]
+	if c == nil {
+		tr := &http.Transport{TLSHandshakeTimeout: 10 * time.Second, MaxIdleConnsPerHost: 2, IdleConnTimeout: 60 * time.Second,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				d, ok := ctx.Value(dialerKey{}).(netDialer)
+				if !ok {
+					return nil, errors.New("no network for this request")
+				}
+				return d.DialFiltered(ctx, network, addr, n.direct)
+			}}
+		if base, ok := n.client.Transport.(*http.Transport); ok && base.TLSClientConfig != nil {
+			tr.TLSClientConfig = base.TLSClientConfig.Clone()
+		}
+		c = &http.Client{Timeout: 20 * time.Second, Transport: tr, CheckRedirect: n.redirect}
+		if n.nets == nil {
+			n.nets = map[string]*http.Client{}
+		}
+		n.nets[id] = c
+	}
+	return context.WithValue(ctx, dialerKey{}, nd), c
 }
 
 func (n *netHost) do(ctx context.Context, raw []byte) []byte {
@@ -101,6 +166,9 @@ func (n *netHost) do(ctx context.Context, raw []byte) []byte {
 		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
 		Body    []byte            `json:"body"`
+		// Instance says which instance the request is for, so it goes
+		// through that instance's network (optional with one instance).
+		Instance string `json:"instance"`
 	}
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return fail("invalid request")
@@ -116,6 +184,7 @@ func (n *netHost) do(ctx context.Context, raw []byte) []byte {
 	if method == "" {
 		method = http.MethodGet
 	}
+	ctx, client := n.clientFor(ctx, req.Instance)
 	hr, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(req.Body))
 	if err != nil {
 		return fail(err.Error())
@@ -123,7 +192,7 @@ func (n *netHost) do(ctx context.Context, raw []byte) []byte {
 	for k, v := range req.Headers {
 		hr.Header.Set(k, v)
 	}
-	res, err := n.client.Do(hr)
+	res, err := client.Do(hr)
 	if err != nil {
 		return fail("request failed: " + err.Error())
 	}
@@ -227,8 +296,7 @@ func Start(ctx context.Context, wasm []byte, perms Permissions, log *slog.Logger
 	}
 	// Redirects are followed only to https URLs on hosts the module was
 	// granted, so a granted site can't bounce a request elsewhere.
-	c := *client
-	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	redirect := func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
 			return errors.New("too many redirects")
 		}
@@ -237,8 +305,10 @@ func Start(ctx context.Context, wasm []byte, perms Permissions, log *slog.Logger
 		}
 		return nil
 	}
+	c := *client
+	c.CheckRedirect = redirect
 	client = &c
-	nh := &netHost{perms: perms, client: client}
+	nh := &netHost{perms: perms, client: client, allowPrivate: opt.AllowPrivate, redirect: redirect}
 	_, err := rt.NewHostModuleBuilder("conduit").
 		NewFunctionBuilder().WithFunc(func(ctx context.Context, m api.Module, ptr, size uint32) uint32 {
 		if size > maxRequest {
@@ -299,6 +369,9 @@ func Start(ctx context.Context, wasm []byte, perms Permissions, log *slog.Logger
 		cancel()
 		return nil, err
 	}
+	nh.mu.Lock()
+	nh.hosts = x.Host
+	nh.mu.Unlock()
 	return &Module{External: x, cancel: cancel, done: done, stdin: inW}, nil
 }
 

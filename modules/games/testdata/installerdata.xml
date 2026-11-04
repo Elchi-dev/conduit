@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DiPManifest version="4.0">
+  <buildMetaData>
+    <featureFlags autoUpdateEnabled="1" useGameVersionFromSource="0" forceTouchupInstallerAfterUpdate="0" treatUpdatesAsMandatory="0" enableDifferentialUpdate="1" dynamicContentSupportEnabled="1" languageChangeSupportEnabled="1" />
+    <requirements osMinVersion="10.0.17763" osReqs64Bit="1" />
+    <gameVersion version="1.0.0.42" />
+  </buildMetaData>
+  <contentIDs>
+    <contentID>Origin.OFR.50.0004643</contentID>
+    <contentID>Origin.OFR.50.0004644</contentID>
+  </contentIDs>
+  <gameTitles>
+    <gameTitle locale="en_US">Apex Legends</gameTitle>
+  </gameTitles>
+  <runtime>
+    <launcher uid="r5apex">
+      <filePath>[HKEY_LOCAL_MACHINE\SOFTWARE\Respawn\Apex\Install Dir]r5apex.exe</filePath>
+      <trial>0</trial>
+    </launcher>
+  </runtime>
+</DiPManifest>

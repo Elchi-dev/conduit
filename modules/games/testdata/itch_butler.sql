@@ -1,0 +1,11 @@
+-- The tables of itch's butler.db that the scanner reads (columns as butler creates them).
+CREATE TABLE install_locations (id text primary key, path text);
+CREATE TABLE games (id integer primary key, url text, title text, short_text text, type text, classification text, embed_info text, cover_url text, still_cover_url text, created_at datetime, published_at datetime, min_price integer, can_be_bought numeric, has_demo numeric, in_press_system numeric, platforms text, user_id integer, sale_id integer, views_count integer, downloads_count integer, purchases_count integer, published numeric);
+CREATE TABLE caves (id text primary key, game_id integer, external_game_id integer, upload_id integer, build_id integer, upload text, build text, installed_at datetime, last_touched_at datetime, seconds_run integer, verdict text, installed_size integer, install_location_id text, install_folder_name text, pinned numeric, custom numeric);
+INSERT INTO install_locations VALUES ('6b3c0f0e-5d6e-4a51-9f0c-0c7a2c3b1d11', '/home/ana/.config/itch/apps');
+INSERT INTO games (id, url, title, short_text, type, classification, cover_url, still_cover_url) VALUES
+  (1191, 'https://zaebucca.itch.io/a-short-hike', 'A Short Hike', 'A little exploration game about hiking up a mountain.', 'default', 'game', 'https://img.itch.zone/aW1nLzE2MTM1MjEuZ2lm/315x250%23c/hike.gif', 'https://img.itch.zone/aW1nLzE2MTM1MjEucG5n/315x250%23c/hike.png'),
+  (5432, 'https://example.itch.io/celeste-classic', 'Celeste Classic', '', 'default', 'game', 'https://img.itch.zone/aW1nLzU0MzIucG5n/315x250%23c/celeste.png', NULL);
+INSERT INTO caves (id, game_id, installed_at, last_touched_at, seconds_run, verdict, installed_size, install_location_id, install_folder_name) VALUES
+  ('e2c1f4a0-4a0b-4c8f-9a51-1b2c3d4e5f60', 1191, '2025-07-01 10:00:00', '2025-10-30 21:15:00', 15600, '{"basePath":"/home/ana/.config/itch/apps/a-short-hike","totalSize":402653184,"candidates":[{"path":"AShortHike.x86_64","depth":1,"flavor":"linux","arch":"amd64","size":24576000}]}', 402653184, '6b3c0f0e-5d6e-4a51-9f0c-0c7a2c3b1d11', 'a-short-hike'),
+  ('1a2b3c4d-0000-4000-8000-0000000000aa', 5432, '2025-08-01 10:00:00', NULL, 0, '', 12000000, '6b3c0f0e-5d6e-4a51-9f0c-0c7a2c3b1d11', 'celeste-classic');

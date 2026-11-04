@@ -1,0 +1,13 @@
+{
+	"FormatVersion": 0,
+	"bIsIncompleteInstall": false,
+	"LaunchExecutable": "",
+	"AppCategories": ["public", "addons"],
+	"DisplayName": "Hogwarts Legacy: Onyx Hippogriff",
+	"InstallLocation": "D:\\Games\\HogwartsLegacy",
+	"InstallSize": 1024,
+	"CatalogNamespace": "e97659b501af4e3981d5430dad170911",
+	"CatalogItemId": "aa11bb22cc33dd44ee55ff6600778899",
+	"AppName": "a8b2c3d4e5f6OnyxHippogriff",
+	"MainGameAppName": "fa4240e57a3c46b39f169041b7811293"
+}

@@ -53,9 +53,11 @@ recommended policies.
 | Mastodon | [mastodon.md](mastodon.md) | team, gamer |
 | Vaultwarden | [vaultwarden.md](vaultwarden.md) | homelab |
 | Container registry | [containerregistry.md](containerregistry.md) | developer, homelab |
+| Milanote | [milanote.md](milanote.md) | team, developer |
 | Files and backups | [files.md](files.md) | homelab, team, developer |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |
+| Standards | [standards.md](standards.md) | all |
 | Ambient status | [status.md](status.md) | all |
 | Automations | [../architecture/automations.md](../architecture/automations.md) | all |
 

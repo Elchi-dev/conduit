@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/elchi-dev/conduit/modules/internal/inst"
 	"github.com/elchi-dev/conduit/modules/internal/rest"
@@ -107,6 +108,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	})
 	if m.HTTP != nil {
 		api.HTTP = m.HTTP
+	} else {
+		// Through the instance's network, when it has one (a Forgejo
+		// server inside a WireGuard network).
+		api.HTTP = sdk.HTTPClient(h, 30*time.Second)
 	}
 	m.set.Put(id, &conn{api: api})
 	return nil

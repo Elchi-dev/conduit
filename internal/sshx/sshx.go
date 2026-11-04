@@ -113,8 +113,10 @@ func (c *Client) dial(ctx context.Context) (*ssh.Client, error) {
 		Timeout: 10 * time.Second,
 	}
 	addr := net.JoinHostPort(c.cfg.Host, strconv.Itoa(c.cfg.Port))
-	d := net.Dialer{Timeout: 10 * time.Second}
-	nc, err := d.DialContext(ctx, "tcp", addr)
+	// Through the instance's network when it has one (sdk.NetHost).
+	dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	nc, err := sdk.DialContext(c.host)(dctx, "tcp", addr)
+	cancel()
 	if err != nil {
 		return nil, err
 	}

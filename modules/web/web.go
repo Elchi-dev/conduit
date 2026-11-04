@@ -49,6 +49,7 @@ type Result struct {
 type watch struct {
 	cfg     Config
 	host    sdk.Host
+	http    *http.Client // the module's client, dialling through the instance's network
 	stop    context.CancelFunc
 	mu      sync.Mutex
 	results map[string]Result
@@ -116,7 +117,11 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if cfg.CertWarnDays == 0 {
 		cfg.CertWarnDays = 14
 	}
-	w := &watch{cfg: cfg, host: h, results: map[string]Result{}}
+	cl := *m.http
+	if cl.Transport == nil {
+		cl.Transport = sdk.Transport(h)
+	}
+	w := &watch{cfg: cfg, host: h, http: &cl, results: map[string]Result{}}
 	ctx, cancel := context.WithCancel(context.Background())
 	w.stop = cancel
 	m.mu.Lock()
@@ -171,7 +176,7 @@ func (m *Module) runAll(ctx context.Context, id string, w *watch) []Result {
 		wg.Add(1)
 		go func(i int, c Check) {
 			defer wg.Done()
-			out[i] = m.check(ctx, c, w.cfg.CertWarnDays)
+			out[i] = check(ctx, w.http, c, w.cfg.CertWarnDays)
 		}(i, c)
 	}
 	wg.Wait()
@@ -201,7 +206,7 @@ func (m *Module) runAll(ctx context.Context, id string, w *watch) []Result {
 	return out
 }
 
-func (m *Module) check(ctx context.Context, c Check, warnDays int) Result {
+func check(ctx context.Context, cl *http.Client, c Check, warnDays int) Result {
 	r := Result{Name: c.Name, URL: c.URL, CheckedAt: time.Now().UTC().Format(time.RFC3339)}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
 	if err != nil {
@@ -210,7 +215,7 @@ func (m *Module) check(ctx context.Context, c Check, warnDays int) Result {
 	}
 	req.Header.Set("User-Agent", "Conduit uptime check")
 	start := time.Now()
-	res, err := m.http.Do(req)
+	res, err := cl.Do(req)
 	r.LatencyMS = time.Since(start).Milliseconds()
 	if err != nil {
 		r.Problem = err.Error()
@@ -314,7 +319,9 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 			req.Header.Set(k, v)
 		}
 		start := time.Now()
-		cl := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}}
+		tr := sdk.Transport(w.host)
+		tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		cl := &http.Client{Timeout: 30 * time.Second, Transport: tr}
 		res, err := cl.Do(req)
 		if err != nil {
 			return sdk.Result{}, err

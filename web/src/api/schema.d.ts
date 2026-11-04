@@ -909,6 +909,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/games/covers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A game's cover image
+         * @description Served from the launcher's local cache, or downloaded once from its image server and kept. Needs modules:games:read. The id is a library id such as `steam:570`.
+         */
+        get: operations["gameCover"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update": {
         parameters: {
             query?: never;
@@ -1669,7 +1689,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Search the linked hub's module registry */
+        /**
+         * Search the linked hub's module marketplace
+         * @description Search, category filter, sorting and paging pass through to the hub (see the hub's GET /registry/packages).
+         */
         get: operations["searchRegistry"];
         put?: never;
         post?: never;
@@ -1723,12 +1746,85 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Modules installed from a registry */
+        /**
+         * Modules installed from a registry, with the hub's warnings about yanked versions and delisted packages
+         * @description The daemon asks the hub about installed versions a few minutes after starting and every six hours, and raises a `registry.advisory` event (forwarded as a notification) for each newly flagged one.
+         */
         get: operations["installedModules"];
         put?: never;
         post?: never;
         /** Stop and remove an installed module and its instances (signed-in people only) */
         delete: operations["removeModule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registry/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The marketplace categories of the linked hub */
+        get: operations["registryCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registry/media/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A package icon or screenshot from the hub, passed on only if it is PNG or WebP */
+        get: operations["registryMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registry/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ratings and reviews of a package, and yours when this daemon is paired with an account on the hub */
+        get: operations["registryReviews"];
+        /** Rate and optionally review a package as the account this daemon is paired with (signed-in people only) */
+        put: operations["rateModule"];
+        post?: never;
+        /** Withdraw your rating and review (signed-in people only) */
+        delete: operations["unrateModule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registry/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report a package or version to the hub's operators (signed-in people only) */
+        post: operations["reportModule"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1777,6 +1873,49 @@ export interface components {
             /** Format: date-time */
             installedAt: string;
             latest?: string;
+            advisory?: components["schemas"]["RegistryAdvisory"];
+        };
+        /** @description The hub yanked this version or removed the package from the marketplace */
+        RegistryAdvisory: {
+            name: string;
+            version: string;
+            /** @enum {string} */
+            status: "yanked" | "delisted" | "missing";
+            /** @enum {string} */
+            by?: "author" | "operator";
+            /** @enum {string} */
+            reason?: "malware" | "broken" | "spam" | "impersonation" | "license" | "other";
+            note?: string;
+            latest?: string;
+        };
+        RegistryListing: {
+            name: string;
+            owner: string;
+            description: string;
+            latest?: string;
+            source?: string;
+            license?: string;
+            downloads: number;
+            installs?: number;
+            rating?: number;
+            ratingCount?: number;
+            categories?: string[];
+            tags?: string[];
+            icon?: string;
+            verified?: boolean;
+        };
+        RegistryReview: {
+            id: string;
+            author: string;
+            rating: number;
+            body: string;
+            version?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            reply?: string;
+            replyAt?: string;
         };
         BackupSchedule: {
             enabled: boolean;
@@ -4080,6 +4219,42 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    gameCover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The image server couldn't be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     updateStatus: {
         parameters: {
             query?: never;
@@ -5355,6 +5530,10 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string;
+                category?: string;
+                sort?: "relevance" | "installs" | "rating" | "newest" | "updated";
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -5368,13 +5547,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["RegistryListing"][];
                 };
             };
             /** @description Not linked to a hub and no registry set */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The hub didn't answer */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5414,6 +5598,25 @@ export interface operations {
                         memoryMB?: number;
                         /** @description True when there's a sandboxed (WebAssembly) build */
                         installable: boolean;
+                        /** @description The marketplace listing from the hub. Not signed; shown, never trusted. Render the readme without raw HTML. */
+                        listing?: {
+                            owner?: string;
+                            readme?: string;
+                            screenshots?: {
+                                id?: string;
+                                caption?: string;
+                            }[];
+                            categories?: string[];
+                            tags?: string[];
+                            rating?: number;
+                            ratingCount?: number;
+                            installs?: number;
+                            downloads?: number;
+                            verified?: boolean;
+                            license?: string;
+                            source?: string;
+                            icon?: string;
+                        };
                     };
                 };
             };
@@ -5466,7 +5669,7 @@ export interface operations {
     installedModules: {
         parameters: {
             query?: {
-                /** @description Also look up the newest version */
+                /** @description Also look up the newest version and ask the hub again now */
                 check?: "1";
             };
             header?: never;
@@ -5499,6 +5702,203 @@ export interface operations {
         responses: {
             /** @description Removed */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    registryCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        label?: string;
+                        count?: number;
+                    }[];
+                };
+            };
+            /** @description Not linked to a hub and no registry set */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    registryMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The hub didn't answer or sent something else */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    registryReviews: {
+        parameters: {
+            query: {
+                name: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        average: number;
+                        count: number;
+                        histogram: number[];
+                        items: components["schemas"]["RegistryReview"][];
+                        mine?: components["schemas"]["RegistryReview"] | null;
+                        /** @description This daemon is paired with an account on the hub */
+                        canReview: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    rateModule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    rating: number;
+                    body?: string;
+                    version?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Changed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryReview"];
+                };
+            };
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryReview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Not paired with an account on the hub */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    unrateModule: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawn */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reportModule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    version?: string;
+                    /** @enum {string} */
+                    reason: "malware" | "broken" | "spam" | "impersonation" | "license" | "other";
+                    details?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Reported */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Already reported */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

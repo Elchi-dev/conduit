@@ -44,6 +44,20 @@ func forwardAlerts(ctx context.Context, app *App) {
 				}
 			case "panic.on":
 				note = map[string]string{"title": "Emergency stop", "message": "Emergency stop was pulled. Agents, keys and automations are frozen.", "priority": "urgent", "path": "/policy"}
+			case "registry.advisory":
+				var a regAdvisory
+				if json.Unmarshal(ev.Data, &a) != nil {
+					continue
+				}
+				what := fmt.Sprintf("%s %s was removed from the marketplace (%s).", a.Name, a.Version, reasonText(a.Reason))
+				if a.Status == "yanked" {
+					what = fmt.Sprintf("%s %s was withdrawn (%s).", a.Name, a.Version, reasonText(a.Reason))
+				}
+				prio := "default"
+				if a.Reason == "malware" {
+					prio = "urgent"
+				}
+				note = map[string]string{"title": "Installed module flagged", "message": what + " Review it on the Modules page.", "priority": prio, "path": "/modules/registry"}
 			default:
 				continue
 			}

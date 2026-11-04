@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -116,9 +117,13 @@ func Dispatch(ctx context.Context, tb *Toolbox, method string, params json.RawMe
 		}
 		return map[string]any{
 			"protocolVersion": v,
-			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
-			"serverInfo":      map[string]any{"name": "conduit", "title": "Conduit", "version": version.Version},
-			"instructions":    instructions,
+			"capabilities": map[string]any{
+				"tools":     map[string]any{"listChanged": false},
+				"resources": map[string]any{"listChanged": false, "subscribe": false},
+				"prompts":   map[string]any{"listChanged": false},
+			},
+			"serverInfo":   map[string]any{"name": "conduit", "title": "Conduit", "version": version.Version},
+			"instructions": tb.Instructions(ctx),
 		}, nil
 	case "notifications/initialized", "notifications/cancelled":
 		return nil, nil
@@ -148,9 +153,49 @@ func Dispatch(ctx context.Context, tb *Toolbox, method string, params json.RawMe
 		}
 		return out, nil
 	case "resources/list":
-		return map[string]any{"resources": []any{}}, nil
+		return map[string]any{"resources": tb.Resources(ctx)}, nil
+	case "resources/templates/list":
+		return map[string]any{"resourceTemplates": []any{}}, nil
+	case "resources/read":
+		var p struct {
+			URI string `json:"uri"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil || p.URI == "" {
+			return nil, &rpcErr{-32602, "resources/read needs a uri"}
+		}
+		r, text, err := tb.ReadResource(ctx, p.URI)
+		if errors.Is(err, errNotFound) {
+			return nil, &rpcErr{-32002, "resource not found: " + p.URI}
+		}
+		if err != nil {
+			return nil, &rpcErr{-32603, err.Error()}
+		}
+		mime := r.MimeType
+		if mime == "" {
+			mime = "text/plain"
+		}
+		return map[string]any{"contents": []map[string]string{{"uri": r.URI, "mimeType": mime, "text": text}}}, nil
 	case "prompts/list":
-		return map[string]any{"prompts": []any{}}, nil
+		return map[string]any{"prompts": tb.Prompts(ctx)}, nil
+	case "prompts/get":
+		var p struct {
+			Name      string            `json:"name"`
+			Arguments map[string]string `json:"arguments"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil || p.Name == "" {
+			return nil, &rpcErr{-32602, "prompts/get needs a name"}
+		}
+		pr, text, err := tb.GetPrompt(ctx, p.Name, p.Arguments)
+		if errors.Is(err, errNotFound) {
+			return nil, &rpcErr{-32602, "no prompt named " + p.Name}
+		}
+		if err != nil {
+			return nil, &rpcErr{-32603, err.Error()}
+		}
+		return map[string]any{
+			"description": pr.Description,
+			"messages":    []map[string]any{{"role": "user", "content": map[string]string{"type": "text", "text": text}}},
+		}, nil
 	}
 	return nil, &rpcErr{-32601, "method not found: " + method}
 }

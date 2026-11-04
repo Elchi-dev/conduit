@@ -3,7 +3,7 @@
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 
-## 2026-11-04 · Last hours before the deadline (325 modules, review 45, two sweeps)
+## 2026-11-04 · Last hours before the deadline (331 modules, reviews 45–47, two sweeps)
 
 - **Review 45 (wikis):** restoring a page guests can read is its own
   destructive action in Wiki.js and MediaWiki, so the write-level restore
@@ -22,6 +22,10 @@ and why.
   custom config, Gumroad `enable_product` is destructive.
 - **Decision:** raising risk inside v1 is allowed by the stability policy
   and listed in the v1.1.0 notes; no action was renamed or removed.
+- **Modules 326–331:** Pushover, Pushbullet, Apprise (notifications;
+  Apprise runs must name the previewed number of services) and Tdarr,
+  Unmanic, FileFlows (transcoding; FileFlows read-only, since its pause
+  endpoint couldn't be confirmed). Reviews 46 and 47 cover them.
 - **Left as documented decisions:** sending mail and chat messages, and
   turning automations back on (n8n, Node-RED), stay write; InfluxDB
   `enable_task` is destructive.

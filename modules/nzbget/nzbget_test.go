@@ -233,3 +233,21 @@ func TestNZBGetRefusesCrossHostRedirect(t *testing.T) {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
 }
+
+// A job added by URL without a file name is named host plus path and query
+// (no scheme), and its folder after it; Newznab links carry the key in r=.
+func TestSafeNameSchemelessURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"nzb.example/getnzb/abc.nzb&i=1234&r=0123456789abcdef0123456789abcdef": "nzb.example/getnzb/abc.nzb",
+		"indexer.example/api?t=get&id=5&r=LEAKMELEAKME":                        "indexer.example/api",
+		"/dl/nzb.example_getnzb_abc.nzb&i=1&r=LEAKMELEAKME":                    "/dl/nzb.example_getnzb_abc.nzb",
+		"https://indexer.example/getnzb?id=5&apikey=LEAKMELEAKME":              "https://indexer.example/getnzb",
+		"Show.S01E01.1080p_WEB_DL_GROUPNAME_LONG":                              "Show.S01E01.1080p_WEB_DL_GROUPNAME_LONG",
+		"Tom & Jerry 1965":        "Tom & Jerry 1965",
+		"movie @ indexer.example": "movie @ indexer.example",
+	} {
+		if got := safeName(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+}

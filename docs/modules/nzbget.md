@@ -22,7 +22,10 @@ self-signed certificate, set `fingerprint`.
 a redirect to another host or from https to http. Job ids must be numbers
 before they reach a request. The URL of a job added by URL isn't read
 (indexers put their API key in it), and names and folders that hold a URL
-lose its query.
+lose its query. That includes the name NZBGet gives a job added by URL
+without a file name, host and path with no scheme
+(`indexer.example/getnzb/x.nzb&i=1&r=KEY`): anything from a `?x=` or `&x=`
+on is cut, and what remains passes through the redaction filter.
 
 **Notes.** Pausing and deleting single jobs uses the `editqueue` form of
 NZBGet 18 and later. Whether `delete` also removes what a job downloaded

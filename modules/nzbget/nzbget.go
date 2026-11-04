@@ -220,13 +220,20 @@ func (g group) downloading() bool {
 	return g.Status == "QUEUED" || g.Status == "DOWNLOADING" || g.Status == "FETCHING" || g.Status == "PAUSED"
 }
 
-// safeName hides an indexer's key in a job's name: a job added by URL can
-// be named after the URL, query and all.
+// paramRe finds where a URL's query starts in a name: a "?" or "&" before
+// a parameter name and "=".
+var paramRe = regexp.MustCompile(`[?&][A-Za-z0-9_.\[\]-]*=`)
+
+// safeName hides an indexer's key in a job's name or folder. A job added by
+// URL without a file name is named host plus path and query, with no
+// scheme (NZBGet's MakeNiceUrlName: "indexer.example/getnzb/x.nzb&i=1&r=KEY"),
+// and its folder after that name; a name may also hold a full URL. Any URL
+// loses its query (and anything after an "&", where Newznab download links
+// carry the key), so does anything from a "?x=" or "&x=" on, and the rest
+// passes through the redaction filter. Names without either, or a key=, are
+// left alone.
 func safeName(s string) string {
-	low := strings.ToLower(s)
-	if !strings.Contains(low, "://") && !strings.Contains(low, "key=") {
-		return s
-	}
+	hit := strings.Contains(strings.ToLower(s), "key=")
 	fields := strings.Fields(s)
 	for i, f := range fields {
 		if strings.Contains(f, "://") {
@@ -234,8 +241,13 @@ func safeName(s string) string {
 			if j := strings.IndexByte(f, '&'); j >= 0 {
 				f = f[:j]
 			}
-			fields[i] = f
+			fields[i], hit = f, true
+		} else if loc := paramRe.FindStringIndex(f); loc != nil {
+			fields[i], hit = f[:loc[0]], true
 		}
+	}
+	if !hit {
+		return s
 	}
 	return rest.Redact(strings.Join(fields, " "))
 }

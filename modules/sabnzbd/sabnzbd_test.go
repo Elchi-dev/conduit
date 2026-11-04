@@ -318,3 +318,13 @@ func TestSabnzbdHidesKeyInFetchNames(t *testing.T) {
 		t.Fatal("a plain name was changed")
 	}
 }
+
+func TestSafeNameSchemeless(t *testing.T) {
+	got := safeName("nzb.example/getnzb/abc.nzb&i=1234&r=0123456789abcdef0123456789abcdef")
+	if strings.Contains(got, "0123456789abcdef") || strings.Contains(got, "i=1234") {
+		t.Fatalf("key kept: %q", got)
+	}
+	if safeName("Tom & Jerry S01E01") != "Tom & Jerry S01E01" {
+		t.Fatal("plain name changed")
+	}
+}

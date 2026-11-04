@@ -1,6 +1,8 @@
 // Talks to the hub that serves this site (same origin, /v1). The session
 // token lives in localStorage; it is a hub session, never a daemon one.
 
+import { dateLocale, t } from "../i18n/client";
+
 const KEY = "conduit.hub.session";
 
 export function token(): string | null {
@@ -37,7 +39,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   try {
     res = await fetch(`/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch {
-    throw new HubError("The hub didn't answer. Check your connection and try again.", 0);
+    throw new HubError(t("The hub didn't answer. Check your connection and try again."), 0);
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
@@ -77,10 +79,10 @@ export function param(name: string): string {
 
 export function ago(iso: string): string {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  return new Date(iso).toLocaleDateString();
+  if (s < 60) return t("just now");
+  if (s < 3600) return t("{n} min ago", { n: Math.floor(s / 60) });
+  if (s < 86400) return t("{n} h ago", { n: Math.floor(s / 3600) });
+  return new Date(iso).toLocaleDateString(dateLocale);
 }
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...kids: (Node | string)[]) {
@@ -164,7 +166,7 @@ type Ceremony = { ceremony: string; options: { publicKey: JSONOpts } };
 export async function addPasskey(name: string, password: string): Promise<void> {
   const begin = await api<Ceremony>("POST", "/passkeys/register/begin", { password });
   const cred = (await navigator.credentials.create({ publicKey: creationOptions(begin.options.publicKey) })) as PublicKeyCredential | null;
-  if (!cred) throw new HubError("No passkey was created.", 0);
+  if (!cred) throw new HubError(t("No passkey was created."), 0);
   await api("POST", "/passkeys/register/finish", { ceremony: begin.ceremony, name, response: credentialJSON(cred) });
 }
 
@@ -172,7 +174,7 @@ export async function addPasskey(name: string, password: string): Promise<void> 
 export async function signInWithPasskey(device: string): Promise<string> {
   const begin = await api<Ceremony>("POST", "/sessions/passkey/begin");
   const cred = (await navigator.credentials.get({ publicKey: requestOptions(begin.options.publicKey) })) as PublicKeyCredential | null;
-  if (!cred) throw new HubError("No passkey was chosen.", 0);
+  if (!cred) throw new HubError(t("No passkey was chosen."), 0);
   const r = await api<{ token: string }>("POST", "/sessions/passkey/finish", { ceremony: begin.ceremony, device, response: credentialJSON(cred) });
   return r.token;
 }
@@ -180,9 +182,9 @@ export async function signInWithPasskey(device: string): Promise<string> {
 /** Turn a browser WebAuthn error into a sentence people can act on. */
 export function passkeyError(x: unknown): string {
   if (x instanceof DOMException) {
-    if (x.name === "NotAllowedError") return "The passkey request was cancelled or timed out.";
-    if (x.name === "InvalidStateError") return "This device already has a passkey for your account.";
-    if (x.name === "SecurityError") return "Passkeys only work when this hub is opened at its own https address.";
+    if (x.name === "NotAllowedError") return t("The passkey request was cancelled or timed out.");
+    if (x.name === "InvalidStateError") return t("This device already has a passkey for your account.");
+    if (x.name === "SecurityError") return t("Passkeys only work when this hub is opened at its own https address.");
   }
   return x instanceof Error ? x.message : String(x);
 }

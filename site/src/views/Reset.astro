@@ -1,0 +1,26 @@
+---
+import Base from "../layouts/Base.astro";
+import { i18n } from "../i18n";
+const { t, l } = i18n(Astro.currentLocale);
+---
+<Base title={t("Choose a new password")}>
+  <div class="wrap gate">
+    <h1>{t("Choose a new password")}</h1>
+    <p class="muted">{t("Changing it signs you out everywhere else.")}</p>
+    <form id="f">
+      <label class="field"><span>{t("New password")}</span><input name="password" type="password" minlength="10" autocomplete="new-password" required /><small>{t("At least 10 characters.")}</small></label>
+      <div class="error" data-error hidden></div>
+      <div class="note" data-done hidden>{t("Password changed.")} <a href={l("/account/")}>{t("Sign in")}</a>.</div>
+      <div><button class="btn primary" type="submit">{t("Change password")}</button></div>
+    </form>
+  </div>
+</Base>
+<script>
+  import { api, form, param } from "../scripts/hub";
+  const f = document.getElementById("f") as HTMLFormElement;
+  form(f, async (v) => {
+    await api("POST", "/accounts/password-reset/confirm", { token: param("token"), password: v.password });
+    (f.querySelector("[data-done]") as HTMLElement).hidden = false;
+    (f.querySelector("button") as HTMLButtonElement).hidden = true;
+  });
+</script>

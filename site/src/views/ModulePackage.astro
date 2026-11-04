@@ -1,0 +1,200 @@
+---
+// One module's page (/modules/package/?name=author/module), filled in the
+// browser from the hub's registry.
+import Base from "../layouts/Base.astro";
+import "../styles/marketplace.css";
+import { i18n } from "../i18n";
+const { t, l } = i18n(Astro.currentLocale);
+---
+<Base page="registry" title={t("Module")} description={t("A module for Conduit: what it does, what it can reach, who signed it and what people think of it.")}>
+  <div class="wrap mk mk-pkg">
+    <p class="crumb"><a href={l("/modules/")}>{t("Modules")}</a></p>
+    <div id="mk-pkg" aria-live="polite"><p class="muted">{t("Loading…")}</p></div>
+  </div>
+</Base>
+<script>
+  import {
+    hub, h, ago, categoryLabel, fingerprint, hasWasm, iconEl, media, nameEl, networkOf, num, pkgPath, readmeEl, reasonWord, starsEl, verifiedEl,
+    type PkgDetail, type Reviews,
+  } from "../scripts/marketplace";
+  import { l, t, tn } from "../i18n/client";
+
+  const root = document.getElementById("mk-pkg")!;
+  const name = new URLSearchParams(location.search).get("name") ?? "";
+
+  function fact(label: string, ...value: (Node | string | null)[]) {
+    return h("div", {}, h("dt", {}, label), h("dd", {}, ...value));
+  }
+
+  async function render() {
+    if (!/^[a-z0-9][a-z0-9-]{1,38}\/[a-z0-9][a-z0-9-]{0,62}$/.test(name)) {
+      root.replaceChildren(h("p", {}, t("That isn't a module name. Module names look like author/module."), " ", h("a", { href: l("/modules/") }, t("Browse all modules"))));
+      return;
+    }
+    let d: PkgDetail;
+    try {
+      d = (await hub<PkgDetail>(pkgPath(name))).data;
+    } catch (e) {
+      root.replaceChildren(h("p", { class: "error" }, (e as Error).message), h("p", {}, h("a", { href: l("/modules/") }, t("Browse all modules"))));
+      return;
+    }
+    const p = d.package;
+    document.title = `${p.name} · Conduit`;
+    const current = d.versions.find((v) => v.version === p.latest);
+    const hosts = networkOf(current);
+    const fp = await fingerprint(d.authorKey);
+
+    const head = h(
+      "header",
+      { class: "mk-pkg-head" },
+      iconEl(p, 88),
+      h(
+        "div",
+        {},
+        h("h1", {}, nameEl(p.name, "mk-name big")),
+        h("p", { class: "lede" }, p.description),
+        h(
+          "p",
+          { class: "mk-meta" },
+          p.verified ? verifiedEl() : null,
+          starsEl(p.rating, p.ratingCount),
+          h("span", {}, tn("{n} install", "{n} installs", p.installs, { n: num(p.installs) })),
+          p.latest ? h("span", {}, t("Version {version}", { version: p.latest })) : null,
+          h("span", {}, t("Updated {when}", { when: ago(p.updatedAt) })),
+        ),
+      ),
+    );
+
+    const parts: (Node | null)[] = [head];
+    if (p.delisted) {
+      parts.push(
+        h(
+          "div",
+          { class: "mk-removed", role: "alert" },
+          h("strong", {}, t("Removed from the marketplace: {reason}.", { reason: reasonWord(p.delistReason) })),
+          p.delistNote ? h("p", {}, p.delistNote) : null,
+          h("p", {}, t("If you have it installed, Conduit warns you on its Modules page and offers to remove it.")),
+        ),
+      );
+    }
+
+    if (d.screenshots.length) {
+      parts.push(
+        h(
+          "div",
+          { class: "mk-shots", role: "list", "aria-label": t("Screenshots") },
+          ...d.screenshots.map((s) =>
+            h("figure", { role: "listitem" }, h("img", { src: media(s.id), alt: s.caption || t("Screenshot"), loading: "lazy" }), s.caption ? h("figcaption", {}, s.caption) : null),
+          ),
+        ),
+      );
+    }
+
+    const install = h(
+      "section",
+      { class: "mk-install" },
+      h("h2", {}, t("Install it")),
+      h(
+        "ol",
+        {},
+        h("li", {}, t("Open Conduit and go to Modules, then Add modules from your hub.")),
+        h("li", {}, t("Search for {name} and open Details.", { name: p.name })),
+        h("li", {}, t("Check the author key and the addresses it may reach, then press Install.")),
+      ),
+      fp ? h("p", { class: "small" }, t("The author key's fingerprint should read"), " ", h("code", { class: "data mk-fp" }, fp), ".") : null,
+      h("p", { class: "small muted" }, h("a", { href: l("/download/") }, t("Don't have Conduit yet? Download it free."))),
+    );
+
+    const facts = h(
+      "dl",
+      { class: "mk-facts" },
+      fact(
+        t("Can reach"),
+        hosts === null ? t("See it in the app before installing") : hosts.length ? h("span", { class: "data" }, hosts.join(", ")) : t("Nothing: no network at all"),
+      ),
+      fact(t("Runs"), hasWasm(current) ? t("Sandboxed (WebAssembly)") : t("Native build only: install by hand")),
+      p.license ? fact(t("License"), p.license) : null,
+      p.categories.length ? fact(t("Categories"), ...p.categories.flatMap((c, i) => [i ? ", " : "", h("a", { href: `${l("/modules/")}?category=${c}` }, categoryLabel(c))])) : null,
+      p.tags.length ? fact(t("Tags"), p.tags.join(", ")) : null,
+      fact(t("Author"), h("span", { class: "data" }, d.author.handle), d.author.verified ? " " : "", d.author.verified ? verifiedEl() : null),
+      p.homepage?.startsWith("https://") || p.source?.startsWith("https://")
+        ? fact(
+            t("Links"),
+            p.homepage?.startsWith("https://") ? h("a", { href: p.homepage, rel: "noopener noreferrer nofollow" }, t("Homepage")) : null,
+            p.homepage?.startsWith("https://") && p.source?.startsWith("https://") ? ", " : "",
+            p.source?.startsWith("https://") ? h("a", { href: p.source, rel: "noopener noreferrer nofollow" }, t("Source code")) : null,
+          )
+        : null,
+    );
+
+    const versions = h(
+      "details",
+      { class: "mk-versions" },
+      h("summary", {}, tn("{n} version", "{n} versions", d.versions.length)),
+      h(
+        "ul",
+        {},
+        ...d.versions.map((v) =>
+          h(
+            "li",
+            {},
+            h("span", { class: "data" }, v.version),
+            " ",
+            h("span", { class: "muted" }, ago(v.createdAt)),
+            v.yanked ? h("span", { class: "mk-yanked" }, v.yankedBy === "operator" ? t("withdrawn: {reason}", { reason: reasonWord(v.yankReason) }) : t("withdrawn by the author")) : null,
+          ),
+        ),
+      ),
+    );
+
+    const main = h("div", { class: "mk-pkg-main" }, d.readme ? readmeEl(d.readme) : h("p", { class: "muted" }, t("The author hasn't written more about this module yet.")));
+    const side = h("aside", { class: "mk-pkg-side" }, p.delisted ? null : install, facts, versions);
+    parts.push(h("div", { class: "mk-pkg-grid" }, main, side));
+
+    const reviews = h("section", { class: "mk-reviews", "aria-labelledby": "mk-reviews-title" }, h("h2", { id: "mk-reviews-title" }, t("Ratings and reviews")));
+    parts.push(reviews);
+    root.replaceChildren(...parts.filter(Boolean) as Node[]);
+    loadReviews(reviews);
+  }
+
+  async function loadReviews(box: HTMLElement) {
+    try {
+      const { data: r } = await hub<Reviews>(`${pkgPath(name)}/reviews?limit=50`);
+      const max = Math.max(1, ...r.histogram);
+      const summary = h(
+        "div",
+        { class: "mk-summary" },
+        h("div", { class: "mk-avg" }, h("span", { class: "mk-avg-n" }, r.count ? r.average.toFixed(1) : "–"), starsEl(r.average), h("span", { class: "muted small" }, tn("{n} rating", "{n} ratings", r.count, { n: num(r.count) }))),
+        h(
+          "div",
+          { class: "mk-hist", "aria-hidden": "true" },
+          ...[5, 4, 3, 2, 1].map((s) => {
+            const bar = h("span", { class: "mk-hist-bar" }, h("span", { style: `width:${(r.histogram[s - 1] / max) * 100}%` }));
+            return h("div", { class: "mk-hist-row" }, h("span", { class: "muted small" }, String(s)), bar);
+          }),
+        ),
+      );
+      const written = r.items.filter((x) => x.body);
+      const items = written.length
+        ? h(
+            "ul",
+            { class: "mk-review-list" },
+            ...written.map((x) =>
+              h(
+                "li",
+                {},
+                h("p", { class: "mk-review-head" }, starsEl(x.rating), h("strong", {}, x.author || t("Someone")), h("span", { class: "muted small" }, ago(x.updatedAt) + (x.version ? `, ${x.version}` : ""))),
+                h("p", { class: "mk-review-body" }, x.body),
+                x.reply ? h("div", { class: "mk-reply" }, h("span", { class: "muted small" }, t("The author replied")), h("p", { class: "mk-review-body" }, x.reply)) : null,
+              ),
+            ),
+          )
+        : h("p", { class: "muted" }, r.count ? t("No written reviews yet.") : t("No ratings yet. Used it? Rate it from the Modules page in Conduit."));
+      box.append(summary, items, h("p", { class: "small muted" }, t("People rate and review from the Modules page in their Conduit app, with their account on this hub.")));
+    } catch (e) {
+      box.append(h("p", { class: "error" }, (e as Error).message));
+    }
+  }
+
+  render();
+</script>

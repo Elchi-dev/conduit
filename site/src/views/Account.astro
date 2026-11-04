@@ -1,0 +1,676 @@
+---
+import Base from "../layouts/Base.astro";
+import { i18n } from "../i18n";
+const { t } = i18n(Astro.currentLocale);
+---
+<Base page="account" title={t("Account")} description={t("Your account on this Conduit hub: devices, pairing codes, API keys and organisations.")}>
+  <div class="wrap acct">
+    <!-- Signed out -->
+    <section id="signed-out" hidden>
+      <div class="split">
+        <div>
+          <h1>{t("Your hub account")}</h1>
+          <p class="muted lead">
+            {t("An account on this hub lets your phone reach your computer from anywhere, keeps encrypted settings in sync and lets you publish modules. Accounts belong to this hub only. Conduit itself works without one.")}
+          </p>
+        </div>
+        <div class="forms">
+          <form id="signin" class="panel stack">
+            <h2>{t("Sign in")}</h2>
+            <label class="field"><span>{t("Email")}</span><input name="email" type="email" autocomplete="email" required /></label>
+            <label class="field"><span>{t("Password")}</span><input name="password" type="password" autocomplete="current-password" required /></label>
+            <div class="error" data-error hidden></div>
+            <div class="row"><button class="btn primary" type="submit">{t("Sign in")}</button><a href="#" id="to-reset" class="quiet">{t("Forgot your password?")}</a></div>
+            <div class="passkey-signin" id="passkey-signin" hidden>
+              <button class="btn" type="button" id="passkey-go">{t("Sign in with a passkey")}</button>
+              <div class="error" id="passkey-error" hidden></div>
+            </div>
+          </form>
+          <form id="signin-2fa" class="panel stack" hidden>
+            <h2>{t("Enter your code")}</h2>
+            <p class="muted small">{t("Open your authenticator app and enter the six-digit code for this hub. Lost your phone? Enter one of your recovery codes.")}</p>
+            <label class="field"><span>{t("Code")}</span><input name="code" class="data" autocomplete="one-time-code" required /></label>
+            <div class="error" data-error hidden></div>
+            <div class="row"><button class="btn primary" type="submit">{t("Sign in")}</button><a href="#" id="back-2fa" class="quiet">{t("Back")}</a></div>
+          </form>
+          <form id="signup" class="panel stack">
+            <h2>{t("Create an account")}</h2>
+            <label class="field"><span>{t("Name")}</span><input name="name" autocomplete="name" /></label>
+            <label class="field"><span>{t("Email")}</span><input name="email" type="email" autocomplete="email" required /></label>
+            <label class="field"><span>{t("Password")}</span><input name="password" type="password" minlength="10" autocomplete="new-password" required /><small>{t("At least 10 characters.")}</small></label>
+            <div class="error" data-error hidden></div>
+            <div class="note" data-done hidden>{t("Check your email for a link to confirm your address.")}</div>
+            <div class="row"><button class="btn" type="submit">{t("Create account")}</button></div>
+          </form>
+          <form id="reset" class="panel stack" hidden>
+            <h2>{t("Reset your password")}</h2>
+            <label class="field"><span>{t("Email")}</span><input name="email" type="email" required /></label>
+            <div class="error" data-error hidden></div>
+            <div class="note" data-done hidden>{t("If that address has an account, a reset link is on its way.")}</div>
+            <div class="row"><button class="btn" type="submit">{t("Send reset link")}</button><a href="#" id="back-signin" class="quiet">{t("Back to sign in")}</a></div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Signed in -->
+    <section id="signed-in" hidden>
+      <div class="head">
+        <div>
+          <h1 id="who">{t("Account")}</h1>
+          <p class="muted" id="who-sub"></p>
+        </div>
+        <button class="btn sm" id="signout">{t("Sign out")}</button>
+      </div>
+      <div class="note warn" id="unverified" hidden>
+        {t("Confirm your email address to publish modules.")} <button class="btn sm" id="resend">{t("Send the link again")}</button>
+      </div>
+
+      <div class="block">
+        <div class="block-head">
+          <h2>{t("Link a computer")}</h2>
+          <button class="btn sm primary" id="make-code">{t("Make a pairing code")}</button>
+        </div>
+        <p class="muted">{t("In Conduit on your computer, open Settings, Remote access, enter this hub's address and the code. Codes work once, for 10 minutes.")}</p>
+        <div class="code-box" id="code-box" hidden>
+          <span class="code data" id="code"></span>
+          <span class="muted" id="code-left"></span>
+          <span class="muted small">{t("Hub address:")} <span class="data" id="hub-url"></span></span>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="block-head"><h2>{t("Devices")}</h2></div>
+        <div class="rows" id="devices"></div>
+      </div>
+
+      <div class="block" id="passkeys-block" hidden>
+        <div class="block-head"><h2>{t("Passkeys")}</h2></div>
+        <p class="muted">{t("Sign in with your fingerprint, face or device PIN instead of your password. Each passkey stays on the device or password manager that made it.")}</p>
+        <form id="new-passkey" class="inline-form">
+          <label class="field"><span>{t("Name")}</span><input name="name" placeholder={t("Work laptop")} maxlength="60" /></label>
+          <label class="field"><span>{t("Your password")}</span><input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="btn sm" type="submit">{t("Add a passkey")}</button>
+          <div class="error" data-error hidden></div>
+        </form>
+        <div class="rows" id="passkeys"></div>
+      </div>
+
+      <div class="block" id="twofactor-block" hidden>
+        <div class="block-head"><h2>{t("Two-factor sign-in")}</h2></div>
+        <p class="muted" id="twofactor-state"></p>
+        <div class="secret" id="recovery" hidden>
+          <strong>{t("Save your recovery codes now; they won't be shown again. Each works once instead of a code from your app.")}</strong>
+          <span class="data" id="recovery-codes"></span>
+          <div><button class="btn sm" type="button" id="recovery-copy">{t("Copy")}</button></div>
+        </div>
+        <form id="tf-start" class="inline-form" hidden>
+          <label class="field"><span>{t("Your password")}</span><input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="btn sm" type="submit">{t("Set up two-factor sign-in")}</button>
+          <div class="error" data-error hidden></div>
+        </form>
+        <form id="tf-enable" class="stack" hidden>
+          <p class="small">{t("Add this account to your authenticator app: open the link on your phone, or type the key into the app.")}</p>
+          <div class="secret">
+            <a id="tf-uri" href="#">{t("Open in your authenticator app")}</a>
+            <span class="data" id="tf-secret"></span>
+          </div>
+          <div class="inline-form">
+            <label class="field"><span>{t("Code the app shows now")}</span><input name="code" class="data" inputmode="numeric" autocomplete="one-time-code" required /></label>
+            <button class="btn sm primary" type="submit">{t("Turn on")}</button>
+          </div>
+          <div class="error" data-error hidden></div>
+        </form>
+        <form id="tf-manage" class="inline-form" hidden>
+          <label class="field"><span>{t("Your password")}</span><input name="password" type="password" autocomplete="current-password" required /></label>
+          <label class="field"><span>{t("Code or recovery code")}</span><input name="code" class="data" autocomplete="one-time-code" required /></label>
+          <button class="btn sm" type="submit" name="action" value="codes">{t("New recovery codes")}</button>
+          <button class="btn sm danger" type="submit" name="action" value="off">{t("Turn off")}</button>
+          <div class="error" data-error hidden></div>
+        </form>
+      </div>
+
+      <div class="block">
+        <div class="block-head"><h2>{t("API keys")}</h2></div>
+        <p class="muted">{t("For scripts and CI: publishing modules, reading sync, listing devices. A key can never do more than its scopes.")}</p>
+        <form id="new-key" class="key-form">
+          <label class="field"><span>{t("Name")}</span><input name="name" placeholder={t("CI publish")} /></label>
+          <fieldset class="scopes">
+            <legend>{t("Scopes")}</legend>
+            <label><input type="checkbox" name="s" value="registry:publish" /> {t("Publish modules")}</label>
+            <label><input type="checkbox" name="s" value="registry:read" /> {t("Read the registry")}</label>
+            <label><input type="checkbox" name="s" value="sync" /> {t("Sync")}</label>
+            <label><input type="checkbox" name="s" value="devices:read" /> {t("List devices")}</label>
+            <label><input type="checkbox" name="s" value="orgs:read" /> {t("List organisations")}</label>
+          </fieldset>
+          <div class="error" data-error hidden></div>
+          <div><button class="btn sm" type="submit">{t("Create key")}</button></div>
+        </form>
+        <div class="secret" id="secret" hidden>
+          <strong>{t("Copy this key now; it won't be shown again.")}</strong>
+          <span class="data" id="secret-value"></span>
+        </div>
+        <div class="rows" id="keys"></div>
+      </div>
+
+      <div class="block">
+        <div class="block-head"><h2>{t("Organisations")}</h2></div>
+        <form id="new-org" class="inline-form">
+          <label class="field"><span>{t("New organisation")}</span><input name="name" placeholder="Acme" required /></label>
+          <button class="btn sm" type="submit">{t("Create")}</button>
+          <div class="error" data-error hidden></div>
+        </form>
+        <div id="orgs"></div>
+      </div>
+    </section>
+  </div>
+</Base>
+
+<script>
+  import { api, ago, el, form, setToken, token, HubError, addPasskey, passkeyError, passkeysSupported, signInWithPasskey } from "../scripts/hub";
+  import { l, t, tn } from "../i18n/client";
+
+  type Account = { id: string; email: string; name: string; verified: boolean; admin: boolean };
+  type Device = { id: string; name: string; kind: string; createdAt: string; lastSeenAt: string; online: boolean };
+  type Key = { id: string; name: string; prefix: string; scopes: string[]; createdAt: string };
+  type Org = { id: string; name: string; role: string };
+  type Member = { accountId: string; email: string; name: string; role: string };
+  type Passkey = { id: string; name: string; createdAt: string; lastUsedAt?: string };
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  let me: Account | null = null;
+
+  async function load() {
+    if (!token()) return show(false);
+    try {
+      me = (await api<{ account: Account }>("GET", "/me")).account;
+    } catch {
+      return show(false);
+    }
+    show(true);
+  }
+
+  function show(signedIn: boolean) {
+    $("signed-out").hidden = signedIn;
+    $("signed-in").hidden = !signedIn;
+    if (!signedIn || !me) return;
+    $("who").textContent = me.name || t("Account");
+    $("who-sub").textContent = me.admin ? t("{email}, hub admin", { email: me.email }) : me.email;
+    if (me.admin) $("who-sub").append(" (", el("a", { href: l("/account/admin/") }, t("run this hub")), ")");
+    $("unverified").hidden = me.verified;
+    $("hub-url").textContent = location.origin;
+    devices();
+    keys();
+    orgs();
+    passkeys();
+    twoFactor();
+  }
+
+  function roleName(role: string) {
+    return role === "owner" ? t("Owner") : role === "admin" ? t("Admin") : role === "member" ? t("Member") : role;
+  }
+
+  function row(...kids: (Node | string)[]) {
+    return el("div", { class: "row-item" }, ...kids);
+  }
+  function empty(text: string) {
+    return el("p", { class: "muted small" }, text);
+  }
+
+  async function devices() {
+    const box = $("devices");
+    const list = await api<Device[]>("GET", "/devices");
+    box.replaceChildren(...(list.length ? list : []).map((d) => {
+      const rm = el("button", { class: "btn sm quiet", textContent: t("Remove") });
+      rm.onclick = async () => {
+        await api("DELETE", `/devices/${d.id}`);
+        devices();
+      };
+      return row(
+        el("span", { class: `dot ${d.online ? "on" : ""}`, title: d.online ? t("Connected now") : t("Offline") }),
+        el("span", {}, d.name, el("span", { class: "muted small" }, "  " + (d.kind === "daemon" ? t("computer") : t("phone or browser")))),
+        el("span", { class: "muted small" }, d.online ? t("connected now") : t("seen {when}", { when: ago(d.lastSeenAt) })),
+        rm,
+      );
+    }));
+    if (!list.length) box.append(empty(t("No devices yet. Make a pairing code and link a computer.")));
+  }
+
+  function showRecovery(codes: string[]) {
+    $("recovery-codes").replaceChildren(...codes.flatMap((c, i) => (i ? [el("br"), c] : [c])));
+    $("recovery").hidden = false;
+    $("recovery-copy").onclick = () => navigator.clipboard?.writeText(codes.join("\n"));
+  }
+
+  async function twoFactor() {
+    if (!me) return;
+    $("twofactor-block").hidden = false;
+    const st = await api<{ enabled: boolean; recoveryCodesLeft: number }>("GET", "/me/2fa");
+    $("twofactor-state").textContent = st.enabled
+      ? tn(
+          "On. Signing in with your password also asks for a code from your authenticator app. {n} recovery code left. Passkeys don't need a code.",
+          "On. Signing in with your password also asks for a code from your authenticator app. {n} recovery codes left. Passkeys don't need a code.",
+          st.recoveryCodesLeft,
+        )
+      : t("Ask for a code from an authenticator app after your password, so a stolen password isn't enough.");
+    $("tf-start").hidden = st.enabled;
+    $("tf-manage").hidden = !st.enabled;
+    $("tf-enable").hidden = true;
+  }
+
+  async function passkeys() {
+    if (!passkeysSupported() || !me) return;
+    $("passkeys-block").hidden = false;
+    const f = $<HTMLFormElement>("new-passkey");
+    f.hidden = !me.verified;
+    const box = $("passkeys");
+    const list = await api<Passkey[]>("GET", "/passkeys");
+    box.replaceChildren(...list.map((p) => {
+      const rm = el("button", { class: "btn sm quiet", textContent: t("Remove") });
+      rm.onclick = async () => {
+        await api("DELETE", `/passkeys/${p.id}`);
+        passkeys();
+      };
+      return row(el("span", {}, p.name), el("span", { class: "muted small" }, t("added {when}", { when: ago(p.createdAt) })), el("span", { class: "muted small" }, p.lastUsedAt ? t("used {when}", { when: ago(p.lastUsedAt) }) : t("not used yet")), rm);
+    }));
+    if (!me.verified) box.append(empty(t("Confirm your email address to add a passkey.")));
+    else if (!list.length) box.append(empty(t("No passkeys yet.")));
+  }
+
+  async function keys() {
+    const box = $("keys");
+    const list = await api<Key[]>("GET", "/keys");
+    box.replaceChildren(...list.map((k) => {
+      const rm = el("button", { class: "btn sm quiet", textContent: t("Revoke") });
+      rm.onclick = async () => {
+        await api("DELETE", `/keys/${k.id}`);
+        keys();
+      };
+      return row(el("span", {}, k.name), el("span", { class: "data small muted" }, k.prefix + "…"), el("span", { class: "muted small" }, k.scopes.join(", ")), rm);
+    }));
+    if (!list.length) box.append(empty(t("No API keys.")));
+  }
+
+  async function orgs() {
+    const box = $("orgs");
+    const list = await api<Org[]>("GET", "/orgs");
+    box.replaceChildren();
+    if (!list.length) return box.append(empty(t("You're not in any organisation.")));
+    for (const o of list) {
+      const members = await api<Member[]>("GET", `/orgs/${o.id}/members`);
+      const inv = el("form", { class: "inline-form" });
+      const roles = [["member", t("Member")], ["admin", t("Admin")], ...(o.role === "owner" ? [["owner", t("Owner")]] : [])];
+      const select = el("select", { name: "role" }, ...roles.map(([value, label]) => el("option", { value }, label)));
+      const done = el("div", { class: "note" }, t("Invitation sent."));
+      done.dataset.done = "";
+      done.hidden = true;
+      const fail = el("div", { class: "error" });
+      fail.dataset.error = "";
+      fail.hidden = true;
+      inv.append(
+        el("label", { class: "field" }, el("span", {}, t("Invite by email")), el("input", { name: "email", type: "email", required: true })),
+        el("label", { class: "field" }, el("span", {}, t("Role")), select),
+        el("button", { class: "btn sm" }, t("Invite")),
+        fail,
+        done,
+      );
+      form(inv, async (v) => {
+        await api("POST", `/orgs/${o.id}/invites`, { email: v.email, role: v.role });
+        (inv.querySelector("[data-done]") as HTMLElement).hidden = false;
+        inv.reset();
+      });
+      box.append(
+        el("div", { class: "org" },
+          el("h3", {}, o.name, el("span", { class: "muted small" }, "  " + (o.role === "owner" ? t("you're an owner") : o.role === "admin" ? t("you're an admin") : t("you're a member")))),
+          el("div", { class: "rows" }, ...members.map((m) => row(el("span", {}, m.name), el("span", { class: "muted small" }, m.email), el("span", { class: "muted small" }, roleName(m.role))))),
+          ...(o.role === "owner" || o.role === "admin" ? [inv] : []),
+        ),
+      );
+    }
+  }
+
+  // With two-factor sign-in on, the password answers a challenge and a code
+  // from the authenticator app finishes the sign-in.
+  let challenge = "";
+  form($("signin"), async (v) => {
+    const r = await api<{ token?: string; twoFactor?: boolean; challenge?: string }>("POST", "/sessions", { email: v.email, password: v.password, device: "Website" });
+    if (r.twoFactor && r.challenge) {
+      challenge = r.challenge;
+      $("signin").hidden = true;
+      $("signin-2fa").hidden = false;
+      $<HTMLInputElement>("signin-2fa").querySelector("input")?.focus();
+      return;
+    }
+    setToken(r.token!);
+    await load();
+  });
+  form($("signin-2fa") as HTMLFormElement, async (v) => {
+    try {
+      const r = await api<{ token: string }>("POST", "/sessions/2fa", { challenge, code: v.code });
+      setToken(r.token);
+      $("signin-2fa").hidden = true;
+      $("signin").hidden = false;
+      await load();
+    } catch (e) {
+      if (/expired/.test((e as Error).message)) {
+        $("signin-2fa").hidden = true;
+        $("signin").hidden = false;
+      }
+      throw e;
+    }
+  });
+  form($("tf-start") as HTMLFormElement, async (v) => {
+    const r = await api<{ secret: string; uri: string }>("POST", "/me/2fa/setup", { password: v.password });
+    ($("tf-start") as HTMLFormElement).reset();
+    $("tf-start").hidden = true;
+    $("tf-secret").textContent = r.secret.replace(/(.{4})/g, "$1 ").trim();
+    $<HTMLAnchorElement>("tf-uri").href = r.uri;
+    $("tf-enable").hidden = false;
+  });
+  form($("tf-enable") as HTMLFormElement, async (v) => {
+    const r = await api<{ recoveryCodes: string[] }>("POST", "/me/2fa/enable", { code: v.code });
+    ($("tf-enable") as HTMLFormElement).reset();
+    showRecovery(r.recoveryCodes);
+    await twoFactor();
+  });
+  {
+    const mf = $("tf-manage") as HTMLFormElement;
+    let action = "codes";
+    mf.querySelectorAll<HTMLButtonElement>("button[name=action]").forEach((b) => (b.onclick = () => (action = b.value)));
+    form(mf, async (v) => {
+      if (action === "off") {
+        await api("POST", "/me/2fa/disable", { password: v.password, code: v.code });
+        $("recovery").hidden = true;
+      } else {
+        const r = await api<{ recoveryCodes: string[] }>("POST", "/me/2fa/recovery-codes", { password: v.password, code: v.code });
+        showRecovery(r.recoveryCodes);
+      }
+      mf.reset();
+      await twoFactor();
+    });
+  }
+  $("back-2fa").onclick = (e) => {
+    e.preventDefault();
+    $("signin-2fa").hidden = true;
+    $("signin").hidden = false;
+  };
+  if (passkeysSupported()) {
+    $("passkey-signin").hidden = false;
+    $("passkey-go").onclick = async () => {
+      const err = $("passkey-error");
+      err.hidden = true;
+      try {
+        setToken(await signInWithPasskey("Website"));
+        await load();
+      } catch (x) {
+        err.textContent = passkeyError(x);
+        err.hidden = false;
+      }
+    };
+  }
+  form($<HTMLFormElement>("new-passkey"), async (v) => {
+    try {
+      await addPasskey(v.name || t("Passkey"), v.password);
+    } catch (x) {
+      throw new Error(passkeyError(x));
+    }
+    $<HTMLFormElement>("new-passkey").reset();
+    await passkeys();
+  });
+  form($("signup"), async (v) => {
+    let inviteToken: string | undefined;
+    try {
+      inviteToken = sessionStorage.getItem("conduit.invite") || undefined;
+    } catch {}
+    await api("POST", "/accounts", { email: v.email, password: v.password, name: v.name, inviteToken });
+    ($("signup").querySelector("[data-done]") as HTMLElement).hidden = false;
+  });
+  form($("reset"), async (v) => {
+    await api("POST", "/accounts/password-reset", { email: v.email });
+    ($("reset").querySelector("[data-done]") as HTMLElement).hidden = false;
+  });
+  $("to-reset").onclick = (e) => {
+    e.preventDefault();
+    $("signin").hidden = true;
+    $("reset").hidden = false;
+  };
+  $("back-signin").onclick = (e) => {
+    e.preventDefault();
+    $("signin").hidden = false;
+    $("reset").hidden = true;
+  };
+  $("signout").onclick = async () => {
+    await api("DELETE", "/sessions").catch(() => {});
+    setToken(null);
+    me = null;
+    show(false);
+  };
+  $("resend").onclick = async () => {
+    await api("POST", "/me/resend-verification");
+    $("resend").textContent = t("Sent");
+  };
+
+  let timer: number | undefined;
+  $("make-code").onclick = async () => {
+    const r = await api<{ code: string; expiresAt: string }>("POST", "/pairing-codes");
+    $("code").textContent = r.code.replace(/(.{4})(.{4})/, "$1-$2");
+    $("code-box").hidden = false;
+    clearInterval(timer);
+    const tick = () => {
+      const s = Math.max(0, Math.round((new Date(r.expiresAt).getTime() - Date.now()) / 1000));
+      $("code-left").textContent = s ? t("valid for {time}", { time: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` }) : t("expired");
+      if (!s) clearInterval(timer);
+    };
+    tick();
+    timer = window.setInterval(tick, 1000);
+    setTimeout(devices, 15000);
+  };
+
+  form($("new-key") as HTMLFormElement, async () => {
+    const f = $("new-key") as HTMLFormElement;
+    const scopes = [...f.querySelectorAll<HTMLInputElement>("input[name=s]:checked")].map((i) => i.value);
+    const name = (f.querySelector("input[name=name]") as HTMLInputElement).value;
+    const r = await api<{ secret: string }>("POST", "/keys", { name, scopes });
+    $("secret-value").textContent = r.secret;
+    $("secret").hidden = false;
+    f.reset();
+    keys();
+  });
+  form($("new-org") as HTMLFormElement, async (v) => {
+    await api("POST", "/orgs", { name: v.name });
+    ($("new-org") as HTMLFormElement).reset();
+    orgs();
+  });
+
+  load().catch((e) => {
+    if (e instanceof HubError && e.status === 0) document.querySelector(".acct")!.prepend(el("div", { class: "error" }, e.message));
+  });
+</script>
+
+<style is:global>
+  .passkey-signin {
+    display: grid;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .passkey-signin .btn {
+    justify-self: start;
+  }
+  .acct {
+    padding-top: 48px;
+  }
+  .acct h1 {
+    font-size: 40px;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px;
+    line-height: 1.1;
+  }
+  .acct h2 {
+    font-size: 21px;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .acct h3 {
+    font-size: 17px;
+    margin: 0 0 8px;
+  }
+  .acct .lead {
+    font-size: 19px;
+    max-width: 30em;
+  }
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+    gap: 56px;
+  }
+  .forms {
+    display: grid;
+    gap: 20px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px;
+  }
+  .stack {
+    display: grid;
+    gap: 14px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .quiet {
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 16px;
+  }
+  .block {
+    margin-top: 40px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+    max-width: 820px;
+  }
+  .block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .block > p {
+    margin: 0 0 14px;
+    font-size: 16px;
+  }
+  .code-box {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 20px;
+    padding: 16px 18px;
+    border: 1px solid var(--signal);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--signal) 6%, transparent);
+  }
+  .code {
+    font-size: 32px;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+  }
+  .rows {
+    display: grid;
+  }
+  .row-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  #keys .row-item {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr) auto;
+  }
+  .org .row-item {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+  .small {
+    font-size: 14px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--line-strong);
+  }
+  .dot.on {
+    background: var(--ok);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 70%, transparent);
+  }
+  .key-form {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .scopes {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font-size: 15px;
+  }
+  .scopes legend {
+    padding: 0;
+    margin-bottom: 6px;
+  }
+  .secret {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    margin-bottom: 14px;
+    word-break: break-all;
+  }
+  .inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .inline-form .field {
+    min-width: 220px;
+  }
+  .org {
+    margin-top: 22px;
+  }
+  .note.warn {
+    background: color-mix(in srgb, var(--signal) 14%, transparent);
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  @media (max-width: 760px) {
+    .split {
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .row-item,
+    #keys .row-item {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+  }
+</style>

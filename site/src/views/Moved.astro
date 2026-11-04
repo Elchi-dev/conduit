@@ -1,0 +1,29 @@
+---
+// A page that moved: a meta refresh plus a plain link, for static hosting.
+// Used by the old /registry/ page, which is now the marketplace at /modules/.
+import { i18n } from "../i18n";
+interface Props {
+  to: string;
+}
+const { lang, t, l } = i18n(Astro.currentLocale);
+const to = l(Astro.props.to);
+---
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{t("Modules")} · Conduit</title>
+    <meta http-equiv="refresh" content={`0; url=${to}`} />
+    <link rel="canonical" href={to} />
+    <meta name="robots" content="noindex" />
+    <style>
+      body { margin: 0; padding: 96px 24px; background: #1b1e22; color: #ebe6dc; font: 17px/1.55 system-ui, sans-serif; text-align: center; }
+      a { color: #f2a93b; }
+    </style>
+  </head>
+  <body>
+    <p>{t("Modules moved to the marketplace.")} <a href={to}>{t("Go to the modules")}</a></p>
+    <script is:inline define:vars={{ to }}>location.replace(to + location.search + location.hash);</script>
+  </body>
+</html>

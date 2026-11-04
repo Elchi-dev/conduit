@@ -1,24 +1,42 @@
 ---
 import "../styles/site.css";
+import { englishPath, hasGerman, i18n, languages, localize, translator } from "../i18n";
 interface Props {
   title?: string;
   description?: string;
   page?: string;
 }
-const { title, description = "One place for your mail, servers, secrets, dashboards, games and home, where AI agents work under rules you set.", page } = Astro.props;
+const { lang, t, l } = i18n(Astro.currentLocale);
+const {
+  title,
+  description = t("One place for your mail, servers, secrets, dashboards, games and home, where AI agents work under rules you set."),
+  page,
+} = Astro.props;
 const full = title ? `${title} · Conduit` : "Conduit";
 const nav = [
-  ["features", "/#features", "Features", "wide"],
-  ["docs", "/docs/", "Docs", ""],
-  ["api", "/api/", "API", "wide"],
-  ["hub", "/hub/", "Hubs", ""],
-  ["registry", "/registry/", "Modules", "wide"],
-  ["download", "/download/", "Download", ""],
-  ["account", "/account/", "Account", ""],
+  ["features", "/#features", t("Features"), "wide"],
+  ["docs", "/docs/", t("Docs"), ""],
+  ["api", "/api/", t("API"), "wide"],
+  ["hub", "/hub/", t("Hubs"), ""],
+  ["registry", "/modules/", t("Modules"), "wide"],
+  ["download", "/download/", t("Download"), ""],
+  ["account", "/account/", t("Account"), ""],
 ];
+
+// The same page in each language. Docs and the API reference are English
+// only: they get no alternates, and the switch leads to the German home page.
+const en = englishPath(Astro.url.pathname);
+const both = hasGerman(en);
+const abs = (p: string) => (Astro.site ? new URL(p, Astro.site).href : p);
+const alternates = both ? languages.map((x) => ({ hreflang: x.id, href: abs(localize(en, x.id)) })) : [];
+const other = languages.find((x) => x.id !== lang)!;
+const switchHref = both ? localize(en, other.id) : localize("/", other.id);
+// The switch speaks the language it leads to.
+// Only English pages lack a German twin, so the fallback is the German home.
+const switchTitle = both ? other.label : translator(other.id).t("German home page");
 ---
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -26,19 +44,24 @@ const nav = [
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="theme-color" content="#1b1e22" />
+    {alternates.map((a) => <link rel="alternate" hreflang={a.hreflang} href={a.href} />)}
+    {both && <link rel="alternate" hreflang="x-default" href={abs(en)} />}
   </head>
   <body>
     <header class="site-head">
       <div class="wrap">
-        <a class="brand" href="/" aria-label="Conduit home">
+        <a class="brand" href={l("/")} aria-label={t("Conduit home")}>
           <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 10h20M6 16h13M6 22h20" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>
           Conduit
         </a>
-        <nav class="site-nav" aria-label="Site">
+        <nav class="site-nav" aria-label={t("Site")}>
           {nav.map(([id, href, label, cls]) => (
-            <a href={href} class={cls} aria-current={page === id ? "page" : undefined}>{label}</a>
+            <a href={l(href)} class={cls} aria-current={page === id ? "page" : undefined} hreflang={lang !== "en" && id === "docs" ? "en" : undefined}>{label}</a>
           ))}
         </nav>
+        <a class="lang-switch" href={switchHref} hreflang={other.id} lang={other.id} title={switchTitle} data-same={both ? "" : undefined}>
+          <span aria-hidden="true">{other.short}</span><span class="visually-hidden">{other.label}</span>
+        </a>
       </div>
     </header>
     <main>
@@ -46,13 +69,19 @@ const nav = [
     </main>
     <footer class="site-foot">
       <div class="wrap">
-        <span>Conduit is an open protocol. This site is served by a Conduit hub.</span>
-        <a href="/docs/">Documentation</a>
-        <a href="/docs/self-hosting/">Run your own hub</a>
-        <a href="/api/">API reference</a>
-        <a href="/changelog/">Changelog</a>
-        <a href="https://github.com/Elchi-dev/conduit">Source</a>
+        <span>{t("Conduit is an open protocol. This site is served by a Conduit hub.")}</span>
+        <a href="/docs/" hreflang={lang !== "en" ? "en" : undefined}>{t("Documentation")}</a>
+        <a href="/docs/self-hosting/" hreflang={lang !== "en" ? "en" : undefined}>{t("Run your own hub")}</a>
+        <a href={l("/api/")}>{t("API reference")}</a>
+        <a href={l("/changelog/")}>{t("Changelog")}</a>
+        <a href="https://github.com/Elchi-dev/conduit">{t("Source")}</a>
+        <a href={switchHref} hreflang={other.id} lang={other.id} data-same={both ? "" : undefined}>{other.label}</a>
+        {lang !== "en" && <span class="foot-note">{t("The documentation and the API references are in English.")}</span>}
       </div>
     </footer>
+    <script is:inline>
+      // Keep ?token=… and #anchors when switching language on the same page.
+      for (const a of document.querySelectorAll("a[data-same]")) a.href += location.search + location.hash;
+    </script>
   </body>
 </html>

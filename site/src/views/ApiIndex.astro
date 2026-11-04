@@ -1,0 +1,126 @@
+---
+import Base from "../layouts/Base.astro";
+import { apis } from "../lib/openapi";
+import { i18n } from "../i18n";
+const { t, tn, lang } = i18n(Astro.currentLocale);
+const en = lang !== "en" ? "en" : undefined;
+
+const blurbs: Record<string, string> = {
+  daemon: t("Everything Conduit does on one computer: modules and their actions, approvals, policy, the audit log, the vault, automations, the assistant, webhooks and remote access."),
+  hub: t("What a hub offers: accounts, organisations, device pairing, the encrypted relay, sync, the marketplace and the update feed."),
+};
+const count = (slug: string) => apis.find((a) => a.slug === slug)!.groups.reduce((n, g) => n + g.ops.length, 0);
+const guides = [
+  ["/docs/api/keys/", t("API keys"), t("Kinds of keys, scopes, expiry, IP limits, rate limits, rotation and the usage log.")],
+  ["/docs/api/mcp/", t("Agents over MCP"), t("Connect Claude, Cursor or any MCP client; every tool call follows your rules.")],
+  ["/docs/api/webhooks/", t("Webhooks"), t("Start automations from outside, and receive signed events.")],
+  ["/docs/protocol/hub/", t("Hub protocol"), t("Pairing, the end-to-end encrypted relay and what a hub can see.")],
+  ["/docs/protocol/", t("Module protocol"), t("Write a module in any language over JSON-RPC, or as a sandboxed WebAssembly module.")],
+];
+const [libA, libRest] = t("Client libraries for TypeScript and Python are in {clients}; the raw specs are {daemon} and {hub}.").split("{clients}");
+const [libB, libRest2] = libRest.split("{daemon}");
+const [libC, libD] = libRest2.split("{hub}");
+---
+<Base page="api" title={t("API reference")} description={t("The daemon and hub HTTP APIs, generated from their OpenAPI specs.")}>
+  <div class="wrap apix">
+    <h1>{t("API reference")}</h1>
+    <p class="lede">{t("Two HTTP APIs, both described by OpenAPI 3.1 files in the repository. Tests fail if the code and these files disagree, so what you read here is what the servers answer.")}</p>
+    <div class="apis">
+      {apis.map((a) => (
+        <a class="api-card" href={`/api/${a.slug}/`} hreflang={en}>
+          <h2>{a.title}</h2>
+          <p>{blurbs[a.slug]}</p>
+          <span class="meta muted"><span class="data">{a.base || "/"}</span>, {tn("{n} operation", "{n} operations", count(a.slug))}, {t("version {version}", { version: a.version })}</span>
+        </a>
+      ))}
+    </div>
+    <h2 class="sub">{t("Guides")}</h2>
+    <dl class="guides">
+      {guides.map(([href, title, text]) => (
+        <div><dt><a href={href} hreflang={en}>{title}</a></dt><dd>{text}</dd></div>
+      ))}
+    </dl>
+    <p class="muted small">{libA}<a href="https://github.com/Elchi-dev/conduit/tree/main/sdk/clients">sdk/clients</a>{libB}<a href="https://github.com/Elchi-dev/conduit/blob/main/api/openapi/daemon.yaml">daemon.yaml</a>{libC}<a href="https://github.com/Elchi-dev/conduit/blob/main/api/openapi/hub.yaml">hub.yaml</a>{libD}</p>
+  </div>
+</Base>
+<style>
+  .apix {
+    padding-top: 56px;
+    padding-bottom: 40px;
+  }
+  .apix > * {
+    max-width: 900px;
+  }
+  h1 {
+    font-size: 44px;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px;
+  }
+  .lede {
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 32px;
+  }
+  .apis {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .api-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 20px 22px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--panel);
+    text-decoration: none;
+  }
+  .api-card:hover {
+    border-color: var(--line-strong);
+  }
+  .api-card h2 {
+    margin: 0;
+    font-size: 21px;
+  }
+  .api-card p {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: 16px;
+  }
+  .api-card .meta {
+    margin-top: auto;
+    font-size: 14px;
+  }
+  .sub {
+    font-size: 24px;
+    margin: 48px 0 8px;
+  }
+  .guides div {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .guides dt a {
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .guides dd {
+    margin: 4px 0 0;
+    color: var(--ink-2);
+  }
+  .small {
+    font-size: 15px;
+    margin-top: 24px;
+  }
+  .small a {
+    color: var(--ink-2);
+  }
+  @media (max-width: 700px) {
+    .apis {
+      grid-template-columns: 1fr;
+    }
+    h1 {
+      font-size: 34px;
+    }
+  }
+</style>

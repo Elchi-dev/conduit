@@ -124,13 +124,51 @@ pre,
 .site-nav a[aria-current="page"] {
   color: var(--ink);
 }
+/* Language switch: a quiet two-letter chip after the nav. */
+.lang-switch {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font: 500 12px var(--font-data);
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.lang-switch:hover {
+  color: var(--ink);
+  border-color: var(--ink-2);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 @media (max-width: 640px) {
+  .site-head .wrap {
+    gap: 14px;
+  }
   .site-nav {
     gap: 14px;
     font-size: 14px;
   }
   .site-nav .wide {
     display: none;
+  }
+}
+@media (max-width: 400px) {
+  .site-head .wrap {
+    gap: 10px;
+  }
+  .site-nav {
+    gap: 10px;
   }
 }
 
@@ -187,6 +225,9 @@ pre,
 .site-foot a {
   color: var(--ink-2);
   text-decoration: none;
+}
+.site-foot .foot-note {
+  flex-basis: 100%;
 }
 
 /* ---------- forms (account pages) ---------- */
@@ -301,4 +342,20 @@ pre,
   margin: 0;
   padding-left: 14px;
   border-left: 2px solid var(--line-strong);
+}
+
+/* ---------- email link pages (verify, reset, invite) ---------- */
+.gate {
+  max-width: 520px;
+  padding-top: 96px;
+}
+.gate h1 {
+  font-size: 36px;
+  letter-spacing: -0.03em;
+  margin: 0 0 12px;
+}
+.gate form {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
 }

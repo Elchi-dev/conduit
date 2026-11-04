@@ -1,0 +1,654 @@
+/* The marketplace pages (/modules/…). Same night-time control room as the
+   rest of the site. The one loud element is the search; module names are set
+   as two-part labels, the author quiet and the module loud. Amber stays
+   reserved for "needs you"; red only for a module that was removed. */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.mk {
+  padding-top: 56px;
+  padding-bottom: 72px;
+}
+.mk .crumb {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.mk .lede {
+  font-size: 19px;
+  color: var(--ink-2);
+  max-width: 36em;
+  margin: 0;
+}
+.mk .small {
+  font-size: 14px;
+}
+
+/* ---------- hero and search ---------- */
+
+.mk-hero h1 {
+  font-size: clamp(38px, 6.4vw, 68px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  margin: 0 0 18px;
+  max-width: 12em;
+  text-wrap: balance;
+}
+.mk-search {
+  position: relative;
+  margin: 36px 0 0;
+  max-width: 760px;
+  color: var(--muted);
+}
+.mk-search svg {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  translate: 0 -50%;
+  pointer-events: none;
+}
+.mk-search input {
+  width: 100%;
+  font: 500 clamp(18px, 2.4vw, 23px) / 1.2 var(--font-ui);
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 20px 20px 20px 56px;
+  outline: none;
+}
+.mk-search input::placeholder {
+  color: var(--muted);
+}
+.mk-search input:focus-visible {
+  border-color: var(--ink-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.mk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 24px;
+  margin: 28px 0 0;
+}
+.mk-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 34px;
+}
+.mk-chip {
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.mk-chip:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.mk-chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.mk-chip-n {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+.mk-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.mk-sort select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 7px 10px;
+}
+.mk-count {
+  margin: 26px 0 0;
+  font-size: 15px;
+  min-height: 1.5em;
+}
+
+/* ---------- results ---------- */
+
+.mk-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+}
+.mk-tile {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 18px;
+  padding: 24px 24px 24px 0;
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+.mk-tile:nth-child(2n) {
+  padding-left: 24px;
+  padding-right: 0;
+  border-left: 1px solid var(--line);
+}
+.mk-tile h3 {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.mk-tile-link {
+  text-decoration: none;
+}
+/* The whole tile is the link's target area. */
+.mk-tile-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.mk-tile-link:hover .mk-mod,
+.mk-tile-link:focus-visible .mk-mod {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 2px;
+}
+.mk-desc {
+  margin: 6px 0 10px;
+  color: var(--ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mk-empty {
+  grid-column: 1 / -1;
+  padding: 40px 0;
+  color: var(--ink-2);
+  font-size: 19px;
+  max-width: 34em;
+}
+.mk-list > .error {
+  grid-column: 1 / -1;
+  margin-top: 20px;
+}
+#mk-more {
+  margin-top: 24px;
+}
+
+.mk-name {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.mk-owner {
+  font-family: var(--font-data);
+  font-size: 15px;
+  color: var(--muted);
+}
+.mk-mod {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.mk-name.big .mk-owner {
+  font-size: clamp(17px, 2vw, 22px);
+}
+.mk-name.big .mk-mod {
+  font-size: clamp(38px, 5.6vw, 60px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.mk-icon {
+  width: var(--s, 48px);
+  height: var(--s, 48px);
+  border-radius: calc(var(--s, 48px) * 0.24);
+  object-fit: cover;
+  background: var(--panel-2);
+  display: block;
+}
+.mk-icon.ph {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: calc(var(--s, 48px) * 0.42);
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+}
+
+.mk-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.mk-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--ok);
+}
+.mk-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.mk-stars-track {
+  position: relative;
+  display: inline-block;
+  color: var(--line-strong);
+  letter-spacing: 1px;
+  line-height: 1;
+}
+.mk-stars-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+/* ---------- promise and publish ---------- */
+
+.mk-promise {
+  margin-top: 88px;
+}
+.mk-promise h2,
+.mk-publish h2 {
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  margin: 0 0 22px;
+}
+.mk-promise dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  margin: 0;
+}
+.mk-promise dl > div {
+  border-top: 2px solid var(--ink);
+  padding-top: 16px;
+}
+.mk-promise dt {
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
+.mk-promise dd {
+  margin: 0;
+  color: var(--ink-2);
+}
+.mk-publish {
+  margin-top: 72px;
+  padding: 36px 40px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 40px;
+}
+.mk-publish h2 {
+  margin-bottom: 8px;
+}
+.mk-publish p {
+  margin: 0;
+  color: var(--ink-2);
+  max-width: 38em;
+}
+.mk-publish-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* ---------- package page ---------- */
+
+.mk-pkg {
+  padding-top: 40px;
+}
+.mk-pkg-head {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.mk-pkg-head h1 {
+  margin: 0 0 10px;
+  font-size: inherit;
+}
+.mk-pkg-head .mk-meta {
+  margin-top: 18px;
+  font-size: 15px;
+}
+.mk-removed {
+  margin-top: 28px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--fault) 55%, var(--line));
+  border-left: 4px solid var(--fault);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--fault) 8%, var(--panel));
+}
+.mk-removed p {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+}
+.mk-shots {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  margin: 36px 0 0;
+  padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+}
+.mk-shots figure {
+  margin: 0;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+.mk-shots img {
+  display: block;
+  height: clamp(200px, 32vw, 340px);
+  width: auto;
+  max-width: 86vw;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+.mk-shots figcaption {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.mk-pkg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 56px;
+  margin-top: 44px;
+  align-items: start;
+}
+.mk-readme {
+  max-width: 68ch;
+}
+.mk-readme > :first-child {
+  margin-top: 0;
+}
+.mk-pkg-side {
+  display: grid;
+  gap: 28px;
+  position: sticky;
+  top: 24px;
+}
+.mk-install {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+.mk-install h2 {
+  font-size: 19px;
+  margin: 0 0 10px;
+}
+.mk-install ol {
+  margin: 0 0 12px;
+  padding-left: 1.2em;
+  color: var(--ink-2);
+  display: grid;
+  gap: 6px;
+}
+.mk-install p {
+  margin: 8px 0 0;
+}
+.mk-fp {
+  overflow-wrap: anywhere;
+}
+.mk-facts {
+  margin: 0;
+  display: grid;
+  gap: 14px;
+}
+.mk-facts dt {
+  font-size: 14px;
+  color: var(--muted);
+}
+.mk-facts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.mk-versions summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.mk-versions ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 6px;
+  font-size: 15px;
+}
+.mk-yanked {
+  margin-left: 8px;
+  font-size: 13px;
+  color: var(--fault);
+}
+
+.mk-reviews {
+  margin-top: 72px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+  max-width: 760px;
+}
+.mk-reviews h2 {
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  margin: 0 0 20px;
+}
+.mk-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px 48px;
+  margin-bottom: 28px;
+}
+.mk-avg {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.mk-avg-n {
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.mk-hist {
+  display: grid;
+  gap: 5px;
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+.mk-hist-row {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.mk-hist-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.mk-hist-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+}
+.mk-review-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: grid;
+  gap: 26px;
+}
+.mk-review-head {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.mk-review-body {
+  margin: 6px 0 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+.mk-reply {
+  margin: 12px 0 0 16px;
+  padding-left: 14px;
+  border-left: 2px solid var(--line-strong);
+}
+
+/* ---------- publish page ---------- */
+
+.mk-steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 64px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 56px;
+}
+.mk-steps > li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 40px;
+  align-items: start;
+}
+.mk-step-text h2 {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin: 0 0 10px;
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+}
+.mk-step-text h2::before {
+  content: counter(step);
+  font-family: var(--font-data);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  min-width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  translate: 0 -3px;
+}
+.mk-step-text p {
+  margin: 0 0 10px;
+  color: var(--ink-2);
+}
+.mk-code {
+  margin: 0;
+  padding: 18px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 14px;
+  line-height: 1.55;
+  tab-size: 4;
+}
+.mk-code code {
+  font-size: inherit;
+}
+
+@media (max-width: 900px) {
+  .mk-pkg-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .mk-pkg-side {
+    position: static;
+  }
+  .mk-steps > li {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .mk-promise dl {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+@media (max-width: 720px) {
+  .mk {
+    padding-top: 36px;
+  }
+  .mk-list {
+    grid-template-columns: 1fr;
+  }
+  .mk-tile,
+  .mk-tile:nth-child(2n) {
+    padding: 20px 0;
+    border-left: 0;
+  }
+  .mk-pkg-head {
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 16px;
+  }
+  .mk-pkg-head .mk-icon {
+    --s: 60px !important;
+  }
+  .mk-publish {
+    padding: 26px 22px;
+  }
+}

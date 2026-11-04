@@ -1,0 +1,28 @@
+---
+import Base from "../layouts/Base.astro";
+import { i18n } from "../i18n";
+const { t, l } = i18n(Astro.currentLocale);
+---
+<Base title={t("Confirm your email")}>
+  <div class="wrap gate">
+    <h1>{t("Confirming your email…")}</h1>
+    <p class="muted" id="msg">{t("One moment.")}</p>
+    <a class="btn" href={l("/account/")} id="next" hidden>{t("Go to your account")}</a>
+  </div>
+</Base>
+<script>
+  import { api, param } from "../scripts/hub";
+  import { t } from "../i18n/client";
+  const msg = document.getElementById("msg")!;
+  const h1 = document.querySelector("h1")!;
+  api("POST", "/accounts/verify", { token: param("token") })
+    .then(() => {
+      h1.textContent = t("Email confirmed");
+      msg.textContent = t("Your address is confirmed. Sign in to link your computer.");
+    })
+    .catch((e) => {
+      h1.textContent = t("That link didn't work");
+      msg.textContent = e.message + " " + t("Sign in and send a new one from your account.");
+    })
+    .finally(() => (document.getElementById("next")!.hidden = false));
+</script>

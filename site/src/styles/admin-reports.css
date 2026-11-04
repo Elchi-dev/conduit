@@ -1,0 +1,63 @@
+/* The marketplace reports queue in the operator console. */
+.rq-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+.rq-tabs .btn[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+.rq-list {
+  display: grid;
+}
+.rq-card {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+}
+.rq-card p {
+  margin: 0;
+}
+.rq-title {
+  font-size: 17px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+.rq-reason {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-2);
+}
+.rq-reason.bad {
+  color: var(--fault);
+  border-color: color-mix(in srgb, var(--fault) 55%, transparent);
+}
+.rq-details {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+  max-width: 68ch;
+  border-left: 2px solid var(--line-strong);
+  padding-left: 12px;
+}
+.rq-note {
+  max-width: 520px;
+  margin-top: 4px;
+}
+.rq-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rq-acts .btn.danger {
+  color: var(--fault);
+  border-color: color-mix(in srgb, var(--fault) 50%, transparent);
+}

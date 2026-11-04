@@ -1,0 +1,106 @@
+---
+import Base from "../layouts/Base.astro";
+import { i18n } from "../i18n";
+const { t, l, lang } = i18n(Astro.currentLocale);
+const en = lang !== "en" ? "en" : undefined;
+const does = [
+  t("Relays your phone to your computer without opening a port. Traffic is end-to-end encrypted to a key your phone pins from a QR code."),
+  t("Stores settings your devices encrypted themselves."),
+  t("Lists modules in the marketplace, signed by their authors."),
+  t("Serves signed updates."),
+  t("Holds accounts and organisations, with email sent through the operator's own provider."),
+];
+const cant = [
+  t("Read your requests, answers, secrets or settings."),
+  t("Pretend to be your computer: your phone checks the computer's key, not the hub's word."),
+  t("Push you a module or update that isn't signed by its author or Conduit."),
+  t("Keep you: on the same network your phone skips the hub, and you can switch hubs any time."),
+];
+const ways = [
+  [t("On its own"), t("Everything on one computer, no account anywhere. Phones on the same network can still pair directly.")],
+  [t("With the default hub"), t("Create an account, link your computer with a pairing code, and reach it from anywhere.")],
+  [t("With your own hub"), t("One binary or a Docker Compose file, SQLite or PostgreSQL, your mail provider. Accounts stay on your hub.")],
+];
+---
+<Base page="hub" title={t("Hubs")} description={t("A hub connects your devices to your Conduit from anywhere, without reading anything that passes through it.")}>
+  <div class="wrap hubp">
+    <h1>{t("Hubs")}</h1>
+    <p class="lede">{t("Conduit is a protocol, like git. A hub is where your devices meet, like a git host: optional, replaceable, and anyone can run one.")}</p>
+
+    <div class="cols">
+      <div>
+        <h2>{t("What a hub does")}</h2>
+        <ul>{does.map((x) => <li>{x}</li>)}</ul>
+      </div>
+      <div>
+        <h2>{t("What it can't do")}</h2>
+        <ul>{cant.map((x) => <li>{x}</li>)}</ul>
+      </div>
+    </div>
+
+    <h2>{t("Three ways to run Conduit")}</h2>
+    <dl class="ways">
+      {ways.map(([dt, dd]) => <div><dt>{dt}</dt><dd>{dd}</dd></div>)}
+    </dl>
+    <div class="cta">
+      <a class="btn primary" href={l("/account/")}>{t("Create an account on this hub")}</a>
+      <a class="btn" href="/docs/self-hosting/" hreflang={en}>{t("Run your own")}</a>
+      <a class="btn" href="/docs/protocol/hub/" hreflang={en}>{t("Read the protocol")}</a>
+    </div>
+  </div>
+</Base>
+<style>
+  .hubp {
+    padding-top: 56px;
+    max-width: 960px;
+  }
+  h1 {
+    font-size: 44px;
+    letter-spacing: -0.03em;
+    margin: 0 0 14px;
+  }
+  h2 {
+    font-size: 24px;
+    letter-spacing: -0.02em;
+    margin: 48px 0 12px;
+  }
+  .lede {
+    font-size: 20px;
+    color: var(--ink-2);
+    max-width: 34em;
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+  }
+  .cols ul {
+    padding-left: 18px;
+    color: var(--ink-2);
+    display: grid;
+    gap: 8px;
+  }
+  .ways div {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .ways dt {
+    font-weight: 700;
+  }
+  .ways dd {
+    margin: 4px 0 0;
+    color: var(--ink-2);
+  }
+  .cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 32px;
+  }
+  @media (max-width: 700px) {
+    .cols {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+  }
+</style>

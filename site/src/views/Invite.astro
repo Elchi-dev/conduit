@@ -1,0 +1,51 @@
+---
+import Base from "../layouts/Base.astro";
+import { i18n } from "../i18n";
+const { t, l } = i18n(Astro.currentLocale);
+---
+<Base title={t("Join an organisation")}>
+  <div class="wrap gate">
+    <h1>{t("You're invited")}</h1>
+    <p class="muted" id="msg">{t("Sign in with the address the invitation was sent to, then accept it here.")}</p>
+    <div class="row-btns">
+      <button class="btn primary" id="accept" hidden>{t("Accept the invitation")}</button>
+      <a class="btn" id="signin" href={l("/account/")}>{t("Sign in or create an account")}</a>
+    </div>
+    <div class="error" id="err" hidden></div>
+  </div>
+</Base>
+<script>
+  import { api, param, token } from "../scripts/hub";
+  import { t } from "../i18n/client";
+  const invite = param("token");
+  try {
+    if (invite) sessionStorage.setItem("conduit.invite", invite);
+  } catch {}
+  const accept = document.getElementById("accept")!;
+  if (token()) {
+    accept.hidden = false;
+    document.getElementById("signin")!.hidden = true;
+  }
+  accept.onclick = async () => {
+    try {
+      const r = await api<{ org: string; role: string }>("POST", "/invites/accept", { token: invite || sessionStorage.getItem("conduit.invite") });
+      document.querySelector("h1")!.textContent = t("You've joined");
+      document.getElementById("msg")!.textContent = r.role === "admin" ? t("You're now an admin.") : r.role === "owner" ? t("You're now an owner.") : t("You're now a member.");
+      accept.hidden = true;
+      document.getElementById("signin")!.hidden = false;
+      document.getElementById("signin")!.textContent = t("Go to your account");
+    } catch (e) {
+      const err = document.getElementById("err")!;
+      err.textContent = (e as Error).message;
+      err.hidden = false;
+    }
+  };
+</script>
+<style>
+  .row-btns {
+    display: flex;
+    gap: 12px;
+    margin: 24px 0 16px;
+    flex-wrap: wrap;
+  }
+</style>

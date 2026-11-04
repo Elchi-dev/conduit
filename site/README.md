@@ -25,9 +25,19 @@ Pages:
 | `/download/` | Desktop, Android, daemon, hub |
 | `/hub/` | What a hub can and can't do |
 | `/docs/…` | Everything in `docs/`; links between docs are rewritten, links to other repo files go to GitHub |
-| `/registry/` | Modules published to this hub, with search |
+| `/modules/` | The marketplace: modules published to this hub, a page per module, how to publish (`/registry/` redirects here) |
+| `/api/` | API landing; `/api/daemon/` and `/api/hub/` are generated from the OpenAPI specs |
+| `/changelog/` | Release notes from `docs/releases/` |
 | `/account/` | Hub account |
 | `/verify/`, `/reset/`, `/invite/` | Targets of the hub's emails (`?token=`) |
+
+Languages: English at `/`, German under `/de/` (Astro i18n routing). Each
+page is a view in `src/views/` with thin wrappers in `src/pages/` and
+`src/pages/de/`; strings go through `t()` / `tn()` from `src/i18n`, keyed by
+the English text, with German in `src/i18n/de.ts` (marketplace strings in
+`de-marketplace.ts`). The docs and the generated API references stay
+English. `pnpm test:i18n` fails if a string lacks German or its
+placeholders differ.
 
 Design follows the app: slate panels, warm ink, amber only for "needs you",
 Schibsted Grotesk and IBM Plex Mono (data only). The hero's lamp row and

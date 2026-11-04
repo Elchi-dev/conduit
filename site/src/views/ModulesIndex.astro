@@ -1,0 +1,180 @@
+---
+// The marketplace: every module published to this hub, searchable, sorted
+// and filtered client-side from the hub's live registry.
+import Base from "../layouts/Base.astro";
+import "../styles/marketplace.css";
+import { i18n } from "../i18n";
+const { t, l } = i18n(Astro.currentLocale);
+const promises = [
+  [t("Signed by the people who wrote them"), t("Every version carries its author's signature. Conduit checks it on your machine, so not even the hub can swap what you install.")],
+  [t("Sandboxed from the first second"), t("Modules run in WebAssembly with no files, no shell and no local network. They reach only the internet addresses they list, and you see that list before you install.")],
+  [t("Under your rules, like everything else"), t("Every action a module offers goes through your approvals and lands in the audit log. Agents can use it only as far as you allow.")],
+];
+---
+<Base page="registry" title={t("Modules")} description={t("Modules for everything you run: published by their authors, signed, sandboxed and rated by the people who use them.")}>
+  <div class="wrap mk">
+    <header class="mk-hero">
+      <h1>{t("Modules for everything you run.")}</h1>
+      <p class="lede">{t("Connect Conduit to more of your world with modules from people who use it. Each one is signed by its author and runs sandboxed, so trying something new is safe.")}</p>
+      <form id="mk-search" class="mk-search" role="search">
+        <label for="mk-q" class="visually-hidden">{t("Search modules")}</label>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2" /><path d="m15.5 15.5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        <input id="mk-q" name="q" type="search" autocomplete="off" placeholder={t("Search weather, backups, routers, Minecraft…")} />
+      </form>
+    </header>
+
+    <div class="mk-bar">
+      <div id="mk-cats" class="mk-cats" role="group" aria-label={t("Categories")}></div>
+      <label class="mk-sort">
+        <span>{t("Sort by")}</span>
+        <select id="mk-sort">
+          <option value="relevance">{t("Best match")}</option>
+          <option value="installs">{t("Most installed")}</option>
+          <option value="rating">{t("Highest rated")}</option>
+          <option value="newest">{t("Newest")}</option>
+          <option value="updated">{t("Recently updated")}</option>
+        </select>
+      </label>
+    </div>
+
+    <p id="mk-count" class="mk-count muted" aria-live="polite"></p>
+    <ol id="mk-list" class="mk-list"></ol>
+    <button id="mk-more" class="btn" type="button" hidden>{t("Show more")}</button>
+
+    <section class="mk-promise" aria-labelledby="mk-promise-title">
+      <h2 id="mk-promise-title">{t("Safe to try, by design")}</h2>
+      <dl>
+        {promises.map(([title, body]) => (
+          <div>
+            <dt>{title}</dt>
+            <dd>{body}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+
+    <section class="mk-publish">
+      <div>
+        <h2>{t("Built something useful? Share it.")}</h2>
+        <p>{t("Write a module in Go or any language that compiles to WebAssembly, sign it with your key, and it's one search away for everyone on this hub.")}</p>
+      </div>
+      <a class="btn primary" href={l("/modules/publish/")}>{t("Publish your module")}</a>
+    </section>
+  </div>
+</Base>
+<script>
+  import { hub, h, categoryLabel, iconEl, nameEl, starsEl, verifiedEl, num, l10nPackage, type Category, type Pkg } from "../scripts/marketplace";
+  import { t, tn } from "../i18n/client";
+
+  const PAGE = 24;
+  const list = document.getElementById("mk-list")!;
+  const count = document.getElementById("mk-count")!;
+  const more = document.getElementById("mk-more") as HTMLButtonElement;
+  const cats = document.getElementById("mk-cats")!;
+  const input = document.getElementById("mk-q") as HTMLInputElement;
+  const sortSel = document.getElementById("mk-sort") as HTMLSelectElement;
+
+  // State lives in the address, so searches can be shared and go back works.
+  const params = new URLSearchParams(location.search);
+  let q = params.get("q") ?? "";
+  let category = params.get("category") ?? "";
+  let sort = params.get("sort") ?? "relevance";
+  let offset = 0;
+  input.value = q;
+  sortSel.value = sort;
+
+  function remember() {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (category) p.set("category", category);
+    if (sort !== "relevance") p.set("sort", sort);
+    history.replaceState(null, "", location.pathname + (p.size ? "?" + p : ""));
+  }
+
+  function tile(p: Pkg): HTMLElement {
+    const meta = h(
+      "p",
+      { class: "mk-meta" },
+      starsEl(p.rating, p.ratingCount),
+      h("span", {}, tn("{n} install", "{n} installs", p.installs, { n: num(p.installs) })),
+      p.latest ? h("span", { class: "data" }, p.latest) : null,
+    );
+    const link = h("a", { class: "mk-tile-link", href: l10nPackage(p.name) }, nameEl(p.name));
+    return h(
+      "li",
+      { class: "mk-tile" },
+      iconEl(p, 52),
+      h("div", { class: "mk-tile-body" }, h("h3", {}, link, p.verified ? verifiedEl() : null), h("p", { class: "mk-desc" }, p.description), meta),
+    );
+  }
+
+  async function load(reset: boolean) {
+    if (reset) {
+      offset = 0;
+      list.replaceChildren();
+      count.textContent = t("Loading…");
+    }
+    remember();
+    const p = new URLSearchParams({ sort, limit: String(PAGE), offset: String(offset) });
+    if (q) p.set("q", q);
+    if (category) p.set("category", category);
+    try {
+      const { data, total } = await hub<Pkg[]>(`/registry/packages?${p}`);
+      list.append(...data.map(tile));
+      offset += data.length;
+      more.hidden = offset >= total;
+      if (!total) {
+        count.textContent = "";
+        list.replaceChildren(
+          h("li", { class: "mk-empty" }, q || category ? t("No modules match that yet. Try fewer words, or another category.") : t("Nothing is published on this hub yet. Be the first: publishing takes a few minutes.")),
+        );
+      } else {
+        count.textContent = q || category ? tn("{n} module matches", "{n} modules match", total, { n: num(total) }) : tn("{n} module", "{n} modules", total, { n: num(total) });
+      }
+    } catch (e) {
+      count.textContent = "";
+      list.replaceChildren(h("li", { class: "error" }, (e as Error).message));
+    }
+  }
+
+  function chip(id: string, label: string, n?: number) {
+    const b = h("button", { type: "button", class: "mk-chip", "aria-pressed": String(category === id) }, label, n !== undefined ? h("span", { class: "mk-chip-n" }, String(n)) : null);
+    b.addEventListener("click", () => {
+      category = category === id ? "" : id;
+      for (const c of cats.querySelectorAll("button")) c.setAttribute("aria-pressed", String(c === b ? category === id : c.dataset.id === category));
+      load(true);
+    });
+    b.dataset.id = id;
+    return b;
+  }
+
+  async function loadCategories() {
+    try {
+      const { data } = await hub<Category[]>("/registry/categories");
+      cats.replaceChildren(chip("", t("All")), ...data.filter((c) => c.count > 0 || c.id === category).map((c) => chip(c.id, categoryLabel(c.id), c.count)));
+    } catch {
+      cats.replaceChildren();
+    }
+  }
+
+  let timer: number | undefined;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      q = input.value.trim();
+      load(true);
+    }, 250);
+  });
+  document.getElementById("mk-search")!.addEventListener("submit", (e) => {
+    e.preventDefault();
+    q = input.value.trim();
+    load(true);
+  });
+  sortSel.addEventListener("change", () => {
+    sort = sortSel.value;
+    load(true);
+  });
+  more.addEventListener("click", () => load(false));
+  loadCategories();
+  load(true);
+</script>

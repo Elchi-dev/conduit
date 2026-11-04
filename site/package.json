@@ -7,7 +7,8 @@
     "dev": "astro dev",
     "copy-scripts": "node -e \"for (const f of ['install.sh','install.ps1']) require('fs').copyFileSync('../scripts/'+f, 'public/'+f)\"",
     "build": "pnpm run copy-scripts && astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "test:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
@@ -22,5 +23,6 @@
   },
   "devDependencies": {
     "yaml": "2.6.1"
-  }
+  },
+  "license": "MIT"
 }

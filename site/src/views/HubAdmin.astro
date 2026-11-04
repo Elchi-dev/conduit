@@ -1,0 +1,382 @@
+---
+import Base from "../layouts/Base.astro";
+import { i18n } from "../i18n";
+const { t, l, lang } = i18n(Astro.currentLocale);
+const en = lang !== "en" ? "en" : undefined;
+---
+<Base page="account" title={t("Hub admin")} description={t("Run this Conduit hub: accounts, devices and what it stores.")}>
+  <div class="wrap adm">
+    <p class="crumb"><a href={l("/account/")}>{t("Account")}</a></p>
+    <h1>{t("Hub admin")}</h1>
+    <p class="muted lead" id="lead">{t("Checking your account…")}</p>
+
+    <section id="console" hidden>
+      <dl class="tiles" id="tiles" aria-live="polite"></dl>
+
+      <div class="block">
+        <div class="block-head">
+          <h2>{t("Accounts")}</h2>
+          <span class="muted small" id="count"></span>
+        </div>
+        <form id="search" class="inline-form" role="search">
+          <label class="field"><span>{t("Search by email or name")}</span><input name="q" autocomplete="off" /></label>
+          <button class="btn sm" type="submit">{t("Search")}</button>
+        </form>
+        <div class="error" id="err" hidden></div>
+        <div class="table" id="rows" role="table" aria-label={t("Accounts")}>
+          <div class="tr th" role="row">
+            <span role="columnheader">{t("Account")}</span>
+            <span role="columnheader">{t("Devices")}</span>
+            <span role="columnheader">{t("Last sign-in")}</span>
+            <span role="columnheader">{t("State")}</span>
+            <span role="columnheader"><span class="visually-hidden">{t("Actions")}</span></span>
+          </div>
+        </div>
+        <button class="btn sm" id="more" hidden>{t("Show more")}</button>
+        <p class="muted small">
+          {t("Switching an account off ends its sessions, revokes its devices and keys and stops it signing in. Deleting it also removes its sync data, passkeys and memberships. The person is told by email either way.")}
+        </p>
+      </div>
+
+      <div class="block" aria-labelledby="reports-title">
+        <div class="block-head">
+          <h2 id="reports-title">{t("Marketplace reports")}</h2>
+          <a class="small" href="/docs/protocol/marketplace/" hreflang={en}>{t("Moderation policy")}</a>
+        </div>
+        <div id="reports"></div>
+        <p class="muted small">
+          {t("Yanking hides a version and tells every daemon that has it. Delisting takes the whole package out of search. Banning delists all of an author's packages and stops them publishing; their handle and key stay reserved, so nobody can pose as them. The author is told by email.")}
+        </p>
+      </div>
+    </section>
+  </div>
+</Base>
+<script>
+  import { token, api, ago, el } from "../scripts/hub";
+  import { accounts, bytes, disable, enable, remove, stats, type AdminAccount } from "../scripts/admin";
+  import { reportsQueue } from "../scripts/admin-reports";
+  import { t, tn } from "../i18n/client";
+
+  const $ = (id: string) => document.getElementById(id)!;
+  let me = "";
+  let q = "";
+  let shown = 0;
+
+  async function start() {
+    if (!token()) {
+      $("lead").textContent = t("Sign in on your account page first.");
+      return;
+    }
+    try {
+      const r = await api<{ account: { id: string; admin: boolean } }>("GET", "/me");
+      if (!r.account.admin) {
+        $("lead").textContent = t("This page is for the people who run this hub. Your account isn't one of its admins.");
+        return;
+      }
+      me = r.account.id;
+    } catch {
+      $("lead").textContent = t("Sign in on your account page first.");
+      return;
+    }
+    $("lead").textContent = t("Accounts, devices and what this hub stores.");
+    $("console").hidden = false;
+    loadStats();
+    load(true);
+    reportsQueue($("reports"), loadStats);
+  }
+
+  async function loadStats() {
+    try {
+      const s = await stats();
+      const tile = (label: string, value: string, sub?: string) =>
+        el("div", { class: "tile" }, el("dt", {}, label), el("dd", {}, el("span", { class: "num" }, value), sub ? el("span", { class: "muted small" }, sub) : ""));
+      $("tiles").replaceChildren(
+        tile(
+          t("Accounts"),
+          String(s.accounts),
+          [t("{n} confirmed", { n: s.verified }), tn("{n} admin", "{n} admins", s.admins), s.disabled ? t("{n} off", { n: s.disabled }) : ""].filter(Boolean).join(", "),
+        ),
+        tile(t("Daemons online"), String(s.daemonsOnline), t("of {n} paired", { n: s.daemons })),
+        tile(t("Devices"), String(s.devices), t("phones and computers")),
+        tile(t("Organisations"), String(s.orgs), t("teams on this hub")),
+        tile(t("Sync data"), bytes(s.syncBytes), tn("{n} blob", "{n} blobs", s.syncBlobs)),
+        tile(
+          t("Marketplace"),
+          String(s.packages),
+          [
+            tn("package", "packages", s.packages),
+            tn("{n} release", "{n} releases", s.releases),
+            s.openReports ? tn("{n} open report", "{n} open reports", s.openReports) : "",
+          ].filter(Boolean).join(", "),
+        ),
+      );
+    } catch (e) {
+      showErr(e);
+    }
+  }
+
+  function showErr(e: unknown) {
+    $("err").textContent = e instanceof Error ? e.message : String(e);
+    $("err").hidden = false;
+  }
+
+  async function load(reset: boolean) {
+    $("err").hidden = true;
+    if (reset) {
+      shown = 0;
+      $("rows").querySelectorAll(".tr:not(.th)").forEach((n) => n.remove());
+    }
+    try {
+      const page = await accounts(q, shown);
+      for (const a of page.items) $("rows").append(rowFor(a));
+      shown += page.items.length;
+      $("count").textContent = q ? tn("{n} account matches", "{n} accounts match", page.total) : tn("{n} account", "{n} accounts", page.total);
+      $("more").hidden = shown >= page.total;
+    } catch (e) {
+      showErr(e);
+    }
+  }
+
+  function rowFor(a: AdminAccount): HTMLElement {
+    const r = el("div", { class: "tr" });
+    r.setAttribute("role", "row");
+    const cell = (...kids: (Node | string)[]) => {
+      const c = el("span", {}, ...kids);
+      c.setAttribute("role", "cell");
+      return c;
+    };
+    const who = el("span", { class: "who" }, el("strong", {}, a.name || a.email), el("span", { class: "muted small data" }, a.email));
+    const tags: string[] = [];
+    if (a.admin) tags.push(t("admin"));
+    if (!a.verified) tags.push(t("unconfirmed"));
+    const state = a.disabled ? el("span", { class: "state off" }, t("Switched off")) : el("span", { class: "state" }, tags.length ? tags.join(", ") : t("Active"));
+    const actions = el("span", { class: "acts" });
+    if (a.id === me) {
+      actions.append(el("span", { class: "muted small" }, t("You")));
+    } else {
+      const toggle = el("button", { class: "btn sm", type: "button" }, a.disabled ? t("Switch on") : t("Switch off"));
+      toggle.onclick = () =>
+        confirmIn(
+          actions,
+          a.disabled ? t("Let {email} sign in again?", { email: a.email }) : t("Switch off {email}? Their sessions, devices and keys stop working.", { email: a.email }),
+          a.disabled ? t("Switch on") : t("Switch off"),
+          async () => {
+          const next = a.disabled ? await enable(a.id) : await disable(a.id);
+          r.replaceWith(rowFor({ ...a, disabled: next.disabled }));
+          loadStats();
+        });
+      const del = el("button", { class: "btn sm danger", type: "button" }, t("Delete"));
+      del.onclick = () =>
+        confirmIn(actions, t("Delete {email} and everything this hub keeps for it? This can't be undone.", { email: a.email }), t("Delete for good"), async () => {
+          await remove(a.id);
+          r.remove();
+          loadStats();
+        });
+      actions.append(toggle, del);
+    }
+    r.append(
+      cell(who),
+      cell(el("span", { class: "data" }, String(a.devices))),
+      cell(el("span", { class: "muted small" }, a.lastSignInAt ? ago(a.lastSignInAt) : t("never"))),
+      cell(state),
+      cell(actions),
+    );
+    return r;
+  }
+
+  /** Swap a row's buttons for a question with confirm and cancel. */
+  function confirmIn(box: HTMLElement, question: string, yes: string, run: () => Promise<void>) {
+    const before = [...box.childNodes];
+    const ok = el("button", { class: "btn sm danger", type: "button" }, yes);
+    const no = el("button", { class: "btn sm", type: "button" }, t("Cancel"));
+    const ask = el("span", { class: "ask small" }, question);
+    ok.onclick = async () => {
+      ok.disabled = no.disabled = true;
+      try {
+        await run();
+      } catch (e) {
+        showErr(e);
+        row?.classList.remove("confirming");
+        box.replaceChildren(...before);
+      }
+    };
+    const row = box.closest(".tr");
+    row?.classList.add("confirming");
+    no.onclick = () => {
+      row?.classList.remove("confirming");
+      box.replaceChildren(...before);
+    };
+    box.replaceChildren(ask, ok, no);
+    ok.focus();
+  }
+
+  $("search").addEventListener("submit", (e) => {
+    e.preventDefault();
+    q = String(new FormData(e.target as HTMLFormElement).get("q") ?? "").trim();
+    load(true);
+  });
+  $("more").addEventListener("click", () => load(false));
+  start();
+</script>
+<style is:global>
+  .adm {
+    padding-top: 40px;
+    padding-bottom: 64px;
+  }
+  .adm .crumb {
+    margin: 0 0 8px;
+    font-size: 15px;
+  }
+  .adm h1 {
+    font-size: 40px;
+    letter-spacing: -0.03em;
+    margin: 0 0 12px;
+    line-height: 1.1;
+  }
+  .adm h2 {
+    font-size: 21px;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .adm .lead {
+    font-size: 19px;
+    max-width: 34em;
+  }
+  .adm .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 1px;
+    margin: 28px 0 0;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .adm .tile {
+    background: var(--panel);
+    padding: 16px 18px;
+    display: grid;
+    align-content: start;
+    gap: 4px;
+  }
+  .adm .tile dt {
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .adm .tile dd {
+    margin: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .adm .num {
+    font-size: 28px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .adm .block {
+    margin-top: 40px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+  }
+  .adm .block-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .adm .inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+    margin: 12px 0 16px;
+  }
+  .adm .inline-form .field {
+    min-width: 260px;
+  }
+  .adm .table {
+    display: grid;
+  }
+  .adm .tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 70px 110px 130px 230px;
+    gap: 14px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .adm .th {
+    color: var(--muted);
+    font-size: 14px;
+    padding-top: 0;
+  }
+  .adm .who {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .adm .who > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .adm .state {
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .adm .state.off {
+    color: var(--signal);
+  }
+  .adm .acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: end;
+  }
+  .adm .ask {
+    flex-basis: 100%;
+    text-align: right;
+  }
+  .adm .tr.confirming > :last-child {
+    grid-column: 1 / -1;
+  }
+  .adm .small {
+    font-size: 14px;
+  }
+  .adm .btn.danger {
+    color: var(--fault);
+    border-color: color-mix(in srgb, var(--fault) 50%, transparent);
+  }
+  .adm #more {
+    margin-top: 14px;
+  }
+  .adm .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  @media (max-width: 760px) {
+    .adm .th {
+      display: none;
+    }
+    .adm .tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .adm .tr > :nth-child(2),
+    .adm .tr > :nth-child(3) {
+      display: none;
+    }
+    .adm .tr > :nth-child(5) {
+      grid-column: 1 / -1;
+    }
+    .adm .acts {
+      justify-content: start;
+    }
+    .adm .ask {
+      text-align: left;
+    }
+  }
+</style>

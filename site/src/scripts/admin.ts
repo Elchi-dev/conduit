@@ -1,6 +1,7 @@
 // The hub operator console (/account/admin/): talks to /v1/admin, which
 // answers only signed-in hub admins.
 import { api } from "./hub";
+import { dateLocale } from "../i18n/client";
 
 export type AdminStats = {
   accounts: number;
@@ -15,6 +16,8 @@ export type AdminStats = {
   syncBytes: number;
   packages: number;
   releases: number;
+  openReports?: number;
+  delisted?: number;
 };
 
 export type AdminAccount = {
@@ -51,5 +54,5 @@ export function bytes(n: number): string {
     v /= 1024;
     i++;
   }
-  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+  return `${(v < 10 ? Math.round(v * 10) / 10 : Math.round(v)).toLocaleString(dateLocale)} ${units[i]}`;
 }

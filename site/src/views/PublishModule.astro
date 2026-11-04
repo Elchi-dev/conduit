@@ -1,0 +1,129 @@
+---
+// How to publish a module to a hub's marketplace.
+import Base from "../layouts/Base.astro";
+import "../styles/marketplace.css";
+import { i18n } from "../i18n";
+const { t, l, lang } = i18n(Astro.currentLocale);
+const en = lang !== "en" ? "en" : undefined;
+
+const code = {
+  build: `package main
+
+import (
+	"github.com/elchi-dev/conduit/pkg/sdk"
+	"github.com/elchi-dev/conduit/pkg/sdk/wasm"
+)
+
+// weather is an sdk.Module: Manifest (id "acme-weather",
+// its actions and their risk), Configure, Invoke, Health, Close.
+var _ sdk.Module = weather{}
+
+func main() { wasm.Serve(weather{}) }
+
+// GOOS=wasip1 GOARCH=wasm go build -o weather.wasm`,
+  key: `openssl genpkey -algorithm ed25519 -out acme.pem
+PUB=$(openssl pkey -in acme.pem -pubout -outform DER | tail -c 32 | base64)
+
+curl -X POST https://hub.example/v1/registry/authors \\
+  -H "Authorization: Bearer $HUB_KEY" \\
+  -d '{"handle":"acme","publicKey":"'$PUB'"}'`,
+  publish: `cat > payload.json <<'EOF'
+{"name":"acme/weather","version":"1.0.0",
+ "description":"Forecasts for anywhere",
+ "manifest":{"permissions":{"network":["api.open-meteo.com"]}},
+ "artifacts":[{"platform":"wasm",
+   "url":"https://example.com/weather-1.0.0.wasm",
+   "sha256":"<sha256 of weather.wasm>"}]}
+EOF
+SIG=$(openssl pkeyutl -sign -inkey acme.pem -rawin -in payload.json | base64 -w0)
+
+curl -X POST https://hub.example/v1/registry/packages/acme%2Fweather/versions \\
+  -H "Authorization: Bearer $HUB_KEY" \\
+  -d '{"payload":"'$(base64 -w0 payload.json)'","signature":"'$SIG'"}'`,
+  listing: `curl -X PUT https://hub.example/v1/registry/packages/acme%2Fweather/listing \\
+  -H "Authorization: Bearer $HUB_KEY" \\
+  -d '{"readme":"# Weather\\n\\nForecasts on your home board.",
+       "categories":["home","monitoring"],
+       "tags":["weather","forecast"],
+       "source":"https://github.com/acme/weather",
+       "license":"MIT"}'`,
+};
+
+const steps = [
+  {
+    title: t("Write it once, run it anywhere Conduit runs"),
+    body: t("A module is a small program that tells Conduit what it can do: its actions, their risk, the settings it needs. Use the Go SDK, or any language that compiles to WASI. Name its id after your handle, like acme-weather."),
+    code: code.build,
+    link: ["/docs/protocol/sandbox/", t("Sandboxed modules")],
+  },
+  {
+    title: t("Claim your handle"),
+    body: t("Create an account on the hub, confirm your email and make a hub API key with the registry:publish scope. Then register your handle with an ed25519 public key. Your packages are named after the handle, and the key signs every version."),
+    code: code.key,
+    link: ["/docs/protocol/hub/", t("The hub protocol")],
+  },
+  {
+    title: t("Sign and publish a version"),
+    body: t("A version is a small signed document: the name, the version, the hosts it may reach and the SHA-256 of each build. Host the WebAssembly file anywhere on https. The hub checks your signature, and every daemon checks it again before installing."),
+    code: code.publish,
+    link: ["/docs/protocol/marketplace/", t("The marketplace")],
+  },
+  {
+    title: t("Make the listing shine"),
+    body: t("Add a readme in Markdown, up to three categories, tags, links, a license, a PNG or WebP icon and a few screenshots. You can change the listing whenever you like, without publishing a new version."),
+    code: code.listing,
+    link: ["/api/hub/", t("API reference")],
+  },
+];
+---
+<Base page="registry" title={t("Publish your module")} description={t("Publish a Conduit module: write it, sign it with your key, and it's one search away for everyone on the hub.")}>
+  <div class="wrap mk mk-pubpage">
+    <p class="crumb"><a href={l("/modules/")}>{t("Modules")}</a></p>
+    <header class="mk-hero">
+      <h1>{t("Publish your module.")}</h1>
+      <p class="lede">{t("You know a service Conduit doesn't speak yet. Teach it, and everyone on the hub can install it in a click, signed by you and sandboxed for them. It takes an afternoon.")}</p>
+    </header>
+
+    <ol class="mk-steps">
+      {steps.map((s) => (
+        <li>
+          <div class="mk-step-text">
+            <h2>{s.title}</h2>
+            <p>{s.body}</p>
+            <p class="small"><a href={l(s.link[0])} hreflang={s.link[0].startsWith("/docs/") ? en : undefined}>{s.link[1]}</a></p>
+          </div>
+          <pre class="mk-code"><code>{s.code}</code></pre>
+        </li>
+      ))}
+    </ol>
+
+    <section class="mk-promise" aria-labelledby="mk-why">
+      <h2 id="mk-why">{t("What your users get")}</h2>
+      <dl>
+        <div>
+          <dt>{t("Trust they can check")}</dt>
+          <dd>{t("They see your key's fingerprint and the hosts your module reaches before installing, and Conduit pins your key from then on.")}</dd>
+        </div>
+        <div>
+          <dt>{t("Updates in one click")}</dt>
+          <dd>{t("Publish a new version and every daemon that has your module offers the update.")}</dd>
+        </div>
+        <div>
+          <dt>{t("A real conversation")}</dt>
+          <dd>{t("Ratings, reviews and your replies sit right on the listing, so good work gets found.")}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="mk-publish">
+      <div>
+        <h2>{t("Ready when you are")}</h2>
+        <p>{t("Read the rules the marketplace runs on, then ship your first version.")}</p>
+      </div>
+      <div class="mk-publish-links">
+        <a class="btn primary" href="/docs/protocol/marketplace/" hreflang={en}>{t("Marketplace rules")}</a>
+        <a class="btn" href="/docs/protocol/external-modules/" hreflang={en}>{t("The module protocol")}</a>
+      </div>
+    </section>
+  </div>
+</Base>

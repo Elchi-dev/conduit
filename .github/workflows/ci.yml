@@ -95,6 +95,9 @@ jobs:
           cache-dependency-path: site/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile && pnpm build
         working-directory: site
+      - name: German translations complete
+        run: pnpm test:i18n
+        working-directory: site
 
   desktop:
     name: desktop (${{ matrix.os }})

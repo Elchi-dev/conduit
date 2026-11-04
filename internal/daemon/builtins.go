@@ -15,6 +15,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/backblaze"
 	"github.com/elchi-dev/conduit/modules/betterstack"
 	"github.com/elchi-dev/conduit/modules/bitbucket"
+	"github.com/elchi-dev/conduit/modules/bitwardensm"
 	"github.com/elchi-dev/conduit/modules/bluesky"
 	"github.com/elchi-dev/conduit/modules/bookstack"
 	"github.com/elchi-dev/conduit/modules/buildkite"
@@ -33,6 +34,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/docker"
+	"github.com/elchi-dev/conduit/modules/doppler"
 	"github.com/elchi-dev/conduit/modules/drone"
 	"github.com/elchi-dev/conduit/modules/esphome"
 	"github.com/elchi-dev/conduit/modules/files"
@@ -48,14 +50,17 @@ import (
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
 	"github.com/elchi-dev/conduit/modules/grafana"
+	"github.com/elchi-dev/conduit/modules/grocy"
 	"github.com/elchi-dev/conduit/modules/harbor"
 	"github.com/elchi-dev/conduit/modules/hashivault"
 	"github.com/elchi-dev/conduit/modules/healthchecks"
 	"github.com/elchi-dev/conduit/modules/hetzner"
 	"github.com/elchi-dev/conduit/modules/homeassistant"
+	"github.com/elchi-dev/conduit/modules/homebox"
 	"github.com/elchi-dev/conduit/modules/hue"
 	"github.com/elchi-dev/conduit/modules/huggingface"
 	"github.com/elchi-dev/conduit/modules/immich"
+	"github.com/elchi-dev/conduit/modules/infisical"
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
 	"github.com/elchi-dev/conduit/modules/jira"
@@ -66,6 +71,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/lemonsqueezy"
 	"github.com/elchi-dev/conduit/modules/linear"
+	"github.com/elchi-dev/conduit/modules/linkding"
 	"github.com/elchi-dev/conduit/modules/linode"
 	"github.com/elchi-dev/conduit/modules/listmonk"
 	"github.com/elchi-dev/conduit/modules/litellm"
@@ -79,6 +85,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mikrotik"
 	"github.com/elchi-dev/conduit/modules/milanote"
 	"github.com/elchi-dev/conduit/modules/miniflux"
+	"github.com/elchi-dev/conduit/modules/monica"
 	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
 	"github.com/elchi-dev/conduit/modules/navidrome"
@@ -93,6 +100,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/nut"
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ollama"
+	"github.com/elchi-dev/conduit/modules/onepassword"
 	"github.com/elchi-dev/conduit/modules/openaicompat"
 	"github.com/elchi-dev/conduit/modules/openrouter"
 	"github.com/elchi-dev/conduit/modules/openxbl"
@@ -100,6 +108,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/outline"
 	"github.com/elchi-dev/conduit/modules/pagerduty"
 	"github.com/elchi-dev/conduit/modules/paperless"
+	"github.com/elchi-dev/conduit/modules/photoprism"
 	"github.com/elchi-dev/conduit/modules/pihole"
 	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
@@ -127,6 +136,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/slack"
 	"github.com/elchi-dev/conduit/modules/snyk"
 	"github.com/elchi-dev/conduit/modules/sonarqube"
+	"github.com/elchi-dev/conduit/modules/sops"
 	"github.com/elchi-dev/conduit/modules/speedtest"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
@@ -279,6 +289,11 @@ func builtins(app *App) []sdk.Module {
 		nomad.New(),
 		datadog.New(),
 		hashivault.New(),
+		onepassword.New(),
+		bitwardensm.New(),
+		infisical.New(),
+		doppler.New(),
+		sops.New(),
 		consul.New(),
 		keycloak.New(),
 		harbor.New(),
@@ -344,6 +359,11 @@ func builtins(app *App) []sdk.Module {
 		comfyui.New(),
 		huggingface.New(),
 		openaicompat.New(),
+		photoprism.New(),
+		homebox.New(),
+		grocy.New(),
+		monica.New(),
+		linkding.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

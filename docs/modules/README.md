@@ -67,6 +67,7 @@ recommended policies.
 | Grafana | [grafana.md](grafana.md) | homelab, developer, team |
 | Portainer | [portainer.md](portainer.md) | homelab, developer |
 | Immich | [immich.md](immich.md) | homelab |
+| PhotoPrism | [photoprism.md](photoprism.md) | homelab |
 | Paperless-ngx | [paperless.md](paperless.md) | homelab |
 | n8n | [n8n.md](n8n.md) | homelab, developer, team |
 | Synology DSM | [synology.md](synology.md) | homelab |
@@ -98,6 +99,11 @@ recommended policies.
 | Nomad | [nomad.md](nomad.md) | homelab, developer, team |
 | Datadog | [datadog.md](datadog.md) | developer, team |
 | HashiCorp Vault (OpenBao) | [hashivault.md](hashivault.md) | homelab, developer, team |
+| 1Password Connect | [onepassword.md](onepassword.md) | homelab, developer, team |
+| Bitwarden Secrets Manager | [bitwardensm.md](bitwardensm.md) | developer, team |
+| Infisical | [infisical.md](infisical.md) | homelab, developer, team |
+| Doppler | [doppler.md](doppler.md) | developer, team |
+| SOPS files | [sops.md](sops.md) | developer, homelab |
 | Consul | [consul.md](consul.md) | homelab, developer, team |
 | Keycloak | [keycloak.md](keycloak.md) | homelab, team |
 | Harbor | [harbor.md](harbor.md) | homelab, developer, team |
@@ -120,6 +126,9 @@ recommended policies.
 | PostHog | [posthog.md](posthog.md) | team, developer |
 | Frigate | [frigate.md](frigate.md) | homelab |
 | Mealie | [mealie.md](mealie.md) | homelab |
+| Grocy | [grocy.md](grocy.md) | homelab |
+| Homebox | [homebox.md](homebox.md) | homelab |
+| Monica | [monica.md](monica.md) | homelab |
 | MQTT | [mqtt.md](mqtt.md) | homelab |
 | Navidrome (Subsonic) | [navidrome.md](navidrome.md) | homelab |
 | Audiobookshelf | [audiobookshelf.md](audiobookshelf.md) | homelab |
@@ -149,6 +158,7 @@ recommended policies.
 | Vikunja | [vikunja.md](vikunja.md) | homelab |
 | Firefly III | [firefly.md](firefly.md) | homelab |
 | Karakeep | [karakeep.md](karakeep.md) | homelab |
+| linkding | [linkding.md](linkding.md) | homelab |
 | wallabag | [wallabag.md](wallabag.md) | homelab |
 | Miniflux | [miniflux.md](miniflux.md) | homelab, developer |
 | FreshRSS | [freshrss.md](freshrss.md) | homelab |

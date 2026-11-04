@@ -129,6 +129,7 @@ var sensitiveUndo = map[string]string{
 	"firefly.create_transaction": "delete_transaction", // deletes the transaction it recorded, by id
 	"freshdesk.add_note":         "delete_note",        // deletes the note it added, by number
 	"hashivault.write_secret":    "restore_version",    // restores the version that was current
+	"monica.add_note":            "delete_note",        // deletes the note it added, by number
 	"nextcloud.share":            "unshare",            // removes the link by its id
 	"zammad.add_note":            "delete_note",        // deletes the note it added, by number
 }
@@ -141,6 +142,7 @@ var sensitiveUndoByID = map[string]bool{
 	"chatwoot.add_note":          true, // delete_note's preview quotes the note
 	"firefly.create_transaction": true, // delete_transaction's preview shows the transaction
 	"freshdesk.add_note":         true, // delete_note's preview quotes the note
+	"monica.add_note":            true, // delete_note's preview quotes the note
 	"zammad.add_note":            true, // delete_note's preview quotes the note
 }
 

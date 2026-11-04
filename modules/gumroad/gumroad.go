@@ -69,7 +69,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "sales", Title: "Sales", Description: "Recent sales: product, price, date, and whether it was refunded or disputed. No buyer emails or names.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"product":{"type":"string","description":"Only this product's sales"},"after":{"type":"string","description":"Only sales on or after this date (YYYY-MM-DD)"},"before":{"type":"string","description":"Only sales on or before this date (YYYY-MM-DD)"},"pageKey":{"type":"string","description":"nextPageKey of the previous page"}}}`)},
 			{Name: "subscribers", Title: "Subscriber count", Description: "How many subscribers a membership product has, by status (active, cancelling, failed payment, ended). Counts only, never who.", Risk: sdk.RiskRead, Input: sdk.Schema(product)},
-			{Name: "enable_product", Title: "Enable a product", Description: "Publishes a product so people can buy it again. Undo disables it.", Risk: sdk.RiskWrite, DryRun: true, Reversible: true, Input: sdk.Schema(product)},
+			{Name: "enable_product", Title: "Enable a product", Description: "Publishes a product so people can buy it. Destructive: Gumroad doesn't tell a disabled product from a draft that was never published, so this can put a draft on sale publicly. Undo disables it.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true, Input: sdk.Schema(product)},
 			{Name: "disable_product", Title: "Disable a product", Description: "Unpublishes a product so nobody can buy it; existing buyers keep access. The preview shows its price and sales. Undo enables it again.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true, Input: sdk.Schema(product)},
 		},
 	}

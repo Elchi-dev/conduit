@@ -156,15 +156,42 @@ func TestNPM(t *testing.T) {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	r, err = invoke(m, "disable", `{"id":1}`, false)
-	if err != nil || f.hosts[1]["enabled"] != 0 || r.Undo == nil || r.Undo.Action != "enable" || string(r.Undo.Input) != `{"id":1}` {
+	// Host 1 has custom nginx config and a location, so turning it back on
+	// is the destructive enable_advanced; the write enable refuses it.
+	if err != nil || f.hosts[1]["enabled"] != 0 || r.Undo == nil || r.Undo.Action != "enable_advanced" || string(r.Undo.Input) != `{"id":1}` {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.hosts[1]["enabled"] != 1 {
-		t.Fatal(err)
+	for _, dry := range []bool{true, false} {
+		if _, err := invoke(m, "enable", `{"id":1}`, dry); err == nil || !strings.Contains(err.Error(), "enable_advanced") || f.hosts[1]["enabled"] != 0 {
+			t.Fatal("enable turned on custom nginx config", err)
+		}
 	}
-	if r, _ := invoke(m, "enable", `{"id":1}`, false); r.Undo != nil {
+	r, err = invoke(m, r.Undo.Action, string(r.Undo.Input), false)
+	if err != nil || f.hosts[1]["enabled"] != 1 || r.Undo == nil || r.Undo.Action != "disable" || r.Undo.Description != "Disable the proxy host for app.example.com again" {
+		t.Fatalf("%+v %v", r.Undo, err)
+	}
+	if r, _ := invoke(m, "enable_advanced", `{"id":1}`, false); r.Undo != nil {
 		t.Fatal("no-op enable has an undo")
 	}
+	// A plain host and one forwarding to loopback.
+	f.hosts[2] = map[string]any{"id": 2, "domain_names": []string{"plain.example.com"}, "forward_scheme": "http", "forward_host": "10.0.0.7", "forward_port": 80, "enabled": 0}
+	f.hosts[3] = map[string]any{"id": 3, "domain_names": []string{"local.example.com"}, "forward_scheme": "http", "forward_host": "127.0.0.1", "forward_port": 9000, "enabled": 0}
+	r, err = invoke(m, "enable", `{"id":2}`, false)
+	if err != nil || f.hosts[2]["enabled"] != 1 || r.Undo == nil || r.Undo.Action != "disable" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	r, err = invoke(m, "disable", `{"id":2}`, false)
+	if err != nil || r.Undo == nil || r.Undo.Action != "enable" || r.Undo.Description != "Enable the proxy host for plain.example.com again" {
+		t.Fatalf("%+v %v", r.Undo, err)
+	}
+	if _, err := invoke(m, "enable", `{"id":3}`, false); err == nil || f.hosts[3]["enabled"] != 0 {
+		t.Fatal("enable published a loopback target", err)
+	}
+	if _, err := invoke(m, "enable_advanced", `{"id":3}`, false); err != nil || f.hosts[3]["enabled"] != 1 {
+		t.Fatal(err)
+	}
+	delete(f.hosts, 2)
+	delete(f.hosts, 3)
 
 	// Create, with a duplicate check, preview and undo.
 	if _, err := invoke(m, "create_proxy_host", `{"domains":["APP.example.com"],"forwardHost":"x","forwardPort":80}`, false); err == nil || !strings.Contains(err.Error(), "already served by proxy host 1") {
@@ -281,7 +308,7 @@ func TestNPMAdvancedConfigIsDestructive(t *testing.T) {
 	for _, a := range m.Manifest().Actions {
 		risk[a.Name] = a.Risk
 	}
-	if risk["create_proxy_host"] != sdk.RiskWrite || risk["create_proxy_host_advanced"] != sdk.RiskDestructive || risk["disable"] != sdk.RiskDestructive || risk["enable"] != sdk.RiskWrite {
+	if risk["create_proxy_host"] != sdk.RiskWrite || risk["create_proxy_host_advanced"] != sdk.RiskDestructive || risk["disable"] != sdk.RiskDestructive || risk["enable"] != sdk.RiskWrite || risk["enable_advanced"] != sdk.RiskDestructive {
 		t.Fatalf("%v", risk)
 	}
 	base := `"domains":["pwn.example.com"],"forwardPort":80`

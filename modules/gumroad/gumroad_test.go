@@ -146,6 +146,11 @@ func TestGumroad(t *testing.T) {
 		if a.Name == "disable_product" && (a.Risk != sdk.RiskDestructive || !a.DryRun) {
 			t.Fatal("disable_product must be destructive with a preview")
 		}
+		// disable_product's undo, but callable directly on a draft that was
+		// never published: putting it on sale is public and takes money.
+		if a.Name == "enable_product" && (a.Risk != sdk.RiskDestructive || !a.DryRun) {
+			t.Fatal("enable_product must be destructive with a preview")
+		}
 	}
 }
 

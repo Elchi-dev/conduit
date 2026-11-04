@@ -60,6 +60,16 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reply(w, rec)
 	case strings.HasPrefix(path, "/zones/z1/dns_records/"):
 		id := strings.TrimPrefix(path, "/zones/z1/dns_records/")
+		if r.Method == "GET" {
+			rec, ok := f.records[id]
+			if !ok {
+				w.WriteHeader(404)
+				fmt.Fprint(w, `{"success":false,"errors":[{"message":"not found"}]}`)
+				return
+			}
+			f.reply(w, rec)
+			return
+		}
 		if r.Method == "DELETE" {
 			delete(f.records, id)
 			f.reply(w, map[string]string{"id": id})
@@ -199,5 +209,43 @@ func TestControlRecordsNeedSetRecordAny(t *testing.T) {
 		if strings.HasSuffix(a.Name, "_any") && a.Risk != sdk.RiskDestructive {
 			t.Fatalf("%s is %s", a.Name, a.Risk)
 		}
+	}
+}
+
+// restore_record's replace only puts a record back over itself: it can't
+// rename or retype another record (that deletes it), least of all a control
+// record, which would get around restore_record_any.
+func TestRestoreRecordReplacesOnlyItself(t *testing.T) {
+	f := &fakeCF{records: map[string]Record{}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	m := New()
+	cfg, _ := json.Marshal(Config{Token: "secret://cf", API: srv.URL})
+	m.Configure(context.Background(), fakehost.New(map[string]string{"secret://cf": "cf"}), "cf", cfg)
+	run(t, m, "set_record_any", map[string]any{"zone": "example.com", "type": "TXT", "name": "_dmarc", "content": "v=DMARC1; p=reject"}, false)
+	run(t, m, "set_record", map[string]any{"zone": "example.com", "type": "A", "name": "www", "content": "1.2.3.4"}, false)
+	ids := map[string]string{}
+	for id, r := range f.records {
+		ids[r.Name] = id
+	}
+	for _, c := range []struct{ replace, typ, name string }{
+		{ids["_dmarc.example.com"], "TXT", "x.example.com"}, // a control record renamed away
+		{ids["_dmarc.example.com"], "A", "www.example.com"}, // retyped and renamed
+		{ids["www.example.com"], "A", "api.example.com"},    // another host renamed
+		{ids["www.example.com"], "TXT", "www.example.com"},  // retyped
+	} {
+		in, _ := json.Marshal(map[string]any{"zone": "example.com", "replace": c.replace, "record": map[string]any{"type": c.typ, "name": c.name, "content": "6.6.6.6"}})
+		if _, err := m.Invoke(context.Background(), sdk.Call{Instance: "cf", Action: "restore_record", Input: in}); err == nil || !strings.Contains(err.Error(), "over itself") {
+			t.Fatalf("restore_record over %s as %s %s: %v", c.replace, c.typ, c.name, err)
+		}
+	}
+	if f.records[ids["_dmarc.example.com"]].Content != "v=DMARC1; p=reject" || f.records[ids["www.example.com"]].Content != "1.2.3.4" {
+		t.Fatalf("records changed: %v", f.records)
+	}
+	// The real undo (same type and name) still works.
+	changed := run(t, m, "set_record", map[string]any{"zone": "example.com", "type": "A", "name": "www", "content": "5.6.7.8"}, false)
+	undo(t, m, changed)
+	if f.records[ids["www.example.com"]].Content != "1.2.3.4" {
+		t.Fatalf("undo didn't restore: %v", f.records)
 	}
 }

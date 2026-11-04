@@ -72,7 +72,7 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["zone","type","name","content"],"properties":{` + recordProps + `}}`)},
 			{Name: "delete_record", Title: "Delete a record", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","type","name"],"properties":{"zone":{"type":"string"},"type":{"type":"string"},"name":{"type":"string"}}}`)},
-			{Name: "restore_record", Title: "Restore a record", Description: "Puts back a record exactly as it was (used by undo).", Risk: sdk.RiskWrite, Reversible: true,
+			{Name: "restore_record", Title: "Restore a record", Description: "Puts back a record exactly as it was (used by undo); with replace, only over the record of the same type and name.", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","record"],"properties":{"zone":{"type":"string"},"record":{"type":"object","additionalProperties":true},"replace":{"type":"string"}}}`)},
 			{Name: "set_record_any", Title: "Create or change a control record", Description: "set_record for names that carry control over the domain: any label starting with _ (ACME, DKIM, DMARC, MTA-STS, TLS reporting, SRV, ownership proofs) and mta-sts, autodiscover, autoconfig and wpad hosts. The preview says what it controls.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["zone","type","name","content"],"properties":{` + recordProps + `}}`)},
@@ -406,7 +406,18 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		}
 		var got Record
 		if p.Replace != "" {
-			if err := a.call(ctx, "PUT", "/zones/"+zid+"/dns_records/"+p.Replace, nil, p.Record.body(), &got); err != nil {
+			// An undo puts a record back over itself (same type and name).
+			// Anything else would rename or retype another record, which
+			// deletes it (delete_record is destructive) and, for a control
+			// record, gets around restore_record_any.
+			var cur Record
+			if err := a.call(ctx, "GET", "/zones/"+zid+"/dns_records/"+url.PathEscape(p.Replace), nil, nil, &cur); err != nil {
+				return sdk.Result{}, err
+			}
+			if !strings.EqualFold(cur.Type, p.Record.Type) || fqdn(cur.Name, zone) != fqdn(p.Record.Name, zone) {
+				return sdk.Result{}, fmt.Errorf("record %s is %s %s, not %s %s: restore only puts a record back over itself (change another record with set_record, or delete it with delete_record, which is destructive)", p.Replace, cur.Type, cur.Name, p.Record.Type, p.Record.Name)
+			}
+			if err := a.call(ctx, "PUT", "/zones/"+zid+"/dns_records/"+url.PathEscape(p.Replace), nil, p.Record.body(), &got); err != nil {
 				return sdk.Result{}, err
 			}
 		} else if err := a.call(ctx, "POST", "/zones/"+zid+"/dns_records", nil, p.Record.body(), &got); err != nil {

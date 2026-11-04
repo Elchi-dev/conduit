@@ -96,7 +96,8 @@ func (m *Module) Manifest() sdk.Manifest {
 		Actions: []sdk.ActionSpec{
 			{Name: "proxy_hosts", Title: "Proxy hosts", Description: "Every proxy host: domains, where it forwards, SSL certificate and whether it's forced, access list, enabled, and nginx errors.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"query":{"type":"string","description":"Part of a domain or forward host"}}}`)},
-			{Name: "enable", Title: "Enable a proxy host", Description: "Turns a proxy host on. Undo disables it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
+			{Name: "enable", Title: "Enable a proxy host", Description: "Turns a proxy host on, unless it has custom nginx config or locations or forwards to a loopback address or NPM's admin UI (that's enable_advanced). Undo disables it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
+			{Name: "enable_advanced", Title: "Enable a proxy host with custom nginx config", Description: "Like enable, for a host with custom nginx config or locations, or one forwarding to a loopback address or NPM's admin UI: turning it on runs that configuration and publishes that target, as create_proxy_host_advanced does. Undo disables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
 			{Name: "disable", Title: "Disable a proxy host", Description: "Turns a proxy host off, so its domains stop being served. Undo enables it.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true, Input: sdk.Schema(id)},
 			{Name: "certificates", Title: "Certificates", Description: "SSL certificates with domains, provider and days until they expire, soonest first.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"withinDays":{"type":"integer","minimum":1,"maximum":3650,"description":"Only those expiring within this many days (expired included)"}}}`)},
@@ -358,7 +359,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		}
 		return sdk.JSON(out)
 
-	case "enable", "disable", "delete_proxy_host":
+	case "enable", "enable_advanced", "disable", "delete_proxy_host":
 		var p struct {
 			ID any `json:"id"`
 		}
@@ -377,25 +378,39 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if call.Action == "delete_proxy_host" {
 			return c.deleteHost(ctx, call.DryRun, h)
 		}
-		enabling := call.Action == "enable"
+		enabling := call.Action != "disable"
 		if bool(h.Enabled) == enabling {
 			return sdk.JSON(map[string]any{"id": id, "enabled": enabling, "note": "nothing to change"})
+		}
+		// Turning on custom config or a loopback target is what the
+		// destructive create_proxy_host_advanced does (an undo runs at its
+		// own action's risk, and enable can be called directly).
+		advanced := c.needsAdvanced(h)
+		if call.Action == "enable" && advanced {
+			return sdk.Result{}, fmt.Errorf("the proxy host for %s has custom nginx config or locations, or forwards to a loopback address or NPM's admin UI: use enable_advanced, which is destructive", h.name())
+		}
+		verb := "disable"
+		if enabling {
+			verb = "enable"
 		}
 		back := "disable"
 		if !enabling {
 			back = "enable"
+			if advanced {
+				back = "enable_advanced"
+			}
 		}
 		if call.DryRun {
 			b, _ := json.Marshal(map[string]bool{"enabled": !enabling})
 			a, _ := json.Marshal(map[string]bool{"enabled": enabling})
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s the proxy host for %s", strings.ToUpper(call.Action[:1])+call.Action[1:], h.name()),
-				Changes: []sdk.Change{{Target: "proxy host " + h.name(), Op: call.Action, Before: b, After: a}}}}, nil
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s the proxy host for %s", strings.ToUpper(verb[:1])+verb[1:], h.name()),
+				Changes: []sdk.Change{{Target: "proxy host " + h.name(), Op: verb, Before: b, After: a}}}}, nil
 		}
-		if err := c.do(ctx, http.MethodPost, "/nginx/proxy-hosts/"+strconv.Itoa(id)+"/"+call.Action, nil, nil, nil); err != nil {
+		if err := c.do(ctx, http.MethodPost, "/nginx/proxy-hosts/"+strconv.Itoa(id)+"/"+verb, nil, nil, nil); err != nil {
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"id": id, "domains": h.Domains, "enabled": enabling})
-		res.Undo = sdk.UndoWith(back, map[string]any{"id": id}, fmt.Sprintf("%s the proxy host for %s again", strings.ToUpper(back[:1])+back[1:], h.name()))
+		res.Undo = sdk.UndoWith(back, map[string]any{"id": id}, fmt.Sprintf("%s the proxy host for %s again", map[bool]string{true: "Disable", false: "Enable"}[enabling], h.name()))
 		return res, err
 
 	case "certificates":
@@ -437,6 +452,12 @@ func (c *conn) host(ctx context.Context, id int) (proxyHost, error) {
 	return h, nil
 }
 
+// needsAdvanced says the host has what only create_proxy_host_advanced may
+// publish: custom nginx config, custom locations or a loopback target.
+func (c *conn) needsAdvanced(h proxyHost) bool {
+	return strings.TrimSpace(h.AdvancedConfig) != "" || len(h.Locations) > 0 || c.internalTarget(h.ForwardHost, h.ForwardPort) != ""
+}
+
 func (c *conn) deleteHost(ctx context.Context, dry bool, h proxyHost) (sdk.Result, error) {
 	before, _ := json.Marshal(h.summary())
 	if dry {
@@ -459,7 +480,7 @@ func (c *conn) deleteHost(ctx context.Context, dry bool, h proxyHost) (sdk.Resul
 	// through the destructive create_proxy_host_advanced (an undo runs at its
 	// own action's risk).
 	action := "create_proxy_host"
-	if strings.TrimSpace(h.AdvancedConfig) != "" || len(h.Locations) > 0 || c.internalTarget(h.ForwardHost, h.ForwardPort) != "" {
+	if c.needsAdvanced(h) {
 		action = "create_proxy_host_advanced"
 	}
 	res, err := sdk.JSON(map[string]any{"deleted": h.ID, "domains": h.Domains})

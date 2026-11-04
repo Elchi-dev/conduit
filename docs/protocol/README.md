@@ -1,5 +1,7 @@
 # Protocol
 
+<p align="center"><img src="../images/ori/thinking.svg" width="120" alt="Ori thinking"></p>
+
 Conduit's protocol is open, like git's. The default hub is one implementation;
 anyone can run another, and daemons work without any hub.
 

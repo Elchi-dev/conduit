@@ -18,7 +18,7 @@ owner and a company equally; never tailor it to one setup.
   https://github.com/Elchi-dev/conduit/releases
 - **Ready for v1.1.0 (on main, not released):** 331 built-in modules,
   security reviews 8–47 and two sweeps of every module fixed (see
-  BUILD_LOG.md). Notes are in `docs/releases/v1.1.0.md`. Main passes the
+  docs/BUILD_LOG.md). Notes are in `docs/releases/v1.1.0.md`. Main passes the
   full local check (Go race tests, web and site builds with i18n, 51
   browser tests, upgrades from every release including v1.0.0).
 - **To release v1.1.0:** GitHub Actions has started no jobs since 06:43 CET
@@ -68,7 +68,7 @@ owner and a company equally; never tailor it to one setup.
 
 - **Never ask the owner anything during the build** (owner, 4 Nov 02:33:
   "work 100% on your own"). Take the most reasonable choice, note it in
-  BUILD_LOG.md, and keep going. If a helper is stopped, restart the work.
+  docs/BUILD_LOG.md, and keep going. If a helper is stopped, restart the work.
   Target: v1.0.0 with as many modules as possible by Thu 5 Nov 00:00 CET.
 
 - Go for daemon, hub and APIs (ADR 0001). Pure Go only; `CGO_ENABLED=0` builds.
@@ -78,7 +78,7 @@ owner and a company equally; never tailor it to one setup.
 - Conventional commits (`feat:`, `fix:`, `docs:`, `chore:` …). No attribution
   trailers or tool signatures in commits, pull requests or files.
 - Document as you go: a page in `docs/` per subsystem and module, an ADR for
-  every non-obvious choice, an entry in BUILD_LOG.md per phase.
+  every non-obvious choice, an entry in docs/BUILD_LOG.md per phase.
 
 ## Decisions waiting on the owner
 

@@ -1,5 +1,7 @@
 # Guides
 
+<p align="center"><img src="../images/ori/planning.svg" width="120" alt="Ori holding a checklist"></p>
+
 Step-by-step walkthroughs for the most common setups. Each takes about
 fifteen minutes and assumes Conduit is installed ([install.md](../install.md))
 and you've created the owner account.

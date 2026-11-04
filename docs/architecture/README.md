@@ -1,5 +1,7 @@
 # Architecture
 
+<p align="center"><img src="../images/ori/drawing.svg" width="120" alt="Ori holding up a sticky note"></p>
+
 Conduit is a daemon that hosts modules behind one contract, an optional hub
 that connects daemons and devices, and thin clients (web, desktop, Android)
 that render what the daemon describes.
@@ -41,3 +43,6 @@ takes the same path:
 
 Pages are written as each subsystem lands. Non-obvious choices are recorded as
 [ADRs](adr/).
+
+The one-page overview with a diagram is [ARCHITECTURE.md](../ARCHITECTURE.md);
+every decision, newest first, is in [DECISIONS.md](../DECISIONS.md).

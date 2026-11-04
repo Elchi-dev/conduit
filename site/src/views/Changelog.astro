@@ -13,7 +13,7 @@ const [b, c] = rest.split("{log}");
   <div class="wrap log">
     <header class="log-head">
       <h1>{t("Changelog")}</h1>
-      <p class="lede">{a}<a href={l("/download/")}>{t("download page")}</a>{b}<a href="https://github.com/Elchi-dev/conduit/blob/main/BUILD_LOG.md">{t("build log")}</a>{c}</p>
+      <p class="lede">{a}<a href={l("/download/")}>{t("download page")}</a>{b}<a href="https://github.com/Elchi-dev/conduit/blob/main/docs/BUILD_LOG.md">{t("build log")}</a>{c}</p>
       {lang !== "en" && <p class="lede note-en">{t("The release notes below are in English.")}</p>}
     </header>
     {rendered.length === 0 && <p class="muted">{t("No releases yet.")}</p>}

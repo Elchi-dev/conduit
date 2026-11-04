@@ -1,5 +1,7 @@
 # Modules
 
+<p align="center"><img src="../images/ori/helpers.svg" width="120" alt="Ori with little helper stars riding its ring"></p>
+
 One page per module: setup, actions with risk levels, resources, events and
 recommended policies.
 

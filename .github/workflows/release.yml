@@ -36,7 +36,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes="docs/releases/$TAG.md"
-          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --notes "See BUILD_LOG.md for what changed."; fi
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --notes "See docs/BUILD_LOG.md for what changed."; fi
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "Conduit $TAG" "$@"
 
   binaries:

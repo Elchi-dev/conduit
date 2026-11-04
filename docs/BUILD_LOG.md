@@ -1,5 +1,7 @@
 # Build log
 
+<p align="center"><img src="images/ori/writing.svg" width="120" alt="Ori scribbling with a pencil"></p>
+
 Newest first. One entry per phase: what landed, what changed from the plan,
 and why.
 

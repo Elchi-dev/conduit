@@ -1,5 +1,7 @@
 # Backups
 
+<p align="center"><img src="images/ori/camera.svg" width="120" alt="Ori taking a picture"></p>
+
 A backup is one encrypted file (`.cdb`) with everything a daemon has:
 settings, module instances, agent rules, keys, automations, the audit log,
 sync state, notes and sandboxed modules, and the vault. The vault inside

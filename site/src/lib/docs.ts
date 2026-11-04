@@ -9,6 +9,7 @@ const files = import.meta.glob<MdModule>("../../../docs/**/*.md", { eager: true 
 export type Doc = { slug: string; file: string; title: string; section: string; html: () => Promise<string> };
 
 const REPO = "https://github.com/Elchi-dev/conduit/blob/main/";
+const RAW = "https://raw.githubusercontent.com/Elchi-dev/conduit/main/";
 
 export const sections: [string, string][] = [
   ["start", "Getting started"],
@@ -38,6 +39,11 @@ function titleOf(raw: string, file: string): string {
 /** Rewrite links between docs to site URLs, and repo files to GitHub. */
 function rewrite(html: string, file: string): string {
   const dir = path.posix.dirname("docs/" + file);
+  // Images in docs (Ori, screenshots) are served from the repository.
+  html = html.replace(/src="([^"#:]+?)"/g, (whole, target: string) => {
+    if (target.startsWith("/")) return whole;
+    return `src="${RAW}${path.posix.normalize(path.posix.join(dir, target))}"`;
+  });
   return html.replace(/href="([^"#:]+?)(#[^"]*)?"/g, (whole, target: string, hash = "") => {
     if (target.startsWith("/") || target.startsWith("http")) return whole;
     const abs = path.posix.normalize(path.posix.join(dir, target));

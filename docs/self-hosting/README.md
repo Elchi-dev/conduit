@@ -1,5 +1,7 @@
 # Self-hosting a hub
 
+<p align="center"><img src="../images/ori/searching.svg" width="120" alt="Ori looking through a telescope"></p>
+
 A hub lets your devices reach your Conduit daemons from anywhere, keeps
 encrypted sync blobs, lists modules and serves updates. Each hub is
 independent: its operator owns its accounts, its mail settings and its data.

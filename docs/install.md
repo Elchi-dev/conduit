@@ -1,5 +1,7 @@
 # Install
 
+<p align="center"><img src="images/ori/hi.svg" width="120" alt="Ori waving hi"></p>
+
 The desktop app (Windows, macOS, Linux) and the Android app are on the
 [releases page](https://github.com/Elchi-dev/conduit/releases) and every
 hub's Download page. To run only the daemon, or a hub, on a server or a

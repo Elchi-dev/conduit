@@ -1,5 +1,7 @@
 # Command-line client
 
+<p align="center"><img src="images/ori/working.svg" width="120" alt="Ori typing on a laptop"></p>
+
 `conduit` talks to a daemon's API with an API key: run actions, follow live
 events, read the audit log and approvals from a terminal or a script. It is
 a program like any other, so everything it does goes through your agent and

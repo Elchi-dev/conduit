@@ -75,6 +75,7 @@ const switchTitle = both ? other.label : translator(other.id).t("German home pag
         <a href={l("/api/")}>{t("API reference")}</a>
         <a href={l("/changelog/")}>{t("Changelog")}</a>
         <a href="https://github.com/Elchi-dev/conduit">{t("Source")}</a>
+        <a href="https://github.com/Elchi-dev/conduit#built-with-ai">{t("An AI-assisted project")}</a>
         <a href={switchHref} hreflang={other.id} lang={other.id} data-same={both ? "" : undefined}>{other.label}</a>
         {lang !== "en" && <span class="foot-note">{t("The documentation and the API references are in English.")}</span>}
       </div>

@@ -47,6 +47,7 @@ const de: Record<string, string> = {
   "Changelog": "Änderungen",
   "Source": "Quellcode",
   "The documentation and the API references are in English.": "Die Dokumentation und die API-Referenzen sind auf Englisch.",
+  "An AI-assisted project": "Ein mit KI entwickeltes Projekt",
 
   // ---- shared browser helpers (scripts/hub.ts) ----
   "just now": "gerade eben",

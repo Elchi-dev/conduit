@@ -1,5 +1,7 @@
 # API
 
+<p align="center"><img src="../images/ori/reading.svg" width="120" alt="Ori looking closely through a magnifying glass"></p>
+
 Conduit has five API layers behind one key system. Specs live in
 `api/openapi/`; the TypeScript client is generated from them, and tests keep the Go routes and the specs in step.
 

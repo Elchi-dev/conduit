@@ -27,6 +27,7 @@ type fakeNeon struct {
 	seen     []string
 	branches []map[string]any
 	state    string
+	pageSize int // pages the branch list when set
 }
 
 func (f *fakeNeon) endpoint() map[string]any {
@@ -53,7 +54,15 @@ func (f *fakeNeon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET " + pp:
 		fmt.Fprintf(w, `{"project":{"id":%q,"name":"shop","compute_time_seconds":7200,"active_time_seconds":3600,"cpu_used_sec":900,"synthetic_storage_size":1073741824,"written_data_bytes":2048,"data_transfer_bytes":4096,"consumption_period_start":"2026-11-01T00:00:00Z","consumption_period_end":"2026-12-01T00:00:00Z"}}`, proj)
 	case "GET " + pp + "/branches":
-		enc.Encode(map[string]any{"branches": f.branches})
+		if f.pageSize == 0 {
+			enc.Encode(map[string]any{"branches": f.branches})
+			return
+		}
+		start := 0
+		fmt.Sscan(r.URL.Query().Get("cursor"), &start)
+		end := min(start+f.pageSize, len(f.branches))
+		start = min(start, end)
+		enc.Encode(map[string]any{"branches": f.branches[start:end], "pagination": map[string]any{"next": fmt.Sprint(end)}})
 	case "GET " + pp + "/endpoints":
 		enc.Encode(map[string]any{"endpoints": []any{f.endpoint()}})
 	case "GET " + pp + "/endpoints/ep-cool-darkness-123456":
@@ -257,5 +266,24 @@ func TestNeonRefusesCrossHostRedirect(t *testing.T) {
 	}
 	if h := m.Health(context.Background(), "n"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
+	}
+}
+
+func TestNeonBranchPages(t *testing.T) {
+	m, f := setup(t, "secret://neon")
+	f.pageSize = 1
+	// The default branch comes last, on the third page.
+	f.branches[0], f.branches[2] = f.branches[2], f.branches[0]
+	r, err := invoke(m, "branches", `{"project":"`+proj+`"}`, false)
+	if err != nil || strings.Count(string(r.Output), `"id":`) != 3 {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	r, err = invoke(m, "create_branch", `{"project":"`+proj+`","name":"dev"}`, false)
+	if err != nil || !strings.Contains(string(r.Output), "nothing to change") {
+		t.Fatalf("%s %v", r.Output, err)
+	}
+	r, err = invoke(m, "create_branch", `{"project":"`+proj+`","name":"other"}`, true)
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "from main") {
+		t.Fatalf("%+v %v", r.Plan, err)
 	}
 }

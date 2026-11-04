@@ -303,14 +303,40 @@ func (c *conn) project(ctx context.Context, id string) (project, error) {
 	return res.Project, nil
 }
 
+// branches lists a project's branches, following Neon's pagination.next
+// cursor (bounded); a branch seen twice is kept once.
 func (c *conn) branches(ctx context.Context, pid string) ([]branch, error) {
-	var res struct {
-		Branches []branch `json:"branches"`
+	var all []branch
+	seen := map[string]bool{}
+	cursor := ""
+	for page := 0; page < 20; page++ {
+		var q url.Values
+		if cursor != "" {
+			q = url.Values{"cursor": {cursor}}
+		}
+		var res struct {
+			Branches   []branch `json:"branches"`
+			Pagination *struct {
+				Next string `json:"next"`
+			} `json:"pagination"`
+		}
+		if err := c.do(ctx, http.MethodGet, "/projects/"+url.PathEscape(pid)+"/branches", q, nil, &res); err != nil {
+			return nil, notFound(err, "project "+pid)
+		}
+		added := 0
+		for _, b := range res.Branches {
+			if !seen[b.ID] {
+				seen[b.ID] = true
+				all = append(all, b)
+				added++
+			}
+		}
+		if added == 0 || res.Pagination == nil || res.Pagination.Next == "" || res.Pagination.Next == cursor {
+			break
+		}
+		cursor = res.Pagination.Next
 	}
-	if err := c.do(ctx, http.MethodGet, "/projects/"+url.PathEscape(pid)+"/branches", nil, nil, &res); err != nil {
-		return nil, notFound(err, "project "+pid)
-	}
-	return res.Branches, nil
+	return all, nil
 }
 
 func (c *conn) branch(ctx context.Context, pid, bid string) (branch, error) {
@@ -537,7 +563,7 @@ func (c *conn) createBranch(ctx context.Context, call sdk.Call, pid string, p in
 		if b.Name == name {
 			return sdk.JSON(map[string]any{"project": pid, "branch": b.ID, "name": b.Name, "note": "nothing to change: a branch with this name exists"})
 		}
-		if (parent == "" && b.isDefault()) || b.ID == parent {
+		if parentName == "" && ((parent == "" && b.isDefault()) || b.ID == parent) {
 			parentName = b.Name
 			if parent == "" {
 				parent = b.ID

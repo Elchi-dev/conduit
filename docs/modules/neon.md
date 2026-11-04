@@ -28,7 +28,7 @@ Neon includes when a branch is created are never read. The key goes in the
 host. Project, branch (`br-…`), compute (`ep-…`) and organization ids are
 checked before they reach a request path.
 
-**Notes.** Branch creation and computes start asynchronously; the result
+**Notes.** Branch lists follow Neon's pagination (up to 20 pages). Branch creation and computes start asynchronously; the result
 lists Neon's operations and their status. Neon itself refuses to delete a
 branch that has child branches.
 

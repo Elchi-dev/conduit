@@ -14,8 +14,8 @@ its `secret://` reference. Set `organization` to the organization's slug
 | `groups` | read | Groups with their primary location, locations, version, archived, delete protection and how many databases each holds. |
 | `locations` | read | The location codes Turso offers with their names. |
 | `usage` | read | Rows read and written, storage and bytes synced this period, with database, location and group counts, and the same per database (by name), largest first. With `database`, that database alone. |
-| `create_database` | write | Creates an empty database `name` in `group` (default `default`). The preview names the group's locations. If the database exists, nothing changes. Undo deletes it, which is destructive and asks again. |
-| `delete_database` | destructive | Deletes a `database` with its data and replicas. The preview names its group and locations. A database with delete protection is refused. |
+| `create_database` | write | Creates an empty database `name` in `group` (default `default`). The preview names the group's locations. If the database exists, nothing changes. Undo deletes it by name and id, so it never deletes a database of the same name created later; it is destructive and asks again. |
+| `delete_database` | destructive | Deletes a `database` with its data and replicas. The preview names its group and locations. A database with delete protection is refused, and so is one whose id isn't `id` when that is given. |
 
 **Security.** Database auth tokens are never created or returned, and
 answers are decoded field by field. The token goes in the `Authorization`

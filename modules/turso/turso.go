@@ -81,7 +81,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "create_database", Title: "Create a database", Description: "Creates an empty database in a group (default: default). It counts toward the plan's database and storage limits. Undo deletes it, with anything written to it since.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["name"],"properties":{"name":{"type":"string","description":"New database name: lowercase letters, digits and dashes"},"group":{"type":"string","default":"default","description":"Group to create it in (see groups)"}}}`)},
 			{Name: "delete_database", Title: "Delete a database", Description: "Deletes a database with its data and replicas, for good. A database with delete protection is refused.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["database"],"properties":{` + db + `}}`)},
+				Input: sdk.Schema(`{"type":"object","required":["database"],"properties":{` + db + `,"id":{"type":"string","description":"Refuse unless the database's id (DbId) is this one; undo sets it"}}}`)},
 		},
 	}
 }
@@ -268,6 +268,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		Database string `json:"database"`
 		Name     string `json:"name"`
 		Group    string `json:"group"`
+		ID       string `json:"id"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
 		return sdk.Result{}, err
@@ -411,7 +412,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		return c.delete(ctx, call, name)
+		return c.delete(ctx, call, name, strings.TrimSpace(p.ID))
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
@@ -456,17 +457,26 @@ func (c *conn) create(ctx context.Context, call sdk.Call, name, group string) (s
 		return sdk.Result{}, err
 	}
 	out, err := sdk.JSON(map[string]any{"database": name, "id": res.Database.ID, "host": res.Database.Hostname, "group": group, "created": true})
-	out.Undo = sdk.UndoWith("delete_database", map[string]string{"database": name}, "Delete database "+name)
+	// The undo names the id too, so it can't delete a database of the same
+	// name created after this one was deleted.
+	undo := map[string]string{"database": name}
+	if res.Database.ID != "" {
+		undo["id"] = res.Database.ID
+	}
+	out.Undo = sdk.UndoWith("delete_database", undo, "Delete database "+name)
 	return out, err
 }
 
-func (c *conn) delete(ctx context.Context, call sdk.Call, name string) (sdk.Result, error) {
+func (c *conn) delete(ctx context.Context, call sdk.Call, name, id string) (sdk.Result, error) {
 	d, ok, err := c.database(ctx, name)
 	if err != nil {
 		return sdk.Result{}, err
 	}
 	if !ok {
 		return sdk.Result{}, fmt.Errorf("there's no database %s", name)
+	}
+	if id != "" && d.ID != id {
+		return sdk.Result{}, fmt.Errorf("database %s has another id than the one given (it was deleted and created again?); nothing deleted", name)
 	}
 	if d.DeleteProtection {
 		return sdk.Result{}, fmt.Errorf("%s has delete protection; turn it off in Turso first", name)

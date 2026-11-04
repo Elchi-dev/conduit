@@ -132,7 +132,7 @@ func TestTursoCreateDelete(t *testing.T) {
 		t.Fatal("created on a dry run")
 	}
 	r, err = invoke(m, "create_database", `{"name":"fresh"}`, false)
-	if _, ok := f.dbs["fresh"]; err != nil || !ok || r.Undo == nil || r.Undo.Action != "delete_database" || string(r.Undo.Input) != `{"database":"fresh"}` {
+	if _, ok := f.dbs["fresh"]; err != nil || !ok || r.Undo == nil || r.Undo.Action != "delete_database" || string(r.Undo.Input) != `{"database":"fresh","id":"id-fresh"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if r, err := invoke(m, "create_database", `{"name":"fresh"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") || r.Undo != nil {
@@ -147,6 +147,13 @@ func TestTursoCreateDelete(t *testing.T) {
 	}
 	if _, ok := f.dbs["fresh"]; ok {
 		t.Fatal("not deleted")
+	}
+	// An undo naming another id (the database was replaced) deletes nothing.
+	if _, err := invoke(m, "delete_database", `{"database":"app","id":"id-older"}`, false); err == nil || !strings.Contains(err.Error(), "nothing deleted") {
+		t.Fatal(err)
+	}
+	if _, ok := f.dbs["app"]; !ok {
+		t.Fatal("deleted a database with another id")
 	}
 	if _, err := invoke(m, "delete_database", `{"database":"kept"}`, false); err == nil || !strings.Contains(err.Error(), "delete protection") {
 		t.Fatal(err)

@@ -122,6 +122,10 @@ recommended policies.
 | Supabase | [supabase.md](supabase.md) | developer |
 | Render | [render.md](render.md) | developer |
 | Railway | [railway.md](railway.md) | developer |
+| Neon | [neon.md](neon.md) | developer |
+| Turso | [turso.md](turso.md) | developer |
+| Upstash | [upstash.md](upstash.md) | developer |
+| PlanetScale | [planetscale.md](planetscale.md) | developer |
 | Unraid | [unraid.md](unraid.md) | homelab |
 | Jenkins | [jenkins.md](jenkins.md) | developer, team |
 | Bitbucket | [bitbucket.md](bitbucket.md) | developer, team |

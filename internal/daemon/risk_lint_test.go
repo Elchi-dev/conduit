@@ -40,6 +40,10 @@ var riskLintAllow = map[string]string{
 	"render.deploy":         "read: one deploy's status",
 	"qbittorrent.transfer":  "read: transfer speeds and totals",
 
+	// PlanetScale deploy requests are reviewable records; deploying one isn't offered.
+	"planetscale.deploy_requests": "read: lists a database's deploy requests",
+	"planetscale.deploy_request":  "read: one deploy request's state and notes; nothing is deployed",
+
 	// Media playback, nothing is lost or interrupted beyond what's playing.
 	"kodi.stop":        "stops media playback on a player",
 	"spotify.pause":    "pauses playback; undo resumes it",

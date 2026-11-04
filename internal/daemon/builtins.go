@@ -148,6 +148,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
 	"github.com/elchi-dev/conduit/modules/navidrome"
+	"github.com/elchi-dev/conduit/modules/neon"
 	"github.com/elchi-dev/conduit/modules/netbird"
 	"github.com/elchi-dev/conduit/modules/netbox"
 	"github.com/elchi-dev/conduit/modules/netdata"
@@ -184,6 +185,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/photoprism"
 	"github.com/elchi-dev/conduit/modules/pihole"
 	"github.com/elchi-dev/conduit/modules/plane"
+	"github.com/elchi-dev/conduit/modules/planetscale"
 	"github.com/elchi-dev/conduit/modules/plausible"
 	"github.com/elchi-dev/conduit/modules/plex"
 	"github.com/elchi-dev/conduit/modules/pocketbase"
@@ -245,6 +247,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/transmission"
 	"github.com/elchi-dev/conduit/modules/trello"
 	"github.com/elchi-dev/conduit/modules/truenas"
+	"github.com/elchi-dev/conduit/modules/turso"
 	"github.com/elchi-dev/conduit/modules/twilio"
 	"github.com/elchi-dev/conduit/modules/twitch"
 	"github.com/elchi-dev/conduit/modules/umami"
@@ -252,6 +255,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/unleash"
 	"github.com/elchi-dev/conduit/modules/unraid"
 	"github.com/elchi-dev/conduit/modules/upcloud"
+	"github.com/elchi-dev/conduit/modules/upstash"
 	"github.com/elchi-dev/conduit/modules/uptimekuma"
 	"github.com/elchi-dev/conduit/modules/uptimerobot"
 	"github.com/elchi-dev/conduit/modules/vastai"
@@ -380,6 +384,10 @@ func builtins(app *App) []sdk.Module {
 		supabase.New(),
 		render.New(),
 		railway.New(),
+		neon.New(),
+		turso.New(),
+		upstash.New(),
+		planetscale.New(),
 		unraid.New(),
 		jenkins.New(),
 		frigate.New(),

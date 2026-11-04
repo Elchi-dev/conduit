@@ -12,6 +12,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/arr"
 	"github.com/elchi-dev/conduit/modules/asana"
 	"github.com/elchi-dev/conduit/modules/audiobookshelf"
+	"github.com/elchi-dev/conduit/modules/auth0"
 	"github.com/elchi-dev/conduit/modules/authentik"
 	"github.com/elchi-dev/conduit/modules/aws"
 	"github.com/elchi-dev/conduit/modules/azure"
@@ -108,6 +109,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
 	"github.com/elchi-dev/conduit/modules/jira"
+	"github.com/elchi-dev/conduit/modules/kanidm"
 	"github.com/elchi-dev/conduit/modules/karakeep"
 	"github.com/elchi-dev/conduit/modules/kavita"
 	"github.com/elchi-dev/conduit/modules/keycloak"
@@ -127,6 +129,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/linode"
 	"github.com/elchi-dev/conduit/modules/listmonk"
 	"github.com/elchi-dev/conduit/modules/litellm"
+	"github.com/elchi-dev/conduit/modules/lldap"
 	"github.com/elchi-dev/conduit/modules/loki"
 	"github.com/elchi-dev/conduit/modules/mail"
 	"github.com/elchi-dev/conduit/modules/mailchimp"
@@ -168,6 +171,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/obs"
 	"github.com/elchi-dev/conduit/modules/ocis"
 	"github.com/elchi-dev/conduit/modules/octoprint"
+	"github.com/elchi-dev/conduit/modules/okta"
 	"github.com/elchi-dev/conduit/modules/ollama"
 	"github.com/elchi-dev/conduit/modules/omada"
 	"github.com/elchi-dev/conduit/modules/onepassword"
@@ -521,6 +525,10 @@ func builtins(app *App) []sdk.Module {
 		headscale.New(),
 		netbird.New(),
 		zitadel.New(),
+		okta.New(),
+		auth0.New(),
+		kanidm.New(),
+		lldap.New(),
 		restic.New(),
 		kopia.New(),
 		youtube.New(),

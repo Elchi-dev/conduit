@@ -106,6 +106,10 @@ recommended policies.
 | Traefik | [traefik.md](traefik.md) | homelab, developer |
 | authentik | [authentik.md](authentik.md) | homelab, team |
 | Zitadel | [zitadel.md](zitadel.md) | team, homelab |
+| Okta | [okta.md](okta.md) | team |
+| Auth0 | [auth0.md](auth0.md) | team, developer |
+| Kanidm | [kanidm.md](kanidm.md) | homelab, team |
+| LLDAP | [lldap.md](lldap.md) | homelab |
 | Todoist | [todoist.md](todoist.md) | developer, team |
 | Trello | [trello.md](trello.md) | team, developer |
 | Notion | [notion.md](notion.md) | team, developer |

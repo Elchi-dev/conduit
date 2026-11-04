@@ -196,3 +196,22 @@ func TestPushoverRefusesCrossHostRedirect(t *testing.T) {
 		noSecret(t, err.Error())
 	}
 }
+
+func TestPushoverTransportErrorHidesToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, _, _ := w.(http.Hijacker).Hijack()
+		c.Close()
+	}))
+	defer srv.Close()
+	m := New()
+	m.Base = srv.URL
+	raw, _ := json.Marshal(Config{AppToken: "secret://t", UserKey: "secret://u"})
+	if err := m.Configure(context.Background(), fakehost.New(map[string]string{"secret://t": goodTok, "secret://u": goodUser}), "p", raw); err != nil {
+		t.Fatal(err)
+	}
+	_, err := invoke(m, "limits", `{}`, false)
+	if err == nil {
+		t.Fatal("no error")
+	}
+	noSecret(t, err.Error())
+}

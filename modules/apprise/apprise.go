@@ -166,26 +166,62 @@ type services struct {
 	Count int
 }
 
+// matches applies Apprise's tag logic to one service's tags: a comma-
+// separated group matches when every word in it is one of the tags (or is
+// all), and a service tagged always matches any selection. The server's
+// /json/urls filter can't be used for this: it reads a space as "or" where
+// /notify reads it as "and", so it would count services the send skips.
+func matches(groups [][]string, tags []string) bool {
+	has := map[string]bool{}
+	for _, t := range tags {
+		has[strings.ToLower(t)] = true
+	}
+	if has["always"] {
+		return true
+	}
+	for _, g := range groups {
+		ok := true
+		for _, w := range g {
+			if w = strings.ToLower(w); w != "all" && !has[w] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
+}
+
+// services counts the services of a configuration that a cleaned tag
+// selects ("all" for every one).
 func (c *conn) services(ctx context.Context, key, tag string) (services, error) {
 	var raw struct {
 		Tags []string `json:"tags"`
 		URLs []struct {
-			URL string `json:"url"`
+			URL  string   `json:"url"`
+			Tags []string `json:"tags"`
 		} `json:"urls"`
 	}
-	q := url.Values{"privacy": {"1"}}
-	if tag != "" {
-		q.Set("tag", tag)
-	}
+	q := url.Values{"privacy": {"1"}, "tag": {"all"}}
 	if _, err := c.api.Do(ctx, http.MethodGet, "/json/urls/"+url.PathEscape(key), q, nil, &raw); err != nil {
 		if rest.IsStatus(err, http.StatusNotFound) {
 			return services{}, fmt.Errorf("no Apprise API server (or no configuration %s) at this address", key)
 		}
 		return services{}, friendly(err)
 	}
-	s := services{Tags: []string{}, Kinds: []string{}, Count: len(raw.URLs)}
+	var groups [][]string
+	for _, g := range strings.Split(tag, ",") {
+		groups = append(groups, strings.Fields(g))
+	}
+	s := services{Tags: []string{}, Kinds: []string{}}
 	seen := map[string]bool{}
 	for _, u := range raw.URLs {
+		if !matches(groups, u.Tags) {
+			continue
+		}
+		s.Count++
 		k := "unknown"
 		if mm := schemeRe.FindStringSubmatch(u.URL); mm != nil {
 			k = strings.ToLower(mm[1])

@@ -18,8 +18,12 @@ certificate, set `fingerprint`.
 
 **Notes.** One Apprise configuration can reach email, SMS and chats of
 anyone, so sending is destructive, and a tag is always required so the
-destinations are explicit. Apprise matches tags itself; the preview counts
-the services the server reports for the same tag. Listing every key on the
+destinations are explicit. The preview reads every service of the
+configuration with its tags and applies the tag the way `/notify` does (a
+space is and, a comma is or, `all` matches every service, and services
+tagged `always` are always included); the server's own `/json/urls` filter
+isn't used, since it reads a space as or and would count services the send
+skips. Listing every key on the
 server isn't offered (its documented list is meant for the web page);
 the keys come from the settings instead. Attachments, templates and
 stateless sends to URLs given in the call aren't offered.

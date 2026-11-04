@@ -20,6 +20,7 @@ type fake struct {
 	sent     []map[string]any
 	extra    bool // a service added after the preview
 	privacy0 bool
+	always   bool // services tagged always and with both tags
 }
 
 func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -39,14 +40,17 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.privacy0 = true
 		}
 		urls := []string{`{"url":"tgram://LEAKMEbottoken/123","tags":["ops"]}`, `{"url":"mailto://user:LEAKMEpw@example.com","tags":["family"]}`}
-		switch r.URL.Query().Get("tag") {
-		case "ops":
-			urls = urls[:1]
-			if f.extra {
-				urls = append(urls, `{"url":"discord://LEAKME/abc","tags":["ops"]}`)
-			}
-		case "nobody":
-			urls = nil
+		if f.extra {
+			urls = append(urls, `{"url":"discord://LEAKME/abc","tags":["ops"]}`)
+		}
+		if f.always {
+			urls = append(urls, `{"url":"ntfy://LEAKME/topic","tags":["Always"]}`, `{"url":"json://host/LEAKME","tags":["OPS","Family"]}`)
+		}
+		// The server's own filter reads a space as "or"; the module filters
+		// itself and must always ask for every service.
+		if r.URL.Query().Get("tag") != "all" {
+			w.WriteHeader(400)
+			return
 		}
 		io.WriteString(w, `{"tags":["family","ops"],"urls":[`+strings.Join(urls, ",")+`]}`)
 	case r.Method == "GET" && r.URL.Path == "/json/urls/empty":
@@ -118,6 +122,14 @@ func TestApprise(t *testing.T) {
 			t.Fatal(a.Risk)
 		}
 	}
+	f.always = true
+	for tag, want := range map[string]string{"ops": "3 services", "ops family": "2 services", "ops, family": "4 services", "all": "4 services", "all ops": "3 services", "nobody": "1 services"} {
+		r, err := invoke(m, "notify", `{"key":"homelab","tag":"`+tag+`","body":"x"}`, true)
+		if err != nil || !strings.Contains(r.Plan.Summary, " "+want+" ") {
+			t.Fatalf("%s: %+v %v", tag, r.Plan, err)
+		}
+	}
+	f.always = false
 	if s, _ := cleanTag(" a+b ,c "); s != "a b, c" {
 		t.Fatal(s)
 	}

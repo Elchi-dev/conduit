@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
@@ -16,6 +17,7 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/jackc/pgx/v5 v5.12.0
+	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/tetratelabs/wazero v1.12.0
@@ -27,6 +29,11 @@ require (
 	golang.org/x/sys v0.49.0
 	golang.zx2c4.com/wireguard v0.0.0-20261024220952-b3bc704ef0ee
 	modernc.org/sqlite v1.61.1
+)
+
+require (
+	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/rs/xid v1.4.0 // indirect
 )
 
 require (

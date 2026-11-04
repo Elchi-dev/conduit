@@ -105,17 +105,29 @@ func message(status string, raw []byte) string {
 		Error   any    `json:"error"`
 		Errors  []struct {
 			Message string `json:"message"`
+			Detail  string `json:"detail"` // JSON:API
+			Title   string `json:"title"`
 		} `json:"errors"`
 	}
 	if json.Unmarshal(raw, &e) == nil {
-		if len(e.Errors) > 0 && e.Errors[0].Message != "" {
-			return e.Errors[0].Message
+		if len(e.Errors) > 0 {
+			for _, s := range []string{e.Errors[0].Message, e.Errors[0].Detail, e.Errors[0].Title} {
+				if s != "" {
+					return s
+				}
+			}
 		}
 		if e.Message != "" {
 			return e.Message
 		}
 		if s, ok := e.Error.(string); ok && s != "" {
 			return s
+		}
+		// {"error":{"message":"..."}} (Bitbucket and others).
+		if m, ok := e.Error.(map[string]any); ok {
+			if s, ok := m["message"].(string); ok && s != "" {
+				return s
+			}
 		}
 	}
 	if t := strings.TrimSpace(string(raw)); t != "" && len(t) < 200 && !strings.HasPrefix(t, "<") {

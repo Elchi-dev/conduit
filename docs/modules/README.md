@@ -82,8 +82,18 @@ recommended policies.
 | Railway | [railway.md](railway.md) | developer |
 | Unraid | [unraid.md](unraid.md) | homelab |
 | Jenkins | [jenkins.md](jenkins.md) | developer, team |
+| Bitbucket | [bitbucket.md](bitbucket.md) | developer, team |
+| Azure DevOps | [azuredevops.md](azuredevops.md) | developer, team |
+| HCP Terraform | [terraformcloud.md](terraformcloud.md) | developer, team |
+| Nomad | [nomad.md](nomad.md) | homelab, developer, team |
+| Datadog | [datadog.md](datadog.md) | developer, team |
 | Frigate | [frigate.md](frigate.md) | homelab |
 | Mealie | [mealie.md](mealie.md) | homelab |
+| MQTT | [mqtt.md](mqtt.md) | homelab |
+| Navidrome (Subsonic) | [navidrome.md](navidrome.md) | homelab |
+| Audiobookshelf | [audiobookshelf.md](audiobookshelf.md) | homelab |
+| Kodi | [kodi.md](kodi.md) | homelab |
+| Syncthing | [syncthing.md](syncthing.md) | homelab, developer |
 | wg-easy | [wgeasy.md](wgeasy.md) | homelab |
 | Games | [games.md](games.md) | gamer |
 | Notes | [notes.md](notes.md) | all |

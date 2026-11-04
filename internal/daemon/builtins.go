@@ -7,13 +7,17 @@ import (
 	"github.com/elchi-dev/conduit/modules/adguard"
 	"github.com/elchi-dev/conduit/modules/argocd"
 	"github.com/elchi-dev/conduit/modules/arr"
+	"github.com/elchi-dev/conduit/modules/audiobookshelf"
 	"github.com/elchi-dev/conduit/modules/authentik"
 	"github.com/elchi-dev/conduit/modules/aws"
+	"github.com/elchi-dev/conduit/modules/azuredevops"
 	"github.com/elchi-dev/conduit/modules/backblaze"
+	"github.com/elchi-dev/conduit/modules/bitbucket"
 	"github.com/elchi-dev/conduit/modules/calendar"
 	"github.com/elchi-dev/conduit/modules/cloudflare"
 	"github.com/elchi-dev/conduit/modules/containerregistry"
 	"github.com/elchi-dev/conduit/modules/database"
+	"github.com/elchi-dev/conduit/modules/datadog"
 	"github.com/elchi-dev/conduit/modules/digitalocean"
 	"github.com/elchi-dev/conduit/modules/discord"
 	"github.com/elchi-dev/conduit/modules/docker"
@@ -32,6 +36,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/jellyfin"
 	"github.com/elchi-dev/conduit/modules/jenkins"
 	"github.com/elchi-dev/conduit/modules/jira"
+	"github.com/elchi-dev/conduit/modules/kodi"
 	"github.com/elchi-dev/conduit/modules/kubernetes"
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/mail"
@@ -40,9 +45,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/mealie"
 	"github.com/elchi-dev/conduit/modules/metrics"
 	"github.com/elchi-dev/conduit/modules/milanote"
+	"github.com/elchi-dev/conduit/modules/mqtt"
 	"github.com/elchi-dev/conduit/modules/n8n"
+	"github.com/elchi-dev/conduit/modules/navidrome"
 	"github.com/elchi-dev/conduit/modules/netlify"
 	"github.com/elchi-dev/conduit/modules/nextcloud"
+	"github.com/elchi-dev/conduit/modules/nomad"
 	"github.com/elchi-dev/conduit/modules/notes"
 	"github.com/elchi-dev/conduit/modules/notify"
 	"github.com/elchi-dev/conduit/modules/notion"
@@ -68,10 +76,12 @@ import (
 	"github.com/elchi-dev/conduit/modules/standards"
 	"github.com/elchi-dev/conduit/modules/stripe"
 	"github.com/elchi-dev/conduit/modules/supabase"
+	"github.com/elchi-dev/conduit/modules/syncthing"
 	"github.com/elchi-dev/conduit/modules/synology"
 	"github.com/elchi-dev/conduit/modules/system"
 	"github.com/elchi-dev/conduit/modules/tailscale"
 	"github.com/elchi-dev/conduit/modules/telegram"
+	"github.com/elchi-dev/conduit/modules/terraformcloud"
 	"github.com/elchi-dev/conduit/modules/todoist"
 	"github.com/elchi-dev/conduit/modules/traefik"
 	"github.com/elchi-dev/conduit/modules/trello"
@@ -183,7 +193,17 @@ func builtins(app *App) []sdk.Module {
 		jenkins.New(),
 		frigate.New(),
 		mealie.New(),
+		mqtt.New(),
+		navidrome.New(),
+		audiobookshelf.New(),
+		kodi.New(),
+		syncthing.New(),
 		wgeasy.New(),
+		bitbucket.New(),
+		azuredevops.New(),
+		terraformcloud.New(),
+		nomad.New(),
+		datadog.New(),
 		app.Games,
 		notes.New(notesDir),
 		standards.New(app.dataSub("standards")),

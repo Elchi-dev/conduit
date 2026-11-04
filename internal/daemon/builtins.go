@@ -20,6 +20,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/azure"
 	"github.com/elchi-dev/conduit/modules/azuredevops"
 	"github.com/elchi-dev/conduit/modules/backblaze"
+	"github.com/elchi-dev/conduit/modules/battlemetrics"
 	"github.com/elchi-dev/conduit/modules/bazarr"
 	"github.com/elchi-dev/conduit/modules/beszel"
 	"github.com/elchi-dev/conduit/modules/betterstack"
@@ -38,6 +39,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/caprover"
 	"github.com/elchi-dev/conduit/modules/chatwoot"
 	"github.com/elchi-dev/conduit/modules/checkmk"
+	"github.com/elchi-dev/conduit/modules/chesscom"
 	"github.com/elchi-dev/conduit/modules/circleci"
 	"github.com/elchi-dev/conduit/modules/clickhouse"
 	"github.com/elchi-dev/conduit/modules/clickup"
@@ -68,6 +70,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/elasticsearch"
 	"github.com/elchi-dev/conduit/modules/elevenlabs"
 	"github.com/elchi-dev/conduit/modules/esphome"
+	"github.com/elchi-dev/conduit/modules/faceit"
 	"github.com/elchi-dev/conduit/modules/fastmail"
 	"github.com/elchi-dev/conduit/modules/fathom"
 	"github.com/elchi-dev/conduit/modules/filebrowser"
@@ -87,6 +90,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/ghost"
 	"github.com/elchi-dev/conduit/modules/ghostfolio"
 	"github.com/elchi-dev/conduit/modules/gitea"
+	"github.com/elchi-dev/conduit/modules/gitguardian"
 	"github.com/elchi-dev/conduit/modules/github"
 	"github.com/elchi-dev/conduit/modules/gitlab"
 	"github.com/elchi-dev/conduit/modules/gocd"
@@ -137,6 +141,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/lemmy"
 	"github.com/elchi-dev/conduit/modules/lemonsqueezy"
 	"github.com/elchi-dev/conduit/modules/librenms"
+	"github.com/elchi-dev/conduit/modules/lichess"
 	"github.com/elchi-dev/conduit/modules/linear"
 	"github.com/elchi-dev/conduit/modules/linkding"
 	"github.com/elchi-dev/conduit/modules/linode"
@@ -235,6 +240,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/seafile"
 	"github.com/elchi-dev/conduit/modules/searchconsole"
 	"github.com/elchi-dev/conduit/modules/seerr"
+	"github.com/elchi-dev/conduit/modules/semgrep"
 	"github.com/elchi-dev/conduit/modules/sendgrid"
 	"github.com/elchi-dev/conduit/modules/sentry"
 	"github.com/elchi-dev/conduit/modules/servers"
@@ -246,6 +252,7 @@ import (
 	"github.com/elchi-dev/conduit/modules/solaredge"
 	"github.com/elchi-dev/conduit/modules/sonarqube"
 	"github.com/elchi-dev/conduit/modules/sops"
+	"github.com/elchi-dev/conduit/modules/sourcegraph"
 	"github.com/elchi-dev/conduit/modules/speedtest"
 	"github.com/elchi-dev/conduit/modules/spotify"
 	"github.com/elchi-dev/conduit/modules/standards"
@@ -534,6 +541,10 @@ func builtins(app *App) []sdk.Module {
 		amp.New(),
 		steam.New(),
 		openxbl.New(),
+		battlemetrics.New(),
+		faceit.New(),
+		lichess.New(),
+		chesscom.New(),
 		litellm.New(),
 		openrouter.New(),
 		anthropic.New(),
@@ -622,6 +633,9 @@ func builtins(app *App) []sdk.Module {
 		wazuh.New(),
 		defectdojo.New(),
 		dependencytrack.New(),
+		gitguardian.New(),
+		semgrep.New(),
+		sourcegraph.New(),
 		tibber.New(),
 		solaredge.New(),
 		victron.New(),

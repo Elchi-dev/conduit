@@ -256,6 +256,10 @@ recommended policies.
 | AMP | [amp.md](amp.md) | gamer, homelab |
 | Steam | [steam.md](steam.md) | gamer |
 | Xbox (OpenXBL) | [openxbl.md](openxbl.md) | gamer |
+| BattleMetrics | [battlemetrics.md](battlemetrics.md) | gamer |
+| FACEIT | [faceit.md](faceit.md) | gamer |
+| Lichess | [lichess.md](lichess.md) | gamer |
+| Chess.com | [chesscom.md](chesscom.md) | gamer |
 | Coolify | [coolify.md](coolify.md) | developer, homelab |
 | Dokploy | [dokploy.md](dokploy.md) | developer, homelab |
 | CapRover | [caprover.md](caprover.md) | developer, homelab |
@@ -302,6 +306,9 @@ recommended policies.
 | Wazuh | [wazuh.md](wazuh.md) | homelab, team |
 | DefectDojo | [defectdojo.md](defectdojo.md) | developer, team |
 | Dependency-Track | [dependencytrack.md](dependencytrack.md) | developer, team |
+| GitGuardian | [gitguardian.md](gitguardian.md) | developer, team |
+| Semgrep | [semgrep.md](semgrep.md) | developer, team |
+| Sourcegraph | [sourcegraph.md](sourcegraph.md) | developer, team |
 | Tibber | [tibber.md](tibber.md) | homelab |
 | SolarEdge | [solaredge.md](solaredge.md) | homelab |
 | Victron VRM | [victron.md](victron.md) | homelab |

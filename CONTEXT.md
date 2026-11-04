@@ -68,6 +68,11 @@ owner and a company equally; never tailor it to one setup.
 
 ## Rules for working in this repo
 
+- **Never ask the owner anything during the build** (owner, 4 Nov 02:33:
+  "work 100% on your own"). Take the most reasonable choice, note it in
+  BUILD_LOG.md, and keep going. If a helper is stopped, restart the work.
+  Target: v1.0.0 with as many modules as possible by Thu 5 Nov 00:00 CET.
+
 - Go for daemon, hub and APIs (ADR 0001). Pure Go only; `CGO_ENABLED=0` builds.
 - OpenAPI specs in `api/openapi` are the source of truth for every HTTP API.
 - Every module implements `pkg/sdk.Module`; every action declares a risk level.

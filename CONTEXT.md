@@ -79,9 +79,8 @@ owner and a company equally; never tailor it to one setup.
 
 ## Decisions waiting on the owner
 
-- **Release signing secrets.** Three signing keys were generated outside the
-  repo and handed to the owner on 4 Nov as a folder with a script
-  (`set-github-secrets.sh`) that stores them with the GitHub CLI. Add them as GitHub Actions secrets before
+- **Release signing secrets: done.** The owner stored all seven on 4 Nov
+  (~01:10 CET); releases from v0.3.1 on are signed. Notes on each key: Add them as GitHub Actions secrets before
   the first release; keep offline backups, since losing a key means existing
   installs can no longer update:
   - Android: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,

@@ -27,6 +27,16 @@ and why.
   new modules and seven older ones.
 - **Review 29:** help desks that render HTML get escaped plain text, so
   agents can't put links or hidden content into customer mail.
+- **Review 30:** rclone refuses previews on servers older than 1.55 (they
+  would ignore the dry run and sync for real); share link ids are keyed
+  HMACs.
+- **Modules 263–270:** Statuspage, Instatus, Opsgenie, incident.io,
+  OctoPrint, Moonraker, Node-RED and Homebridge. Heater targets are capped;
+  no raw G-code; subscriber notifications are off unless asked.
+- **Decision (owner asked at 17:05):** no Discord user-account module.
+  Discord's terms ban automating a user account and Discord bans accounts
+  for it, unlike Milanote, which has no API at all. The bot module gains
+  reading, replies, reactions, threads, pins and moderation instead.
 
 ## 2026-11-04 · After 1.0, evening (241 modules, reviews 20–24)
 

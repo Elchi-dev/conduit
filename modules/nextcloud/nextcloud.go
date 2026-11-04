@@ -48,7 +48,7 @@ var (
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	return sdk.Manifest{
-		ID: "nextcloud", Name: "Nextcloud", Version: "0.1.0", Category: "Files", Icon: "cloud",
+		ID: "nextcloud", Name: "Nextcloud", Version: "0.1.0", Category: "Storage", Icon: "cloud",
 		Description: "Server version, storage and active users, your notifications, and sharing files by link.",
 		Presets:     []string{"homelab", "team"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","user","appPassword"],"properties":{
@@ -60,7 +60,7 @@ func (m *Module) Manifest() sdk.Manifest {
 			{Name: "notifications", Title: "Notifications", Risk: sdk.RiskRead},
 			{Name: "usage", Title: "Storage used", Description: "How much a user stores, and their quota.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"user":{"type":"string","description":"Default: you"}}}`)},
-			{Name: "share", Title: "Share a file by link", Description: "A read-only public link, optionally with a password and an expiry date.", Risk: sdk.RiskWrite, Reversible: true, Sensitive: true,
+			{Name: "share", Title: "Share a file by link", Description: "A read-only public link, optionally with a password and an expiry date.", Risk: sdk.RiskDestructive, Reversible: true, Sensitive: true,
 				Input: sdk.Schema(`{"type":"object","required":["path"],"properties":{"path":{"type":"string","description":"e.g. /Documents/report.pdf"},"password":{"type":"string"},"expires":{"type":"string","format":"date","description":"YYYY-MM-DD"}}}`)},
 			{Name: "unshare", Title: "Remove a share", Risk: sdk.RiskWrite,
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}`)},

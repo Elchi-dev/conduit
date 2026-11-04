@@ -19,7 +19,8 @@ as bot edits. For a self-signed certificate, pin its SHA-256 `fingerprint`.
 | `read_page` | read, sensitive | By `title` or `pageid`. The wikitext up to `maxChars` (default 50,000) with its revision id, timestamp, size and content model. Kept out of the audit log, approvals and events. |
 | `edit_page` | write | Replaces an existing page's wikitext (`text`, with `summary` and `minor`) on a wiki anonymous visitors can't read. It never creates a page. The preview shows the lines added and removed and the first changed lines; the same text gives "nothing to change". Undo puts back the previous revision. |
 | `edit_public_page` | destructive | The same, on a wiki anyone can read: what it writes is public at once. Undo puts back the previous revision. |
-| `restore_revision` | write | The undo of an edit: puts the page back to the revision before its latest one. |
+| `restore_revision` | write | The undo of `edit_page`: puts the page back to the revision before its latest one. Refused on a wiki anyone can read. |
+| `restore_public_revision` | destructive | The undo of `edit_public_page`: the same, on a wiki anyone can read. |
 
 **Public or private.** Before each edit the module reads the wiki's user
 groups: when the all-users group (`*`) has the `read` right, anyone can read
@@ -41,13 +42,19 @@ giving up after three tries.
 
 **Privacy.** Reading a page is sensitive. Search results leave out
 snippets. Previews quote only lines of the new text; removed lines are
-counted and named by line number, never quoted.
+counted and named by line number, never quoted. An undo's preview and
+result quote no lines at all, since what it puts back is the page's own
+earlier text.
 
 **Security.** The password is sent only in the login request's body, and
 the client won't follow a redirect to another host or from https to http.
 Titles are checked against the characters MediaWiki never allows, page ids
 must be positive numbers and text at most 1 MiB, before any request is
-sent. Server messages are redacted before they're shortened.
+sent. Only pages whose content model is wikitext (or plain text) outside the
+MediaWiki namespace are edited: site and user scripts, styles and JSON
+pages (`MediaWiki:Common.js`, `User:Name/common.js`, TemplateStyles) and
+interface messages run in or around every reader's page, so they're
+refused. Server messages are redacted before they're shortened.
 
 **Notes.** Pages that a private wiki lets anonymous visitors read anyway
 (`$wgWhitelistRead`) aren't visible through the API, so they count as

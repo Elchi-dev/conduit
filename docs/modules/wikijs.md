@@ -24,9 +24,10 @@ page paths when an action doesn't give one.
 | `search` | read | Wiki.js's search engine, optionally under a `path` or in a `locale`. Id, title, description, path and link. |
 | `read_page` | read, sensitive | By `id`, or `path` (and `locale`). The source up to `maxChars` (default 50,000) with title, description, tags, editor, published, whether guests can read it, and dates. Kept out of the audit log, approvals and events. |
 | `create_page` | write | A Markdown page at `path` with `title`, `content`, `description` and `tags`. On a public wiki it's created unpublished, so only editors see it until it's published with `update_public_page`. |
-| `update_page` | write | Changes `title`, `description` or `content` (only the fields given), and can unpublish (`published: false`). For pages guests can't read: on a private wiki, or unpublished pages on a public one. The preview shows the lines added and removed and the first changed lines; the same content gives "nothing to change". Undo puts back the previous version. |
+| `update_page` | write | Changes `title`, `description` or `content` (only the fields given), and `published`. For pages guests can't read: on a private wiki, or unpublished pages on a public one (so unpublishing a page guests can read is `update_public_page`). The preview shows the lines added and removed and the first changed lines; the same content gives "nothing to change". Undo puts back the previous version. |
 | `update_public_page` | destructive | The same, for a published page on a public wiki, or to publish a page there (`published: true`). What it writes is public at once. Undo puts back the previous version. |
-| `restore_version` | write | The undo of an edit: puts the page's title, description, content and published state back as they were before its latest edit. |
+| `restore_version` | write | The undo of `update_page`: puts the page's title, description, content and published state back as they were before its latest edit. Refused when guests can read the page or the version put back would publish it. |
+| `restore_public_version` | destructive | The undo of `update_public_page`: the same, when guests can read the page, or putting the earlier version back publishes it. |
 
 **Edits and undo.** Before saving, the module asks Wiki.js whether the page
 changed since it was read, and refuses the edit if it did. Wiki.js saves
@@ -39,11 +40,14 @@ Wiki.js still has every version.
 
 **Privacy.** Reading a page is sensitive. Previews quote only lines of the
 new content (which the agent wrote); removed lines are counted and named by
-line number, never quoted.
+line number, never quoted. An undo's preview and result quote no lines at
+all, since what it puts back is the page's own earlier content.
 
 **Security.** The key goes in the `Authorization` header, and the client
 won't follow a redirect to another host or from https to http. Every value
-travels as a GraphQL variable, never inside the query. Ids must be positive
+travels as a GraphQL variable, never inside the query. The page's script
+and style fields (`scriptJs`, `scriptCss`) aren't inputs: an edit only sends
+them back as Wiki.js returned them, so an agent can't add page scripts. Ids must be positive
 numbers, paths letters, digits, `-`, `_` and `/` (as Wiki.js accepts them),
 and content at most 1 MiB, before any request is sent. Server messages are
 redacted before they're shortened.

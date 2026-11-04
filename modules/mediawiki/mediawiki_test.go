@@ -33,8 +33,9 @@ type fakeWiki struct {
 	lag      int // answer maxlag this many times
 	waits    []time.Duration
 	tokens   int
-	expire   bool // drop the session once
-	conflict bool // someone edits just before ours
+	expire   bool   // drop the session once
+	conflict bool   // someone edits just before ours
+	model    string // the page's content model, wikitext when empty
 }
 
 func (f *fakeWiki) latest() rev { return f.revs[len(f.revs)-1] }
@@ -122,7 +123,11 @@ func (f *fakeWiki) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			l := f.latest()
 			rv := map[string]any{"revid": l.id, "parentid": l.parent, "timestamp": l.ts, "size": len(l.text)}
 			if strings.Contains(r.Form.Get("rvprop"), "content") {
-				rv["slots"] = map[string]any{"main": map[string]any{"contentmodel": "wikitext", "content": l.text}}
+				model := f.model
+				if model == "" {
+					model = "wikitext"
+				}
+				rv["slots"] = map[string]any{"main": map[string]any{"contentmodel": model, "content": l.text}}
 			}
 			reply(map[string]any{"curtimestamp": "2026-11-04T12:00:00Z", "query": map[string]any{"pages": []any{map[string]any{"pageid": 7, "ns": 12, "title": "Help:Backups", "lastrevid": l.id, "revisions": []any{rv}}}}})
 		default:
@@ -227,9 +232,18 @@ func TestMediaWiki(t *testing.T) {
 		t.Fatalf("old text in output: %s", r.Output)
 	}
 	undo := *r.Undo
+	// The undo's preview and result count the lines put back but never
+	// quote them: they're the page's earlier (private) text.
+	r, err = invoke(m, undo.Action, string(undo.Input), true)
+	if err != nil || r.Plan == nil || !strings.Contains(string(r.Plan.Changes[0].After), `"added":3`) || strings.Contains(string(r.Plan.Changes[0].After), "restic") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
 	r, err = invoke(m, undo.Action, string(undo.Input), false)
-	if err != nil || f.latest().text != "== Backups ==\nRun restic.\nKeep the key safe." || r.Undo == nil {
+	if err != nil || f.latest().text != "== Backups ==\nRun restic.\nKeep the key safe." || r.Undo == nil || r.Undo.Action != "restore_revision" {
 		t.Fatalf("%s %v", r.Output, err)
+	}
+	if strings.Contains(string(r.Output), "restic") {
+		t.Fatalf("old text in the restore's output: %s", r.Output)
 	}
 	// Again: the page moved on, so nothing happens.
 	if _, err := invoke(m, undo.Action, string(undo.Input), false); err == nil || !strings.Contains(err.Error(), "edited again") || len(f.revs) != 3 {
@@ -244,6 +258,16 @@ func TestMediaWiki(t *testing.T) {
 	if f.tokens != 2 {
 		t.Fatalf("%d tokens", f.tokens)
 	}
+	// Script and style pages are never edited (they run in readers'
+	// browsers).
+	n := len(f.revs)
+	for _, model := range []string{"javascript", "css", "sanitized-css", "json"} {
+		f.model = model
+		if _, err := invoke(m, "edit_page", `{"pageid":7,"text":"alert(1)"}`, false); err == nil || !strings.Contains(err.Error(), "only wikitext") || len(f.revs) != n {
+			t.Fatal(model, err)
+		}
+	}
+	f.model = ""
 	// Edits never create pages.
 	if _, err := invoke(m, "edit_page", `{"title":"Nope","text":"x"}`, false); err == nil || !strings.Contains(err.Error(), "no such page") {
 		t.Fatal(err)
@@ -259,15 +283,27 @@ func TestMediaWikiPublic(t *testing.T) {
 	if err != nil || !strings.Contains(r.Plan.Summary, "anyone can read") {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if r, err := invoke(m, "edit_public_page", `{"pageid":7,"text":"x"}`, false); err != nil || r.Undo == nil || f.latest().text != "x" {
+	r, err = invoke(m, "edit_public_page", `{"pageid":7,"text":"x"}`, false)
+	if err != nil || r.Undo == nil || f.latest().text != "x" {
 		t.Fatalf("%+v %v", r, err)
+	}
+	// Its undo writes to a public wiki too: the destructive restore, which
+	// the write one refuses.
+	if r.Undo.Action != "restore_public_revision" {
+		t.Fatalf("undo of a public edit is %s", r.Undo.Action)
+	}
+	if _, err := invoke(m, "restore_revision", string(r.Undo.Input), false); err == nil || !strings.Contains(err.Error(), "restore_public_revision") || f.latest().text != "x" {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || !strings.Contains(f.latest().text, "Run restic.") {
+		t.Fatal(err)
 	}
 	for _, a := range m.Manifest().Actions {
 		want := sdk.RiskWrite
 		switch a.Name {
 		case "search", "read_page":
 			want = sdk.RiskRead
-		case "edit_public_page":
+		case "edit_public_page", "restore_public_revision":
 			want = sdk.RiskDestructive
 		}
 		if a.Risk != want {

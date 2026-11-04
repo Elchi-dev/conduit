@@ -83,6 +83,7 @@ var (
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	page := `"title":{"type":"string","description":"Page title, e.g. Help:Backups"},"pageid":{"type":"integer","minimum":1,"description":"Page id, instead of title"}`
+	restore := `{"type":"object","required":["pageid","revision","current"],"properties":{"pageid":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1,"description":"The revision to put back"},"current":{"type":"integer","minimum":1,"description":"The revision that must still be the page's latest"}}}`
 	edit := `{"type":"object","required":["text"],"properties":{` + page + `,"text":{"type":"string","description":"The new wikitext, replacing the page's; 1 MiB at most"},"summary":{"type":"string","description":"Edit summary"},"minor":{"type":"boolean"}}}`
 	return sdk.Manifest{
 		ID: "mediawiki", Name: "MediaWiki", Version: "0.1.0", Category: "Productivity", Icon: "book",
@@ -104,8 +105,10 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(edit)},
 			{Name: "edit_public_page", Title: "Edit a public page", Description: "Like edit_page, on a wiki anyone can read: what it writes is public at once. Undo puts back the previous revision, if nobody has edited the page since.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(edit)},
-			{Name: "restore_revision", Title: "Undo the latest edit", Description: "Puts a page back to the revision before its latest one, only while that latest revision is still the current one. Used by the edits' undo.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["pageid","revision","current"],"properties":{"pageid":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1,"description":"The revision to put back"},"current":{"type":"integer","minimum":1,"description":"The revision that must still be the page's latest"}}}`)},
+			{Name: "restore_revision", Title: "Undo the latest edit", Description: "Puts a page back to the revision before its latest one, only while that latest revision is still the current one, on a wiki anonymous visitors can't read (otherwise restore_public_revision). Used by edit_page's undo.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(restore)},
+			{Name: "restore_public_revision", Title: "Undo the latest edit on a public wiki", Description: "Like restore_revision, on a wiki anyone can read: what it puts back is public at once. Used by edit_public_page's undo.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(restore)},
 		},
 	}
 }
@@ -184,7 +187,7 @@ func (e *apiError) Error() string {
 	case "permissiondenied", "protectedpage", "cascadeprotected", "protectednamespace":
 		return "MediaWiki refused the edit (" + e.Code + "): the bot password's grants or the account's rights don't allow it"
 	}
-	return "MediaWiki: " + e.Code + ": " + clean(e.Info)
+	return "MediaWiki: " + clean(e.Code) + ": " + clean(e.Info)
 }
 
 // clean redacts a server message, then keeps it to one short line.
@@ -605,19 +608,41 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		return c.apply(ctx, call, pg, start, *p.Text, strings.TrimSpace(p.Summary), p.Minor, "Edit", pub)
+		return c.apply(ctx, call, pg, start, *p.Text, strings.TrimSpace(p.Summary), p.Minor, "Edit", pub, true)
 
-	case "restore_revision":
+	case "restore_revision", "restore_public_revision":
 		return c.restore(ctx, call, p)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
 
+// editableModels are the content models edits may write. Script, style and
+// data pages (MediaWiki:Common.js, User:Name/common.js, TemplateStyles, JSON
+// configuration) run in, or style, every reader's browser, so they're left
+// alone, as is an answer with no content model (a wiki too old for slots).
+var editableModels = map[string]bool{"wikitext": true, "text": true}
+
+// interfaceNS is the MediaWiki namespace: the wiki's interface messages,
+// shown around every page.
+const interfaceNS = 8
+
 // apply previews or makes the edit that replaces pg's latest revision with
-// text.
-func (c *conn) apply(ctx context.Context, call sdk.Call, pg pageInfo, start, text, summary string, minor bool, verb string, pub bool) (sdk.Result, error) {
+// text. quote says text is the agent's own, so its added lines may be
+// quoted; text put back from the page's history is the page's (private)
+// content, so its diff gives only counts and line numbers.
+func (c *conn) apply(ctx context.Context, call sdk.Call, pg pageInfo, start, text, summary string, minor bool, verb string, pub, quote bool) (sdk.Result, error) {
 	cur := pg.Revisions[0]
 	old := cur.Slots.Main.Content
+	if m := cur.Slots.Main.ContentModel; !editableModels[m] || pg.NS == interfaceNS {
+		if m == "" {
+			m = "unknown"
+		}
+		return sdk.Result{}, fmt.Errorf("only wikitext pages outside the MediaWiki namespace are edited here (this page is %s in namespace %d)", clean(m), pg.NS)
+	}
+	diff := textdiff.Diff(old, text)
+	if !quote {
+		diff = diff.Unquoted()
+	}
 	// MediaWiki drops trailing whitespace when it saves.
 	if strings.TrimRight(old, " \t\r\n") == strings.TrimRight(text, " \t\r\n") {
 		if call.DryRun {
@@ -635,7 +660,7 @@ func (c *conn) apply(ctx context.Context, call sdk.Call, pg pageInfo, start, tex
 		// kept in approvals.
 		return sdk.Result{Plan: &sdk.Plan{Summary: s, Changes: []sdk.Change{{Target: target, Op: "update",
 			Before: mustJSON(map[string]any{"revid": cur.RevID, "chars": len([]rune(old))}),
-			After:  mustJSON(map[string]any{"chars": len([]rune(text)), "summary": summary, "diff": textdiff.Diff(old, text)})}}}}, nil
+			After:  mustJSON(map[string]any{"chars": len([]rune(text)), "summary": summary, "diff": diff})}}}}, nil
 	}
 	var res struct {
 		Edit struct {
@@ -691,10 +716,14 @@ func (c *conn) apply(ctx context.Context, call sdk.Call, pg pageInfo, start, tex
 		return sdk.JSON(map[string]any{"title": pg.Title, "pageid": pg.PageID, "revid": cur.RevID, "note": "nothing to change: the page already has this text"})
 	}
 	out := map[string]any{"title": pg.Title, "pageid": pg.PageID, "revid": res.Edit.NewRevID, "previous": cur.RevID, "updated": res.Edit.NewTimestamp,
-		"diff": textdiff.Diff(old, text)}
+		"diff": diff}
 	r, err := sdk.JSON(out)
 	if res.Edit.NewRevID > 0 && cur.RevID > 0 {
-		r.Undo = sdk.UndoWith("restore_revision", map[string]any{"pageid": pg.PageID, "revision": cur.RevID, "current": res.Edit.NewRevID}, fmt.Sprintf("Put %q back to revision %d", pg.Title, cur.RevID))
+		back := "restore_revision"
+		if pub {
+			back = "restore_public_revision"
+		}
+		r.Undo = sdk.UndoWith(back, map[string]any{"pageid": pg.PageID, "revision": cur.RevID, "current": res.Edit.NewRevID}, fmt.Sprintf("Put %q back to revision %d", pg.Title, cur.RevID))
 	}
 	return r, err
 }
@@ -738,5 +767,8 @@ func (c *conn) restore(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 	if err != nil {
 		return sdk.Result{}, err
 	}
-	return c.apply(ctx, call, pg, start, old.Content, fmt.Sprintf("Undo revision %d", cur.RevID), false, "Put back", pub)
+	if pub && call.Action == "restore_revision" {
+		return sdk.Result{}, errors.New("anyone can read this wiki, so putting a revision back is public at once: use restore_public_revision, which is destructive")
+	}
+	return c.apply(ctx, call, pg, start, old.Content, fmt.Sprintf("Undo revision %d", cur.RevID), false, "Put back", pub, false)
 }

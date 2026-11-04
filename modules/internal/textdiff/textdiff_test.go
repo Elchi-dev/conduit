@@ -22,6 +22,14 @@ func TestDiff(t *testing.T) {
 	if b, _ := json.Marshal(Diff("password: hunter2\n", "nothing\n")); strings.Contains(string(b), "hunter2") {
 		t.Fatal(string(b))
 	}
+	// Unquoted keeps counts and line numbers, drops every line's text.
+	d := Diff("keep\n", "keep\npassword: hunter2\n")
+	if b, _ := json.Marshal(d.Unquoted()); string(b) != `{"added":1,"removed":0,"first":[{"op":"+","line":2}]}` {
+		t.Fatal(string(b))
+	}
+	if d.First[0].Text != "password: hunter2" {
+		t.Fatal("Unquoted changed the original")
+	}
 	// Too far apart for the table: counted by line, approximately.
 	var a, b strings.Builder
 	for i := 0; i < 3000; i++ {

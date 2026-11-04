@@ -108,6 +108,22 @@ func Diff(old, new string) Summary {
 	return sum
 }
 
+// Unquoted is s without the added lines' text: only counts and line
+// numbers. Use it when the new text isn't what the caller wrote, such as an
+// undo putting back an earlier version, whose lines are the page's own
+// (private) content.
+func (s Summary) Unquoted() Summary {
+	if len(s.First) == 0 {
+		return s
+	}
+	first := make([]Line, len(s.First))
+	for i, l := range s.First {
+		first[i] = Line{Op: l.Op, Line: l.Line}
+	}
+	s.First = first
+	return s
+}
+
 // script returns the removed and added lines of a against b, in order, by
 // a longest-common-subsequence table; off is the number of lines before a
 // and b in their texts.

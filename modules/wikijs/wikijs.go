@@ -68,6 +68,7 @@ var (
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	page := `"id":{"type":"integer","minimum":1,"description":"Page id (see pages or search)"},"path":{"type":"string","description":"The page's path, e.g. ops/backups, instead of id"},"locale":{"type":"string","description":"The path's locale (default: the setting, or en)"}`
+	restore := `{"type":"object","required":["id","version","at"],"properties":{"id":{"type":"integer","minimum":1},"version":{"type":"integer","minimum":1,"description":"The history version holding the page before the edit"},"at":{"type":"string","description":"When the edit saved the page (its updatedAt)"}}}`
 	fields := `"title":{"type":"string"},"description":{"type":"string"},"content":{"type":"string","description":"The page source (Markdown for Markdown pages), replacing it whole; 1 MiB at most"}`
 	return sdk.Manifest{
 		ID: "wikijs", Name: "Wiki.js", Version: "0.1.0", Category: "Productivity", Icon: "book",
@@ -89,12 +90,14 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + page + `,"maxChars":{"type":"integer","minimum":1,"maximum":200000,"default":50000}}}`)},
 			{Name: "create_page", Title: "Create a page", Description: "A new Markdown page at a path. On a public wiki it's created unpublished (only editors see it); publish it with update_public_page. There's no undo: deleting pages isn't offered here.", Risk: sdk.RiskWrite, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["path","title","content"],"properties":{"path":{"type":"string"},"locale":{"type":"string"},` + fields + `,"tags":{"type":"array","maxItems":50,"items":{"type":"string"}}}}`)},
-			{Name: "update_page", Title: "Edit a page", Description: "Changes a page's title, description or source (only the fields given), on a private wiki or for an unpublished page on a public one; published may be set to false (unpublish) anywhere, to true only on a private wiki. The preview shows the lines added and removed. Undo puts back the previous version, if nobody has edited the page since.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+			{Name: "update_page", Title: "Edit a page", Description: "Changes a page's title, description or source (only the fields given), on a private wiki or for an unpublished page on a public one; published may be set too (to true only on a private wiki; unpublishing a page guests can read is update_public_page). The preview shows the lines added and removed. Undo puts back the previous version, if nobody has edited the page since.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{` + page + `,` + fields + `,"published":{"type":"boolean"}}}`)},
 			{Name: "update_public_page", Title: "Edit or publish a public page", Description: "Like update_page, for a page guests can read on a public wiki, or to publish a page there (published: true): what it writes is public at once. Undo puts back the previous version, if nobody has edited the page since.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","properties":{` + page + `,` + fields + `,"published":{"type":"boolean"}}}`)},
-			{Name: "restore_version", Title: "Undo the latest edit", Description: "Puts a page back as it was before its latest edit (title, description, source and published), only while the page is still exactly as that edit left it. Used by the edits' undo.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["id","version","at"],"properties":{"id":{"type":"integer","minimum":1},"version":{"type":"integer","minimum":1,"description":"The history version holding the page before the edit"},"at":{"type":"string","description":"When the edit saved the page (its updatedAt)"}}}`)},
+			{Name: "restore_version", Title: "Undo the latest edit", Description: "Puts a page back as it was before its latest edit (title, description, source and published), only while the page is still exactly as that edit left it, and only when guests can read neither the page nor the version put back (otherwise restore_public_version). Used by update_page's undo.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
+				Input: sdk.Schema(restore)},
+			{Name: "restore_public_version", Title: "Undo the latest edit of a public page", Description: "Like restore_version, for a page guests can read on a public wiki, or when putting the earlier version back publishes the page: what it puts back is public at once. Used by update_public_page's undo.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(restore)},
 		},
 	}
 }
@@ -572,7 +575,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		return c.create(ctx, call, p)
 	case "update_page", "update_public_page":
 		return c.update(ctx, call, p)
-	case "restore_version":
+	case "restore_version", "restore_public_version":
 		return c.restore(ctx, call, p)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
@@ -721,7 +724,12 @@ func (c *conn) save(ctx context.Context, cur, next page, label string) (*sdk.Und
 	if err != nil || now.UpdatedAt == "" {
 		return nil, nil
 	}
-	return sdk.UndoWith("restore_version", map[string]any{"id": cur.ID, "version": v.VersionID, "at": now.UpdatedAt}, fmt.Sprintf("Put page %q back as it was", label)), nil
+	// Putting cur back over next is public when guests can read either.
+	action := "restore_version"
+	if c.visible(cur) || c.visible(next) || c.visible(now) {
+		action = "restore_public_version"
+	}
+	return sdk.UndoWith(action, map[string]any{"id": cur.ID, "version": v.VersionID, "at": now.UpdatedAt}, fmt.Sprintf("Put page %q back as it was", label)), nil
 }
 
 func sameTime(a, b string) bool {
@@ -781,11 +789,14 @@ func (c *conn) update(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		}
 		return sdk.Result{}, errors.New("publishing a page on a public wiki makes it readable by anyone: use update_public_page, which is destructive")
 	}
-	return c.apply(ctx, call, cur, next, "Edit")
+	return c.apply(ctx, call, cur, next, "Edit", true)
 }
 
-// apply previews or saves the change from cur to next.
-func (c *conn) apply(ctx context.Context, call sdk.Call, cur, next page, verb string) (sdk.Result, error) {
+// apply previews or saves the change from cur to next. quote says the new
+// content is the agent's own, so its added lines may be quoted; content put
+// back from the page's history is the page's (private) text, so its diff
+// gives only counts and line numbers.
+func (c *conn) apply(ctx context.Context, call sdk.Call, cur, next page, verb string, quote bool) (sdk.Result, error) {
 	target := fmt.Sprintf("page %d %s/%s", cur.ID, cur.Locale, cur.Path)
 	before, after := map[string]any{}, map[string]any{}
 	if next.Title != cur.Title {
@@ -801,7 +812,11 @@ func (c *conn) apply(ctx context.Context, call sdk.Call, cur, next page, verb st
 		// Never the old text: page content is private, and previews are
 		// kept in approvals.
 		before["chars"] = len([]rune(cur.Content))
-		after["chars"], after["diff"] = len([]rune(next.Content)), textdiff.Diff(cur.Content, next.Content)
+		d := textdiff.Diff(cur.Content, next.Content)
+		if !quote {
+			d = d.Unquoted()
+		}
+		after["chars"], after["diff"] = len([]rune(next.Content)), d
 	}
 	if len(after) == 0 {
 		if call.DryRun {
@@ -881,5 +896,10 @@ func (c *conn) restore(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 	}
 	next := cur
 	next.Content, next.Title, next.Description, next.IsPublished = v.Content, v.Title, v.Description, v.IsPublished
-	return c.apply(ctx, call, cur, next, "Put back")
+	// Like update_page: a page guests can read, or putting back a version
+	// that publishes it, is the destructive action's.
+	if call.Action != "restore_public_version" && (c.visible(cur) || c.visible(next)) {
+		return sdk.Result{}, errors.New("guests can read this page, or putting the earlier version back would publish it: use restore_public_version, which is destructive")
+	}
+	return c.apply(ctx, call, cur, next, "Put back", false)
 }

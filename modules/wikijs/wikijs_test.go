@@ -237,9 +237,21 @@ func TestWikiJS(t *testing.T) {
 	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, `Put back page "Backups v2"`) {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
+	// The undo's preview counts the lines it puts back but never quotes
+	// them: they're the page's earlier (private) content.
+	if a := string(r.Plan.Changes[0].After); !strings.Contains(a, `"added":3`) || strings.Contains(a, "restic") || strings.Contains(a, "Keep the key") {
+		t.Fatalf("restore preview quotes the old content: %s", a)
+	}
+	// A version id of another page is refused.
+	if _, err := invoke(m, undo.Action, `{"id":2,"version":`+fmt.Sprint(f.history[len(f.history)-1].id)+`,"at":"2026-11-04T09:30:00.000Z"}`, false); err == nil || f.pages[2]["content"] != "draft" {
+		t.Fatal("restored another page's version", err)
+	}
 	r, err = invoke(m, undo.Action, string(undo.Input), false)
 	if err != nil || f.pages[1]["content"] != "# Backups\nRun restic.\nKeep the key safe.\n" || f.pages[1]["title"] != "Backups" || r.Undo == nil {
 		t.Fatalf("%s %v %v", r.Output, err, f.pages[1])
+	}
+	if strings.Contains(string(r.Output), "restic") {
+		t.Fatalf("restore output quotes the old content: %s", r.Output)
 	}
 	// The same undo again: the page has moved on, so it's refused.
 	if _, err := invoke(m, undo.Action, string(undo.Input), false); err == nil || !strings.Contains(err.Error(), "edited again") {
@@ -272,7 +284,33 @@ func TestWikiJSPublic(t *testing.T) {
 	if err != nil || !strings.Contains(r.Plan.Summary, "guests can read it") {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if r, err := invoke(m, "update_public_page", `{"id":1,"content":"public text"}`, false); err != nil || r.Undo == nil || f.pages[1]["content"] != "public text" {
+	r, err = invoke(m, "update_public_page", `{"id":1,"content":"public text"}`, false)
+	if err != nil || r.Undo == nil || f.pages[1]["content"] != "public text" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	// Its undo writes a public page too, so it's the destructive restore;
+	// the write one refuses it.
+	if r.Undo.Action != "restore_public_version" {
+		t.Fatalf("undo of a public edit is %s", r.Undo.Action)
+	}
+	if _, err := invoke(m, "restore_version", string(r.Undo.Input), false); err == nil || !strings.Contains(err.Error(), "restore_public_version") || f.pages[1]["content"] != "public text" {
+		t.Fatal(err)
+	}
+	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || !strings.Contains(f.pages[1]["content"].(string), "Run restic.") {
+		t.Fatal(err)
+	}
+	// Unpublishing a public page, then putting the published version back
+	// with the write restore, would publish it again: refused.
+	r, err = invoke(m, "update_public_page", `{"id":1,"published":false}`, false)
+	if err != nil || r.Undo == nil || r.Undo.Action != "restore_public_version" || f.pages[1]["isPublished"] != false {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := invoke(m, "restore_version", string(r.Undo.Input), false); err == nil || f.pages[1]["isPublished"] != false {
+		t.Fatal("republished with the write restore", err)
+	}
+	// An unpublished draft's edit is undone with the write restore.
+	r, err = invoke(m, "update_page", `{"id":2,"content":"draft 3"}`, false)
+	if err != nil || r.Undo == nil || r.Undo.Action != "restore_version" {
 		t.Fatalf("%+v %v", r, err)
 	}
 	// New pages start unpublished on a public wiki.
@@ -290,7 +328,7 @@ func TestWikiJSPublic(t *testing.T) {
 		switch a.Name {
 		case "pages", "search", "read_page":
 			want = sdk.RiskRead
-		case "update_public_page":
+		case "update_public_page", "restore_public_version":
 			want = sdk.RiskDestructive
 		}
 		if a.Risk != want {

@@ -94,12 +94,12 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + store + `,"email":{"type":"string","description":"Only this customer's orders"},"status":{"type":"string","enum":["","pending","failed","paid","refunded","partial_refund"]},` + page + `}}`)},
 			{Name: "subscriptions", Title: "Subscriptions", Description: "Subscriptions with status, product and variant, customer id, renewal, end and trial dates. No names or emails.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + store + `,"status":{"type":"string","enum":["","on_trial","active","paused","past_due","unpaid","cancelled","expired"]},` + page + `}}`)},
-			{Name: "refund_order", Title: "Refund an order", Description: "Refunds an order, fully or partly. Money goes back to the customer and can't be taken back. The preview shows the amount.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{"order":{"type":"string","description":"Order id (see orders)"},"amount":{"type":"integer","minimum":1,"description":"In the currency's smallest unit (cents); the whole remaining amount when empty"}}}`)},
-			{Name: "cancel_subscription", Title: "Cancel a subscription", Description: "Cancels a subscription: it runs until the end of the paid period, then expires. Undo resumes it during that time.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"Subscription id (see subscriptions)"}}}`)},
-			{Name: "resume_subscription", Title: "Resume a subscription", Description: "Takes back a cancellation before the subscription ends. Destructive: the customer is billed again at renewal. Undo cancels it again.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"Subscription id (see subscriptions)"}}}`)},
+			{Name: "refund_order", Title: "Refund an order", Description: "Refunds an order, fully or partly. Money goes back to the customer and can't be taken back. The preview shows the amount; the run must give what was refunded before, as the preview showed it.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{"order":{"type":"string","description":"Order id (see orders)"},"amount":{"type":"integer","minimum":1,"description":"In the currency's smallest unit (cents); the whole remaining amount when empty"},"expectedRefunded":{"type":"string","description":"What was refunded before, as the preview shows it, like 0.00 USD; needed to run, refused if the order changed since (so a retried refund can't go through twice)"}}}`)},
+			{Name: "cancel_subscription", Title: "Cancel a subscription", Description: "Cancels a subscription: it runs until the end of the paid period, then expires. The run must give the status the preview showed. Undo resumes it during that time.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"Subscription id (see subscriptions)"},"expectedStatus":{"type":"string","description":"The subscription's status as the preview shows it, like active; needed to run, refused if the subscription changed since"}}}`)},
+			{Name: "resume_subscription", Title: "Resume a subscription", Description: "Takes back a cancellation before the subscription ends. Destructive: the customer is billed again at renewal. The run must give the status the preview showed. Undo cancels it again.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"Subscription id (see subscriptions)"},"expectedStatus":{"type":"string","description":"The subscription's status as the preview shows it, like active; needed to run, refused if the subscription changed since"}}}`)},
 		},
 	}
 }
@@ -369,6 +369,90 @@ type input struct {
 	Order        ident  `json:"order"`
 	Amount       int64  `json:"amount"`
 	Subscription ident  `json:"subscription"`
+	// What the preview showed, checked again when the change runs.
+	ExpectedRefunded string `json:"expectedRefunded"`
+	ExpectedStatus   string `json:"expectedStatus"`
+}
+
+// errNotPreviewed starts the error of a change run without the values its
+// preview showed.
+const errNotPreviewed = "give the values the preview showed"
+
+var decimalRe = regexp.MustCompile(`^[0-9]{1,15}(\.[0-9]{1,2})?$`)
+
+// minor reads an amount as previews show it (12.34, or 12.34 USD) in the
+// currency's smallest unit.
+func minor(s, currency string) (int64, bool) {
+	n, c, _ := strings.Cut(strings.TrimSpace(s), " ")
+	if c != "" && !strings.EqualFold(strings.TrimSpace(c), currency) {
+		return 0, false
+	}
+	if !decimalRe.MatchString(n) {
+		return 0, false
+	}
+	digits := 2
+	if zeroDecimal[strings.ToLower(currency)] {
+		digits = 0
+	}
+	whole, frac, _ := strings.Cut(n, ".")
+	frac = strings.TrimRight(frac, "0")
+	if len(frac) > digits {
+		return 0, false
+	}
+	frac += strings.Repeat("0", digits-len(frac))
+	v, err := strconv.ParseInt(whole+frac, 10, 64)
+	return v, err == nil
+}
+
+// expectRefunded checks what the preview showed as refunded before against
+// the order now. Lemon Squeezy has no idempotency keys: naming it is what
+// keeps a refund retried after a lost answer from going through twice.
+func expectRefunded(given string, now int64, currency string) error {
+	g := strings.TrimSpace(given)
+	if g == "" {
+		return fmt.Errorf("%s: expectedRefunded %q", errNotPreviewed, money(now, currency))
+	}
+	v, ok := minor(g, currency)
+	if !ok {
+		return fmt.Errorf("expectedRefunded is an amount like %q, as the preview showed it", money(now, currency))
+	}
+	if v != now {
+		return fmt.Errorf("the order changed since the preview: expectedRefunded is %s now, not %s; preview it again", money(now, currency), clip(g, 40))
+	}
+	return nil
+}
+
+// expectStatus checks the status the preview showed against the
+// subscription now.
+func expectStatus(given, now string) error {
+	g := strings.ToLower(strings.TrimSpace(given))
+	switch {
+	case g == "":
+		return fmt.Errorf("%s: expectedStatus %q", errNotPreviewed, now)
+	case g != now:
+		return fmt.Errorf("the subscription changed since the preview: its status is %s now, not %s; preview it again", now, clip(g, 40))
+	}
+	return nil
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+// runNote is added to a preview whose run would be refused as it stands.
+func runNote(what string, err error) string {
+	if err == nil {
+		return ""
+	}
+	m, ok := strings.CutPrefix(err.Error(), errNotPreviewed+": ")
+	if !ok {
+		return " Running this call will be refused: " + err.Error() + "."
+	}
+	return " To run it, give " + m + " (the " + what + " as previewed); it's refused if the " + what + " changed."
 }
 
 func (c *conn) storeOf(p input) (string, error) {
@@ -560,6 +644,7 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if amount < left || a.RefundedAmount > 0 {
 		kind = "Partial refund"
 	}
+	expect := expectRefunded(p.ExpectedRefunded, a.RefundedAmount, a.Currency)
 	if call.DryRun {
 		mode := "LIVE"
 		if a.TestMode {
@@ -571,9 +656,12 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		}
 		after := map[string]any{"refund": money(amount, a.Currency), "amount": amount, "currency": a.Currency, "refundedAfter": money(a.RefundedAmount+amount, a.Currency)}
 		return sdk.Result{Plan: &sdk.Plan{
-			Summary: fmt.Sprintf("%s of %s to customer %d (order #%d, id %s, %s)", kind, money(amount, a.Currency), a.CustomerID, a.OrderNumber, id, mode),
+			Summary: fmt.Sprintf("%s of %s to customer %d (order #%d, id %s, %s).%s", kind, money(amount, a.Currency), a.CustomerID, a.OrderNumber, id, mode, runNote("order", expect)),
 			Changes: []sdk.Change{{Target: "order " + id, Op: "refund", Before: mustJSON(before), After: mustJSON(after)}},
 		}}, nil
+	}
+	if expect != nil {
+		return sdk.Result{}, expect
 	}
 	body := map[string]any{"data": map[string]any{"type": "orders", "id": id, "attributes": map[string]any{"amount": amount}}}
 	var r one[order]
@@ -623,9 +711,13 @@ func (m *Module) cancel(ctx context.Context, c *conn, call sdk.Call, p input) (s
 		if !t.After(m.now()) {
 			return sdk.Result{}, fmt.Errorf("subscription %s ended on %s; it can't be resumed", id, *a.EndsAt)
 		}
+		expect := expectStatus(p.ExpectedStatus, a.Status)
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Resume subscription %s (%s) of customer %d: it renews and bills again instead of ending", id, a.ProductName, a.CustomerID),
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Resume subscription %s (%s) of customer %d: it renews and bills again instead of ending.%s", id, a.ProductName, a.CustomerID, runNote("subscription", expect)),
 				Changes: []sdk.Change{{Target: label, Op: "update", Before: mustJSON(before), After: mustJSON(map[string]any{"cancelled": false})}}}}, nil
+		}
+		if expect != nil {
+			return sdk.Result{}, expect
 		}
 		body := map[string]any{"data": map[string]any{"type": "subscriptions", "id": id, "attributes": map[string]any{"cancelled": false}}}
 		var r one[subscription]
@@ -633,7 +725,8 @@ func (m *Module) cancel(ctx context.Context, c *conn, call sdk.Call, p input) (s
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(subOut(id, r.Data.Attributes))
-		res.Undo = sdk.UndoWith("cancel_subscription", map[string]any{"subscription": id}, "Cancel subscription "+id+" again")
+		// The undo runs only while the subscription is still as this left it.
+		res.Undo = sdk.UndoWith("cancel_subscription", map[string]any{"subscription": id, "expectedStatus": r.Data.Attributes.Status}, "Cancel subscription "+id+" again")
 		return res, err
 	}
 	if a.Cancelled || a.Status == "cancelled" {
@@ -643,15 +736,23 @@ func (m *Module) cancel(ctx context.Context, c *conn, call sdk.Call, p input) (s
 		}
 		return sdk.JSON(map[string]any{"subscription": id, "note": "it is cancelled already and ends " + ends})
 	}
+	expect := expectStatus(p.ExpectedStatus, a.Status)
 	if call.DryRun {
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Cancel subscription %s (%s) of customer %d: it runs until the paid period ends (%s), then expires; undo resumes it until then", id, a.ProductName, a.CustomerID, a.RenewsAt),
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Cancel subscription %s (%s) of customer %d: it runs until the paid period ends (%s), then expires; undo resumes it until then.%s", id, a.ProductName, a.CustomerID, a.RenewsAt, runNote("subscription", expect)),
 			Changes: []sdk.Change{{Target: label, Op: "cancel", Before: mustJSON(before), After: mustJSON(map[string]any{"cancelled": true})}}}}, nil
+	}
+	if expect != nil {
+		return sdk.Result{}, expect
 	}
 	var r one[subscription]
 	if err := c.do(ctx, http.MethodDelete, "/v1/subscriptions/"+id, nil, nil, &r); err != nil {
 		return sdk.Result{}, err
 	}
 	res, err := sdk.JSON(subOut(id, r.Data.Attributes))
-	res.Undo = sdk.UndoWith("resume_subscription", map[string]any{"subscription": id}, "Resume subscription "+id+" (take back the cancellation)")
+	after := r.Data.Attributes.Status
+	if after == "" {
+		after = "cancelled"
+	}
+	res.Undo = sdk.UndoWith("resume_subscription", map[string]any{"subscription": id, "expectedStatus": after}, "Resume subscription "+id+" (take back the cancellation)")
 	return res, err
 }

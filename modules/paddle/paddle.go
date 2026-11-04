@@ -75,6 +75,7 @@ var (
 func (m *Module) Manifest() sdk.Manifest {
 	page := `"limit":{"type":"integer","default":20,"minimum":1,"maximum":200},"after":{"type":"string","description":"after of the previous page"}`
 	sub := `"subscription":{"type":"string","description":"Subscription id (sub_…, see subscriptions)"}`
+	expect := `"expectedStatus":{"type":"string","description":"The subscription's status as the preview shows it, like active; needed to run"},"expectedScheduledChange":{"type":"string","enum":["none","pause","cancel"],"description":"The change scheduled for the period end as the preview shows it (none when nothing is); needed to run, refused if the subscription changed since"}`
 	return sdk.Manifest{
 		ID: "paddle", Name: "Paddle", Version: "0.1.0", Category: "Productivity", Icon: "credit-card",
 		Description: "Paddle Billing: customers, subscriptions and transactions; pause, resume and cancel subscriptions with a preview.",
@@ -89,12 +90,12 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"status":{"type":"string","enum":["","active","canceled","past_due","paused","trialing"]},"customer":{"type":"string","description":"Only this customer (ctm_…)"},` + page + `}}`)},
 			{Name: "transactions", Title: "Transactions", Description: "Transactions: status, origin, totals, invoice number, customer and subscription ids, billing date. No payment details.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"status":{"type":"string","enum":["","draft","ready","billed","paid","completed","canceled","past_due"]},"customer":{"type":"string"},` + sub + `,` + page + `}}`)},
-			{Name: "pause_subscription", Title: "Pause a subscription", Description: "Pauses a subscription at the end of its billing period, or immediately. Billing stops while it's paused. Undo resumes it.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{` + sub + `,"immediately":{"type":"boolean","default":false}}}`)},
-			{Name: "resume_subscription", Title: "Resume a subscription", Description: "Resumes a paused subscription now (it bills the customer and starts a new period), or takes back a pause or cancellation scheduled for the period end. Undo pauses or cancels it again.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{` + sub + `}}`)},
-			{Name: "cancel_subscription", Title: "Cancel a subscription", Description: "Cancels at the end of the billing period (undo takes it back until then), or immediately (can't be undone).", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{` + sub + `,"immediately":{"type":"boolean","default":false}}}`)},
+			{Name: "pause_subscription", Title: "Pause a subscription", Description: "Pauses a subscription at the end of its billing period, or immediately. Billing stops while it's paused. The run must give the status and scheduled change the preview showed. Undo resumes it.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{` + sub + `,"immediately":{"type":"boolean","default":false},` + expect + `}}`)},
+			{Name: "resume_subscription", Title: "Resume a subscription", Description: "Resumes a paused subscription now (it bills the customer and starts a new period), or takes back a pause or cancellation scheduled for the period end. The run must give the status and scheduled change the preview showed. Undo pauses or cancels it again.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{` + sub + `,` + expect + `}}`)},
+			{Name: "cancel_subscription", Title: "Cancel a subscription", Description: "Cancels at the end of the billing period (undo takes it back until then), or immediately (can't be undone). The run must give the status and scheduled change the preview showed.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{` + sub + `,"immediately":{"type":"boolean","default":false},` + expect + `}}`)},
 		},
 	}
 }
@@ -377,6 +378,65 @@ type input struct {
 	Limit        int    `json:"limit"`
 	After        string `json:"after"`
 	Immediately  bool   `json:"immediately"`
+	// What the preview showed, checked again when the change runs.
+	ExpectedStatus          string `json:"expectedStatus"`
+	ExpectedScheduledChange string `json:"expectedScheduledChange"`
+}
+
+// errNotPreviewed starts the error of a change run without the values its
+// preview showed.
+const errNotPreviewed = "give the values the preview showed"
+
+// pending is the change scheduled for the period end as previews name it.
+func (s subscription) pending() string {
+	if a := s.scheduled(); a != "" {
+		return a
+	}
+	return "none"
+}
+
+// expect checks the status and scheduled change the preview showed
+// against the subscription now: a payment failing, a renewal or a change
+// made in Paddle in between means it isn't the subscription approved.
+func expect(p input, s subscription) []error {
+	var errs []error
+	switch g := strings.ToLower(strings.TrimSpace(p.ExpectedStatus)); {
+	case g == "":
+		errs = append(errs, fmt.Errorf("%s: expectedStatus %q", errNotPreviewed, s.Status))
+	case g != s.Status:
+		errs = append(errs, fmt.Errorf("the subscription changed since the preview: its status is %s now, not %s; preview it again", s.Status, clip(g, 40)))
+	}
+	switch g := strings.ToLower(strings.TrimSpace(p.ExpectedScheduledChange)); {
+	case g == "":
+		errs = append(errs, fmt.Errorf("%s: expectedScheduledChange %q", errNotPreviewed, s.pending()))
+	case g != s.pending():
+		errs = append(errs, fmt.Errorf("the subscription changed since the preview: its scheduled change is %s now, not %s; preview it again", s.pending(), clip(g, 40)))
+	}
+	return errs
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+// runNote is added to a preview whose run would be refused as it stands.
+func runNote(errs []error) string {
+	var missing []string
+	for _, err := range errs {
+		m, ok := strings.CutPrefix(err.Error(), errNotPreviewed+": ")
+		if !ok {
+			return " Running this call will be refused: " + err.Error() + "."
+		}
+		missing = append(missing, m)
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return " To run it, give " + strings.Join(missing, " and ") + " (the subscription as previewed); it's refused if the subscription changed."
 }
 
 func pageQuery(p input) (url.Values, error) {
@@ -427,7 +487,7 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if !subRe.MatchString(id) {
 			return sdk.Result{}, errors.New("the subscription is its id (sub_…, see subscriptions)")
 		}
-		return c.change(ctx, call, id, p.Immediately)
+		return c.change(ctx, call, id, p)
 	}
 	return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 }
@@ -580,7 +640,8 @@ func mustJSON(v any) json.RawMessage {
 	return b
 }
 
-func (c *conn) change(ctx context.Context, call sdk.Call, id string, now bool) (sdk.Result, error) {
+func (c *conn) change(ctx context.Context, call sdk.Call, id string, p input) (sdk.Result, error) {
+	now := p.Immediately
 	var one struct {
 		Data subscription `json:"data"`
 	}
@@ -674,8 +735,12 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id string, now bool) (
 	default:
 		return sdk.Result{}, sdk.ErrUnknownAction(call.Action)
 	}
+	errs := expect(p, s)
 	if call.DryRun {
-		return sdk.Result{Plan: &sdk.Plan{Summary: st.summary, Changes: []sdk.Change{{Target: label, Op: st.op, Before: mustJSON(before), After: mustJSON(st.after)}}}}, nil
+		return sdk.Result{Plan: &sdk.Plan{Summary: st.summary + "." + runNote(errs), Changes: []sdk.Change{{Target: label, Op: st.op, Before: mustJSON(before), After: mustJSON(st.after)}}}}, nil
+	}
+	if len(errs) > 0 {
+		return sdk.Result{}, errs[0]
 	}
 	var r struct {
 		Data subscription `json:"data"`
@@ -685,6 +750,8 @@ func (c *conn) change(ctx context.Context, call sdk.Call, id string, now bool) (
 	}
 	res, err := sdk.JSON(subOut(r.Data))
 	if st.undo != "" {
+		// The undo runs only while the subscription is still as this left it.
+		st.undoInput["expectedStatus"], st.undoInput["expectedScheduledChange"] = r.Data.Status, r.Data.pending()
 		res.Undo = sdk.UndoWith(st.undo, st.undoInput, st.undoText)
 	}
 	return res, err

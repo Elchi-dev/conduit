@@ -72,6 +72,7 @@ var (
 func (m *Module) Manifest() sdk.Manifest {
 	list := `"limit":{"type":"integer","default":20,"maximum":100},"after":{"type":"string","description":"Id of the last item of the previous page"}`
 	cust := `"customer":{"type":"string","description":"Only this customer (cus_…)"}`
+	expect := `"expectedStatus":{"type":"string","description":"The subscription's status as the preview shows it, like active; needed to run"},"expectedPeriodEnd":{"type":"string","description":"The end of its current period as the preview shows it, like 2026-11-24T08:00:00Z; needed to run, refused if the subscription changed since"}`
 	return sdk.Manifest{
 		ID: "stripe", Name: "Stripe", Version: "0.1.0", Category: "Productivity", Icon: "credit-card",
 		Description: "A Stripe account: balance, payments, customers, subscriptions, payouts, disputes, invoices; refunds and cancellations with a preview.",
@@ -94,12 +95,12 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{` + list + `}}`)},
 			{Name: "invoices", Title: "Invoices", Description: "Invoices: number, status, amounts due and paid, customer id, due date.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{` + list + `,` + cust + `,"status":{"type":"string","enum":["","draft","open","paid","uncollectible","void"]}}}`)},
-			{Name: "refund", Title: "Refund a payment", Description: "Refunds a payment, fully or partly. Money goes back to the customer and can't be taken back.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["payment"],"properties":{"payment":{"type":"string","description":"Payment intent (pi_…) or charge (ch_…)"},"amount":{"type":"integer","minimum":1,"description":"In the currency's smallest unit (cents); the whole remaining amount when empty"},"reason":{"type":"string","enum":["","duplicate","fraudulent","requested_by_customer"]},"idempotencyKey":{"type":"string","description":"Reuse to make a retried refund safe; one is made up otherwise"}}}`)},
-			{Name: "cancel_subscription", Title: "Cancel a subscription", Description: "Cancels at the end of the paid period (undo keeps it), or immediately (can't be undone).", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"sub_…"},"immediately":{"type":"boolean","description":"End it now instead of at the period end"},"prorate":{"type":"boolean","description":"With immediately: credit the unused time"},"invoiceNow":{"type":"boolean","description":"With immediately: invoice pending usage and prorations now"}}}`)},
-			{Name: "keep_subscription", Title: "Keep a subscription", Description: "Takes back a cancellation scheduled for the period end. Destructive: the customer is billed again at the period end. Undo schedules the cancellation again.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"sub_…"}}}`)},
+			{Name: "refund", Title: "Refund a payment", Description: "Refunds a payment, fully or partly. Money goes back to the customer and can't be taken back. The run must give what was refunded before, as the preview showed it.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["payment"],"properties":{"payment":{"type":"string","description":"Payment intent (pi_…) or charge (ch_…)"},"amount":{"type":"integer","minimum":1,"description":"In the currency's smallest unit (cents); the whole remaining amount when empty"},"reason":{"type":"string","enum":["","duplicate","fraudulent","requested_by_customer"]},"idempotencyKey":{"type":"string","description":"Reuse to make a retried refund safe; one is made up otherwise"},"expectedRefunded":{"type":"string","description":"What was refunded before, as the preview shows it, like 0.00 USD; needed to run, refused if the payment changed since (so a retried refund can't go through twice)"}}}`)},
+			{Name: "cancel_subscription", Title: "Cancel a subscription", Description: "Cancels at the end of the paid period (undo keeps it), or immediately (can't be undone). The run must give the status and period end the preview showed.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"sub_…"},"immediately":{"type":"boolean","description":"End it now instead of at the period end"},"prorate":{"type":"boolean","description":"With immediately: credit the unused time"},"invoiceNow":{"type":"boolean","description":"With immediately: invoice pending usage and prorations now"},` + expect + `}}`)},
+			{Name: "keep_subscription", Title: "Keep a subscription", Description: "Takes back a cancellation scheduled for the period end. Destructive: the customer is billed again at the period end. The run must give the status and period end the preview showed. Undo schedules the cancellation again.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["subscription"],"properties":{"subscription":{"type":"string","description":"sub_…"},` + expect + `}}`)},
 		},
 	}
 }
@@ -488,6 +489,118 @@ type input struct {
 	Immediately    bool   `json:"immediately"`
 	Prorate        bool   `json:"prorate"`
 	InvoiceNow     bool   `json:"invoiceNow"`
+	// What the preview showed, checked again when the change runs.
+	ExpectedRefunded  string `json:"expectedRefunded"`
+	ExpectedStatus    string `json:"expectedStatus"`
+	ExpectedPeriodEnd string `json:"expectedPeriodEnd"`
+}
+
+// errNotPreviewed starts the error of a change run without the values its
+// preview showed.
+const errNotPreviewed = "give the values the preview showed"
+
+var decimalRe = regexp.MustCompile(`^[0-9]{1,15}(\.[0-9]{1,3})?$`)
+
+// minor reads an amount as previews show it (12.34, or 12.34 USD) in the
+// currency's smallest unit.
+func minor(s, currency string) (int64, bool) {
+	n, c, _ := strings.Cut(strings.TrimSpace(s), " ")
+	if c != "" && !strings.EqualFold(strings.TrimSpace(c), currency) {
+		return 0, false
+	}
+	if !decimalRe.MatchString(n) {
+		return 0, false
+	}
+	digits := 2
+	if cur := strings.ToLower(currency); zeroDecimal[cur] {
+		digits = 0
+	} else if threeDecimal[cur] {
+		digits = 3
+	}
+	whole, frac, _ := strings.Cut(n, ".")
+	frac = strings.TrimRight(frac, "0")
+	if len(frac) > digits {
+		return 0, false
+	}
+	frac += strings.Repeat("0", digits-len(frac))
+	v, err := strconv.ParseInt(whole+frac, 10, 64)
+	return v, err == nil
+}
+
+// expectAmount checks an amount the preview showed against the payment
+// now. A refund retried with a new idempotency key still names what was
+// refunded before it, so it can't go through twice.
+func expectAmount(field, given string, now int64, currency string) error {
+	g := strings.TrimSpace(given)
+	if g == "" {
+		return fmt.Errorf("%s: %s %q", errNotPreviewed, field, money(now, currency))
+	}
+	v, ok := minor(g, currency)
+	if !ok {
+		return fmt.Errorf("%s is an amount like %q, as the preview showed it", field, money(now, currency))
+	}
+	if v != now {
+		return fmt.Errorf("the payment changed since the preview: %s is %s now, not %s; preview it again", field, money(now, currency), clip(g, 40))
+	}
+	return nil
+}
+
+// expectSub checks the status and period end the preview showed against
+// the subscription now (a renewal, a plan change or a failed payment in
+// between means it isn't the subscription that was approved).
+func expectSub(p input, s subscription) []error {
+	var errs []error
+	switch g := strings.TrimSpace(p.ExpectedStatus); {
+	case g == "":
+		errs = append(errs, fmt.Errorf("%s: expectedStatus %q", errNotPreviewed, s.Status))
+	case g != s.Status:
+		errs = append(errs, fmt.Errorf("the subscription changed since the preview: its status is %s now, not %s; preview it again", s.Status, clip(g, 40)))
+	}
+	end := ts(s.CurrentPeriodEnd)
+	switch g := strings.TrimSpace(p.ExpectedPeriodEnd); {
+	case g == "":
+		errs = append(errs, fmt.Errorf("%s: expectedPeriodEnd %q", errNotPreviewed, end))
+	case g != end:
+		errs = append(errs, fmt.Errorf("the subscription changed since the preview: its period ends %s now, not %s; preview it again", end, clip(g, 40)))
+	}
+	return errs
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+// runNote is added to a preview whose run would be refused as it stands.
+func runNote(what string, errs ...error) string {
+	var missing []string
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		m, ok := strings.CutPrefix(err.Error(), errNotPreviewed+": ")
+		if !ok {
+			return " Running this call will be refused: " + err.Error() + "."
+		}
+		missing = append(missing, m)
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return " To run it, give " + strings.Join(missing, " and ") + " (the " + what + " as previewed); it's refused if the " + what + " changed."
+}
+
+// firstErr is the first of errs that isn't nil.
+func firstErr(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // listQuery builds limit, starting_after and the optional filters.
@@ -923,12 +1036,13 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if pi != "" {
 		target = "payment " + pi
 	}
+	expect := expectAmount("expectedRefunded", p.ExpectedRefunded, ch.AmountRefunded, ch.Currency)
 	if call.DryRun {
 		mode := "test mode"
 		if ch.Livemode {
 			mode = "LIVE"
 		}
-		sum := fmt.Sprintf("%s of %s to %s (%s, %s)", kind, money(amount, ch.Currency), who, target, mode)
+		sum := fmt.Sprintf("%s of %s to %s (%s, %s).%s", kind, money(amount, ch.Currency), who, target, mode, runNote("payment", expect))
 		before := map[string]any{"charged": money(captured, ch.Currency), "refunded": money(ch.AmountRefunded, ch.Currency), "customer": string(ch.Customer)}
 		if ch.Description != "" {
 			before["description"] = ch.Description
@@ -938,6 +1052,9 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 			after["reason"] = p.Reason
 		}
 		return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: target, Op: "refund", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
+	}
+	if expect != nil {
+		return sdk.Result{}, expect
 	}
 	form := url.Values{"charge": {ch.ID}, "amount": {strconv.FormatInt(amount, 10)}}
 	if p.Reason != "" {
@@ -982,19 +1099,25 @@ func (c *conn) cancel(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		if !s.CancelAtPeriodEnd {
 			return sdk.JSON(map[string]any{"subscription": s.ID, "note": "it isn't set to cancel"})
 		}
+		expect := expectSub(p, s)
 		if call.DryRun {
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Keep %s of customer %s: it renews on %s instead of ending", s.ID, s.Customer, ts(s.CurrentPeriodEnd)), Changes: []sdk.Change{{Target: label, Op: "update", Before: mustJSON(before), After: mustJSON(map[string]any{"cancelsAtPeriodEnd": false})}}}}, nil
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Keep %s of customer %s: it renews on %s instead of ending.%s", s.ID, s.Customer, ts(s.CurrentPeriodEnd), runNote("subscription", expect...)), Changes: []sdk.Change{{Target: label, Op: "update", Before: mustJSON(before), After: mustJSON(map[string]any{"cancelsAtPeriodEnd": false})}}}}, nil
+		}
+		if err := firstErr(expect...); err != nil {
+			return sdk.Result{}, err
 		}
 		if err := c.do(ctx, http.MethodPost, "/v1/subscriptions/"+s.ID, url.Values{"cancel_at_period_end": {"false"}}, "", &s); err != nil {
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(subOut(s))
-		res.Undo = sdk.UndoWith("cancel_subscription", map[string]any{"subscription": s.ID}, "Cancel "+s.ID+" at the period end again")
+		// The undo runs only while the subscription is still as this left it.
+		res.Undo = sdk.UndoWith("cancel_subscription", map[string]any{"subscription": s.ID, "expectedStatus": s.Status, "expectedPeriodEnd": ts(s.CurrentPeriodEnd)}, "Cancel "+s.ID+" at the period end again")
 		return res, err
 	}
 	if !p.Immediately && s.CancelAtPeriodEnd {
 		return sdk.JSON(map[string]any{"subscription": s.ID, "note": "it already cancels at the period end, " + ts(s.CurrentPeriodEnd)})
 	}
+	expect := expectSub(p, s)
 	if call.DryRun {
 		var sum string
 		after := map[string]any{}
@@ -1006,7 +1129,11 @@ func (c *conn) cancel(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 			sum = fmt.Sprintf("Cancel %s of customer %s at the period end, %s; it runs until then and undo keeps it", s.ID, s.Customer, ts(s.CurrentPeriodEnd))
 			after["cancelsAtPeriodEnd"] = true
 		}
+		sum += "." + runNote("subscription", expect...)
 		return sdk.Result{Plan: &sdk.Plan{Summary: sum, Changes: []sdk.Change{{Target: label, Op: "cancel", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
+	}
+	if err := firstErr(expect...); err != nil {
+		return sdk.Result{}, err
 	}
 	if p.Immediately {
 		q := url.Values{}
@@ -1025,6 +1152,6 @@ func (c *conn) cancel(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 		return sdk.Result{}, err
 	}
 	res, err := sdk.JSON(subOut(s))
-	res.Undo = sdk.UndoWith("keep_subscription", map[string]any{"subscription": s.ID}, "Keep "+s.ID+" (take back the cancellation)")
+	res.Undo = sdk.UndoWith("keep_subscription", map[string]any{"subscription": s.ID, "expectedStatus": s.Status, "expectedPeriodEnd": ts(s.CurrentPeriodEnd)}, "Keep "+s.ID+" (take back the cancellation)")
 	return res, err
 }

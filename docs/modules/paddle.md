@@ -20,6 +20,13 @@ Set `environment` to `sandbox` for a sandbox account's key.
 Listings page with `after` and take up to 200 records at a time. Each change
 says "nothing to change" when the subscription is already in that state.
 
+Every change's preview names the subscription's status and the change
+scheduled for the period end (`none`, `pause` or `cancel`), to pass as
+`expectedStatus` and `expectedScheduledChange`. To run it, pass the values
+the preview shows; the run is refused if the subscription changed in
+between. Undo tokens carry the state the change left, so an undo runs only
+while that still holds.
+
 **Notes.**
 
 - Pausing while a cancellation is scheduled is refused; take the

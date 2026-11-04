@@ -16,11 +16,16 @@ it.
 | `revenue` | read | Per store (one `store`, the default one, or all): revenue and sales all time and over the last 30 days, formatted and in the smallest unit. |
 | `orders` | read, sensitive | Recent orders (`store`, `email`, `status`, `limit` up to 100, `page`): id, number, status, total, tax, refunded amount, product and variant, test mode, customer id and the customer's name and email. Receipt links are never returned. `status` narrows the page that was read. |
 | `subscriptions` | read | Subscriptions (`store`, `status`, `limit`, `page`): status, product and variant, customer and order ids, renewal, end and trial dates, whether cancelled or paused. No names, emails, card details or customer portal links. |
-| `refund_order` | destructive | Refunds an `order`: the whole remaining amount, or `amount` in the smallest unit (cents) for a partial refund. The preview shows the amount and currency, the order number, the customer id, the product, what was charged and already refunded, and whether it's live. Refuses orders that aren't paid, are fully refunded, or amounts above what's left. Money goes back to the customer: there is no undo. |
-| `cancel_subscription` | destructive | Cancels a `subscription`: it runs until the paid period ends, then expires. The preview shows the product, the customer id and the end date. Undo resumes it, during that time. |
-| `resume_subscription` | destructive | Takes back a cancellation before the subscription ends, so the customer is billed again at renewal (that's why it's destructive). Refused once the end date has passed. Undo cancels it again. |
+| `refund_order` | destructive | Refunds an `order`: the whole remaining amount, or `amount` in the smallest unit (cents) for a partial refund. The preview shows the amount and currency, the order number, the customer id, the product, what was charged and already refunded, and whether it's live. Refuses orders that aren't paid, are fully refunded, or amounts above what's left. The run must give `expectedRefunded`, what was refunded before as the preview showed it (like `0.00 USD`), so a retried refund can't go through twice. Money goes back to the customer: there is no undo. |
+| `cancel_subscription` | destructive | Cancels a `subscription`: it runs until the paid period ends, then expires. The preview shows the product, the customer id and the end date; the run must give `expectedStatus` as the preview showed it. Undo resumes it, during that time. |
+| `resume_subscription` | destructive | Takes back a cancellation before the subscription ends, so the customer is billed again at renewal (that's why it's destructive). Refused once the end date has passed. The run must give `expectedStatus` (`cancelled`). Undo cancels it again. |
 
 Lists return `items`, `page`, `lastPage` and `total`.
+
+The changes name the values to pass in their preview. To run it, pass the
+values the preview shows; the run is refused if the order changed in
+between (or, for a subscription, if its status did). Undo tokens carry the
+status the change left, so an undo runs only while that still holds.
 
 **Personal data.** Customer names and emails appear only in `orders`,
 which is sensitive (kept out of the audit log, approvals and events).

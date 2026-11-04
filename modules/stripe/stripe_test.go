@@ -187,24 +187,40 @@ func TestStripeReads(t *testing.T) {
 func TestStripeRefund(t *testing.T) {
 	m, f := setup(t, "secret://st")
 	r, err := invoke(m, "refund", `{"payment":"pi_3Abc123","amount":1500,"reason":"requested_by_customer"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Partial refund of 15.00 USD to customer cus_Q1w2e3r4 (payment pi_3Abc123, test mode)" || f.refunded != 0 {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Partial refund of 15.00 USD to customer cus_Q1w2e3r4 (payment pi_3Abc123, test mode). To run it, give expectedRefunded "0.00 USD" (the payment as previewed); it's refused if the payment changed.` || f.refunded != 0 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	if !strings.Contains(string(r.Plan.Changes[0].After), `"currency":"usd"`) || strings.Contains(string(r.Plan.Changes[0].Before), "jane") {
 		t.Fatalf("%s %s", r.Plan.Changes[0].Before, r.Plan.Changes[0].After)
 	}
-	r, err = invoke(m, "refund", `{"payment":"pi_3Abc123","amount":1500}`, false)
+	// The run needs what the preview showed.
+	if _, err := invoke(m, "refund", `{"payment":"pi_3Abc123","amount":1500}`, false); err == nil || f.refunded != 0 || len(f.idem) != 0 || !strings.Contains(err.Error(), `expectedRefunded "0.00 USD"`) {
+		t.Fatalf("refunded without the previewed values: %v", err)
+	}
+	for _, bad := range []string{"0.00 EUR", "lots", "0.001", "1.00"} {
+		if _, err := invoke(m, "refund", `{"payment":"pi_3Abc123","amount":1500,"expectedRefunded":"`+bad+`"}`, false); err == nil || f.refunded != 0 {
+			t.Fatalf("%s: %v", bad, err)
+		}
+	}
+	r, err = invoke(m, "refund", `{"payment":"pi_3Abc123","amount":1500,"expectedRefunded":"0.00 USD"}`, false)
 	if err != nil || f.refunded != 1500 || r.Undo != nil || !strings.Contains(string(r.Output), `"refund":"re_1"`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
-	if _, err := invoke(m, "refund", `{"payment":"ch_3Abc123","amount":4000}`, false); err == nil || !strings.Contains(err.Error(), "only 35.00 USD") {
+	// The same approved call again is refused: the payment changed.
+	if _, err := invoke(m, "refund", `{"payment":"pi_3Abc123","amount":1500,"expectedRefunded":"0.00 USD"}`, false); err == nil || f.refunded != 1500 || !strings.Contains(err.Error(), "expectedRefunded is 15.00 USD now, not 0.00 USD") {
+		t.Fatalf("refunded twice: %v", err)
+	}
+	if r, err := invoke(m, "refund", `{"payment":"pi_3Abc123","amount":1500,"expectedRefunded":"0.00 USD"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "will be refused") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "refund", `{"payment":"ch_3Abc123","amount":4000,"expectedRefunded":"15 usd"}`, false); err == nil || !strings.Contains(err.Error(), "only 35.00 USD") {
 		t.Fatal(err)
 	}
-	r, err = invoke(m, "refund", `{"payment":"ch_3Abc123","idempotencyKey":"retry-key-1"}`, false)
+	r, err = invoke(m, "refund", `{"payment":"ch_3Abc123","idempotencyKey":"retry-key-1","expectedRefunded":"15.0"}`, false)
 	if err != nil || f.refunded != 5000 {
 		t.Fatalf("%s %v", r.Output, err)
 	}
-	if _, err := invoke(m, "refund", `{"payment":"ch_3Abc123"}`, false); err == nil || !strings.Contains(err.Error(), "fully refunded") {
+	if _, err := invoke(m, "refund", `{"payment":"ch_3Abc123","expectedRefunded":"50.00 USD"}`, false); err == nil || !strings.Contains(err.Error(), "fully refunded") {
 		t.Fatal(err)
 	}
 	if len(f.idem) != 2 || f.idem[0] == f.idem[1] || f.idem[1] != "retry-key-1" {
@@ -214,22 +230,46 @@ func TestStripeRefund(t *testing.T) {
 
 func TestStripeCancel(t *testing.T) {
 	m, f := setup(t, "secret://st")
+	const seen = `"expectedStatus":"active","expectedPeriodEnd":"2026-11-18T11:06:40Z"`
 	r, err := invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X"}`, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "at the period end") || f.cancelEnd {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Cancel sub_1Zz9Yy8X of customer cus_Q1w2e3r4 at the period end, 2026-11-18T11:06:40Z; it runs until then and undo keeps it. To run it, give expectedStatus "active" and expectedPeriodEnd "2026-11-18T11:06:40Z" (the subscription as previewed); it's refused if the subscription changed.` || f.cancelEnd {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X"}`, false)
-	if err != nil || !f.cancelEnd || r.Undo == nil || r.Undo.Action != "keep_subscription" {
+	if _, err := invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X"}`, false); err == nil || f.cancelEnd || !strings.Contains(err.Error(), `expectedStatus "active"`) {
+		t.Fatalf("cancelled without the previewed values: %v", err)
+	}
+	if _, err := invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X","expectedStatus":"active"}`, false); err == nil || f.cancelEnd || !strings.Contains(err.Error(), "expectedPeriodEnd") {
+		t.Fatalf("cancelled without the previewed values: %v", err)
+	}
+	// A renewal in between moves the period end: refused.
+	if _, err := invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X","expectedStatus":"active","expectedPeriodEnd":"2026-10-18T11:06:40Z"}`, false); err == nil || f.cancelEnd || !strings.Contains(err.Error(), "changed since the preview") {
+		t.Fatalf("cancelled a changed subscription: %v", err)
+	}
+	if _, err := invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X","expectedStatus":"past_due","expectedPeriodEnd":"2026-11-18T11:06:40Z"}`, false); err == nil || f.cancelEnd {
+		t.Fatalf("cancelled a changed subscription: %v", err)
+	}
+	r, err = invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X",`+seen+`}`, false)
+	if err != nil || !f.cancelEnd || r.Undo == nil || r.Undo.Action != "keep_subscription" || string(r.Undo.Input) != `{"expectedPeriodEnd":"2026-11-18T11:06:40Z","expectedStatus":"active","subscription":"sub_1Zz9Yy8X"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if _, err := invoke(m, r.Undo.Action, string(r.Undo.Input), false); err != nil || f.cancelEnd {
-		t.Fatal(err)
+	if _, err := invoke(m, "keep_subscription", `{"subscription":"sub_1Zz9Yy8X"}`, false); err == nil || !f.cancelEnd || !strings.Contains(err.Error(), "expectedStatus") {
+		t.Fatalf("kept without the previewed values: %v", err)
+	}
+	if r, err := invoke(m, "keep_subscription", `{"subscription":"sub_1Zz9Yy8X"}`, true); err != nil || !strings.Contains(r.Plan.Summary, `To run it, give expectedStatus "active"`) {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, r.Undo.Action, string(r.Undo.Input), false)
+	if err != nil || f.cancelEnd || r.Undo == nil || r.Undo.Action != "cancel_subscription" || string(r.Undo.Input) != `{"expectedPeriodEnd":"2026-11-18T11:06:40Z","expectedStatus":"active","subscription":"sub_1Zz9Yy8X"}` {
+		t.Fatalf("%+v %v", r, err)
 	}
 	r, err = invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X","immediately":true,"prorate":true}`, true)
 	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "now") || f.canceled {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X","immediately":true,"prorate":true}`, false)
+	if _, err := invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X","immediately":true,"prorate":true}`, false); err == nil || f.canceled {
+		t.Fatalf("ended without the previewed values: %v", err)
+	}
+	r, err = invoke(m, "cancel_subscription", `{"subscription":"sub_1Zz9Yy8X","immediately":true,"prorate":true,`+seen+`}`, false)
 	if err != nil || !f.canceled || r.Undo != nil {
 		t.Fatalf("%+v %v", r, err)
 	}

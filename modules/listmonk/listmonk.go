@@ -10,6 +10,8 @@ package listmonk
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,8 +92,8 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
 			{Name: "create_campaign", Title: "Create a draft campaign", Description: "Creates a draft campaign for some lists; nothing is sent. Undo deletes it.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["name","subject","lists","body"],"properties":{"name":{"type":"string","maxLength":200},"subject":{"type":"string","maxLength":500},"lists":{"type":"array","items":{"type":"integer","minimum":1},"minItems":1,"maxItems":20},"body":{"type":"string","maxLength":200000},"contentType":{"type":"string","enum":["richtext","html","markdown","plain"],"default":"markdown"},"fromEmail":{"type":"string","description":"Default: the server's from address"},"templateId":{"type":"integer","minimum":1},"tags":{"type":"array","items":{"type":"string"},"maxItems":10}}}`)},
-			{Name: "send_campaign", Title: "Send a campaign", Description: "Starts a draft, scheduled or paused campaign: it emails every subscriber on its lists (or is scheduled, when a draft has a send time, or a paused one is given its sendAt back). Can't be taken back. The preview shows each list's size.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `,"sendAt":{"type":"string","description":"Only for a paused campaign that was scheduled: its send time (unchanged), to schedule it again instead of sending now"}}}`)},
+			{Name: "send_campaign", Title: "Send a campaign", Description: "Starts a draft, scheduled or paused campaign: it emails every subscriber on its lists (or is scheduled, when a draft has a send time, or a paused one is given its sendAt back). Can't be taken back. The preview shows each list's size and the campaign's sha256, which the run must give: it's refused if the campaign changed since.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `,"sendAt":{"type":"string","description":"Only for a paused campaign that was scheduled: its send time (unchanged), to schedule it again instead of sending now"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The campaign's sha256 from the preview; needed to run, refused if the campaign changed since"}}}`)},
 			{Name: "pause_campaign", Title: "Pause a campaign", Description: "Pauses a running or scheduled campaign; emails already sent stay sent. Undo resumes a running one (which sends the rest) or schedules a scheduled one again for its original time.", Risk: sdk.RiskWrite, Reversible: true, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["campaign"],"properties":{` + campaign + `}}`)},
 			{Name: "delete_campaign", Title: "Delete a campaign", Description: "Deletes a campaign that isn't running, with its stats, for good.", Risk: sdk.RiskDestructive, DryRun: true,
@@ -224,6 +226,54 @@ type campaign struct {
 	CreatedAt string  `json:"created_at"`
 	StartedAt *string `json:"started_at"`
 	SendAt    *string `json:"send_at"`
+	// What's emailed, for the fingerprint a send must name.
+	Body        string `json:"body"`
+	AltBody     string `json:"altbody"`
+	ContentType string `json:"content_type"`
+	TemplateID  int    `json:"template_id"`
+	Messenger   string `json:"messenger"`
+}
+
+// shaRe is a content fingerprint as previews show it.
+var shaRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// fingerprint is the sha256 of what a send delivers and to which lists,
+// shown in the preview and required to send: the campaign approved is the
+// campaign sent. Its status isn't part of it, so pausing and resuming
+// keeps it.
+func (c campaign) fingerprint() string {
+	lists := []int{}
+	for _, l := range c.Lists {
+		lists = append(lists, l.ID)
+	}
+	sort.Ints(lists)
+	b, _ := json.Marshal([]any{c.ID, c.Subject, c.FromEmail, lists, c.ContentType, c.Body, c.AltBody, c.TemplateID, c.Messenger, ptrStr(c.SendAt)})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// sameContent refuses to send when no fingerprint was given or when the
+// campaign changed since the one given.
+func sameContent(given, now string) error {
+	switch {
+	case given == "":
+		return fmt.Errorf("give the campaign's sha256 from the preview (%s now), so that what's sent is what was approved", now)
+	case given != now:
+		return fmt.Errorf("the campaign changed since it was previewed (its sha256 is %s now, not %s), so this is refused; preview it again", now, given)
+	}
+	return nil
+}
+
+// changedNote is added to a preview: what to give to run it, or that the
+// given fingerprint no longer matches.
+func changedNote(given, now string) string {
+	if given != "" && given != now {
+		return fmt.Sprintf(" The campaign changed since sha256 %s was taken, so running this call will be refused.", given)
+	}
+	if given == "" {
+		return " To run it, give that sha256; it's refused if the campaign changed."
+	}
+	return ""
 }
 
 func (c campaign) brief() map[string]any {
@@ -309,9 +359,13 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		TemplateID  int      `json:"templateId"`
 		Tags        []string `json:"tags"`
 		SendAt      string   `json:"sendAt"`
+		SHA256      string   `json:"sha256"`
 	}
 	if err := sdk.Decode(call, &p); err != nil {
 		return sdk.Result{}, err
+	}
+	if p.SHA256 != "" && !shaRe.MatchString(p.SHA256) {
+		return sdk.Result{}, errors.New("sha256 is the 64 lowercase hex digits from the preview")
 	}
 	switch call.Action {
 	case "lists":
@@ -533,8 +587,12 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			if cp.Status == "paused" && target == "running" {
 				verb = "Resume emailing"
 			}
-			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s %q to up to %d subscribers %s: %s. Sent emails can't be recalled.", verb, clip(cp.Subject, 80), total, when, strings.Join(parts, ", ")),
+			sum := cp.fingerprint()
+			return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s %q to up to %d subscribers %s: %s (campaign sha256 %s). Sent emails can't be recalled.%s", verb, clip(cp.Subject, 80), total, when, strings.Join(parts, ", "), sum, changedNote(p.SHA256, sum)),
 				Changes: changes}}, nil
+		}
+		if err := sameContent(p.SHA256, cp.fingerprint()); err != nil {
+			return sdk.Result{}, err
 		}
 		after, err := c.setStatus(ctx, cp.ID, target)
 		if err != nil {
@@ -559,10 +617,11 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 			return sdk.Result{}, err
 		}
 		res, err := sdk.JSON(map[string]any{"campaign": cp.ID, "status": after.Status, "sent": after.Sent})
+		// The undo sends only the campaign as it was paused.
 		if cp.Status == "scheduled" && ptrStr(cp.SendAt) != "" {
-			res.Undo = sdk.UndoWith("send_campaign", map[string]any{"campaign": cp.ID, "sendAt": *cp.SendAt}, "Schedule the campaign again for "+*cp.SendAt)
+			res.Undo = sdk.UndoWith("send_campaign", map[string]any{"campaign": cp.ID, "sendAt": *cp.SendAt, "sha256": cp.fingerprint()}, "Schedule the campaign again for "+*cp.SendAt)
 		} else {
-			res.Undo = sdk.UndoWith("send_campaign", map[string]int{"campaign": cp.ID}, "Resume the campaign")
+			res.Undo = sdk.UndoWith("send_campaign", map[string]any{"campaign": cp.ID, "sha256": cp.fingerprint()}, "Resume the campaign")
 		}
 		return res, err
 

@@ -11,6 +11,8 @@ package invoiceninja
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,10 +113,10 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"Invoice id"}}}`)},
 			{Name: "mark_sent", Title: "Mark an invoice sent", Description: "Marks a draft invoice sent without emailing it: it gets a number, counts toward the client's balance and becomes due. Can't be undone here.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
 				Input: sdk.Schema(inv)},
-			{Name: "email_invoice", Title: "Email an invoice", Description: "Emails the invoice to the client's contacts with your invoice template (a draft is marked sent). The preview names the client, recipients and amount.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
-				Input: sdk.Schema(inv)},
-			{Name: "record_payment", Title: "Record a payment", Description: "Records a payment against an invoice (the balance by default), which marks it paid or partly paid. Moves no money; Invoice Ninja may email the client a receipt, per its settings.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
-				Input: sdk.Schema(`{"type":"object","required":["invoice"],"properties":{"invoice":{"type":"string","description":"Invoice id"},"amount":{"type":"string","description":"Decimal, the invoice's balance by default"},"date":{"type":"string","description":"YYYY-MM-DD, today by default"},"reference":{"type":"string","description":"Transaction reference"}}}`)},
+			{Name: "email_invoice", Title: "Email an invoice", Description: "Emails the invoice to the client's contacts with your invoice template (a draft is marked sent). The preview names the client, recipients and amount, with a sha256 of them that the run must give: it's refused if the invoice or its recipients changed since.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","required":["invoice"],"properties":{"invoice":{"type":"string","description":"Invoice id"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"The sha256 from the preview; needed to run, refused if the invoice or its recipients changed since"}}}`)},
+			{Name: "record_payment", Title: "Record a payment", Description: "Records a payment against an invoice (the balance by default), which marks it paid or partly paid. Moves no money; Invoice Ninja may email the client a receipt, per its settings. The run must give the balance the preview showed.", Risk: sdk.RiskDestructive, DryRun: true, Sensitive: true,
+				Input: sdk.Schema(`{"type":"object","required":["invoice"],"properties":{"invoice":{"type":"string","description":"Invoice id"},"amount":{"type":"string","description":"Decimal, the invoice's balance by default"},"date":{"type":"string","description":"YYYY-MM-DD, today by default"},"reference":{"type":"string","description":"Transaction reference"},"expectedBalance":{"type":"string","description":"The invoice's balance as the preview shows it, like 120.00; needed to run, refused if the invoice changed since (so a retried payment isn't recorded twice)"}}}`)},
 		},
 	}
 }
@@ -398,6 +400,65 @@ type input struct {
 	PublicNotes string `json:"publicNotes"`
 	Amount      string `json:"amount"`
 	Reference   string `json:"reference"`
+	// What the preview showed, checked again when the change runs.
+	ExpectedBalance string `json:"expectedBalance"`
+	SHA256          string `json:"sha256"`
+}
+
+// errNotPreviewed starts the error of a change run without the values its
+// preview showed.
+const errNotPreviewed = "give the values the preview showed"
+
+var shaRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// fingerprint is the sha256 of what an email delivers (the fields in
+// order), shown in the preview and required to send: the invoice and the
+// recipients approved are the ones emailed.
+func fingerprint(fields ...any) string {
+	b, _ := json.Marshal(fields)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// sameContent refuses to send when no fingerprint was given or when the
+// invoice or its recipients changed since the one given.
+func sameContent(given, now string) error {
+	switch {
+	case given == "":
+		return fmt.Errorf("%s: sha256 %q", errNotPreviewed, now)
+	case given != now:
+		return fmt.Errorf("the invoice or its recipients changed since the preview (its sha256 is %s now, not %s); preview it again", now, given)
+	}
+	return nil
+}
+
+// expectBalance checks the balance the preview showed against the invoice
+// now. Payments have no idempotency keys: naming the balance is what keeps
+// a payment retried after a lost answer from being recorded twice.
+func expectBalance(given string, now *big.Rat) error {
+	g := strings.TrimSpace(given)
+	if g == "" {
+		return fmt.Errorf("%s: expectedBalance %q", errNotPreviewed, decRat(now))
+	}
+	if !amountRe.MatchString(g) {
+		return fmt.Errorf("expectedBalance is an amount like %q, as the preview showed it", decRat(now))
+	}
+	if rat(money(g)).Cmp(now) != 0 {
+		return fmt.Errorf("the invoice changed since the preview: its balance is %s now, not %s; preview it again", decRat(now), g)
+	}
+	return nil
+}
+
+// runNote is added to a preview whose run would be refused as it stands.
+func runNote(err error) string {
+	if err == nil {
+		return ""
+	}
+	m, ok := strings.CutPrefix(err.Error(), errNotPreviewed+": ")
+	if !ok {
+		return " Running this call will be refused: " + err.Error() + "."
+	}
+	return " To run it, give " + m + " (the invoice as previewed); it's refused if the invoice changed."
 }
 
 func mustJSON(v any) json.RawMessage {
@@ -466,11 +527,14 @@ func (m *Module) Invoke(ctx context.Context, call sdk.Call) (sdk.Result, error) 
 		if err != nil {
 			return sdk.Result{}, err
 		}
+		if p.SHA256 != "" && !shaRe.MatchString(p.SHA256) {
+			return sdk.Result{}, errors.New("sha256 is the 64 lowercase hex digits from the preview")
+		}
 		switch call.Action {
 		case "mark_sent":
 			return c.markSent(ctx, call, id)
 		case "email_invoice":
-			return c.email(ctx, call, id)
+			return c.email(ctx, call, id, p.SHA256)
 		}
 		return c.pay(ctx, call, id, p)
 	}
@@ -827,7 +891,7 @@ func (c *conn) markSent(ctx context.Context, call sdk.Call, id string) (sdk.Resu
 	return sdk.JSON(after.row(cl.label()))
 }
 
-func (c *conn) email(ctx context.Context, call sdk.Call, id string) (sdk.Result, error) {
+func (c *conn) email(ctx context.Context, call sdk.Call, id, given string) (sdk.Result, error) {
 	inv, err := c.invoice(ctx, id)
 	if err != nil {
 		return sdk.Result{}, err
@@ -846,13 +910,22 @@ func (c *conn) email(ctx context.Context, call sdk.Call, id string) (sdk.Result,
 	if len(to) == 0 {
 		return sdk.Result{}, fmt.Errorf("%s has no contact with an email address to send to", cl.label())
 	}
+	sum := fingerprint(inv.ID, inv.Number, inv.status(), dec(inv.Amount), dec(inv.Balance), cl.label(), to)
+	same := sameContent(given, sum)
 	if call.DryRun {
 		summary := fmt.Sprintf("Email %s for %s (balance %s) to %s: %s", inv.label(), dec(inv.Amount), dec(inv.Balance), cl.label(), strings.Join(to, ", "))
 		if inv.status() == "draft" {
 			summary += " (the draft is marked sent)"
 		}
+		if same == nil {
+			summary += " (sha256 " + sum + ")"
+		}
+		summary += "." + runNote(same)
 		return sdk.Result{Plan: &sdk.Plan{Summary: summary, Changes: []sdk.Change{{Target: inv.label(), Op: "email",
-			After: mustJSON(map[string]any{"client": cl.label(), "to": to, "amount": dec(inv.Amount), "balance": dec(inv.Balance)})}}}}, nil
+			After: mustJSON(map[string]any{"client": cl.label(), "to": to, "amount": dec(inv.Amount), "balance": dec(inv.Balance), "sha256": sum})}}}}, nil
+	}
+	if same != nil {
+		return sdk.Result{}, same
 	}
 	if _, err := c.bulk(ctx, "email", id); err != nil {
 		return sdk.Result{}, err
@@ -908,10 +981,14 @@ func (c *conn) pay(ctx context.Context, call sdk.Call, id string, p input) (sdk.
 	if ref != "" {
 		body["transaction_reference"] = ref
 	}
+	expect := expectBalance(p.ExpectedBalance, bal)
 	if call.DryRun {
 		left := new(big.Rat).Sub(bal, amt)
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Record a payment of %s from %s on %s against %s (balance %s, then %s)", a, cl.label(), date, inv.label(), decRat(bal), decRat(left)),
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Record a payment of %s from %s on %s against %s (balance %s, then %s).%s", a, cl.label(), date, inv.label(), decRat(bal), decRat(left), runNote(expect)),
 			Changes: []sdk.Change{{Target: inv.label(), Op: "record payment", Before: mustJSON(map[string]string{"balance": decRat(bal)}), After: mustJSON(map[string]string{"balance": decRat(left)})}}}}, nil
+	}
+	if expect != nil {
+		return sdk.Result{}, expect
 	}
 	var d struct {
 		Data struct {

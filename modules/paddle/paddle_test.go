@@ -162,15 +162,35 @@ func TestPaddleReads(t *testing.T) {
 func TestPaddleSubscriptionChanges(t *testing.T) {
 	m, f := setup(t, good)
 	in := `{"subscription":"` + subID + `"}`
+	with := func(status, sched string, extra ...string) string {
+		x := ""
+		for _, e := range extra {
+			x += "," + e
+		}
+		return `{"subscription":"` + subID + `","expectedStatus":"` + status + `","expectedScheduledChange":"` + sched + `"` + x + `}`
+	}
 	// Cancel at the period end, then take it back.
 	r, err := invoke(m, "cancel_subscription", in, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "at the end of the billing period (2026-12-01T00:00:00Z); undo takes it back") || f.scheduled != "" {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Cancel subscription `+subID+` (Pro) of customer `+ctmID+` at the end of the billing period (2026-12-01T00:00:00Z); undo takes it back until then. To run it, give expectedStatus "active" and expectedScheduledChange "none" (the subscription as previewed); it's refused if the subscription changed.` || f.scheduled != "" {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "cancel_subscription", in, false)
-	if err != nil || f.scheduled != "cancel" || r.Undo == nil || r.Undo.Action != "resume_subscription" || string(r.Undo.Input) != in {
+	// The run needs the values the preview showed, and the subscription as it was.
+	for _, bad := range []string{in, `{"subscription":"` + subID + `","expectedStatus":"active"}`, with("past_due", "none"), with("active", "pause")} {
+		if _, err := invoke(m, "cancel_subscription", bad, false); err == nil || f.scheduled != "" {
+			t.Fatalf("%s: %v", bad, err)
+		}
+	}
+	if _, err := invoke(m, "cancel_subscription", with("active", "pause"), false); err == nil || !strings.Contains(err.Error(), "scheduled change is none now, not pause") {
+		t.Fatal(err)
+	}
+	if r, err := invoke(m, "cancel_subscription", with("active", "pause"), true); err != nil || !strings.Contains(r.Plan.Summary, "will be refused") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	r, err = invoke(m, "cancel_subscription", with("active", "none"), false)
+	if err != nil || f.scheduled != "cancel" || r.Undo == nil || r.Undo.Action != "resume_subscription" || string(r.Undo.Input) != `{"expectedScheduledChange":"cancel","expectedStatus":"active","subscription":"`+subID+`"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
+	undo := r.Undo
 	if r, err := invoke(m, "cancel_subscription", in, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
@@ -178,11 +198,14 @@ func TestPaddleSubscriptionChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, err = invoke(m, "resume_subscription", in, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "Take back the cancel") {
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "Take back the cancel") || !strings.Contains(r.Plan.Summary, `expectedScheduledChange "cancel"`) {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "resume_subscription", in, false)
-	if err != nil || f.scheduled != "" || r.Undo == nil || r.Undo.Action != "cancel_subscription" {
+	if _, err := invoke(m, "resume_subscription", in, false); err == nil || f.scheduled != "cancel" {
+		t.Fatalf("resumed without the previewed values: %v", err)
+	}
+	r, err = invoke(m, undo.Action, string(undo.Input), false)
+	if err != nil || f.scheduled != "" || r.Undo == nil || r.Undo.Action != "cancel_subscription" || string(r.Undo.Input) != `{"expectedScheduledChange":"none","expectedStatus":"active","subscription":"`+subID+`"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if r, err := invoke(m, "resume_subscription", in, false); err != nil || r.Undo != nil || !strings.Contains(string(r.Output), "nothing to change") {
@@ -190,8 +213,11 @@ func TestPaddleSubscriptionChanges(t *testing.T) {
 	}
 
 	// Pause now, resume (bills again), and its undo pauses again.
-	r, err = invoke(m, "pause_subscription", `{"subscription":"`+subID+`","immediately":true}`, false)
-	if err != nil || f.status != "paused" || r.Undo == nil || r.Undo.Action != "resume_subscription" {
+	if _, err := invoke(m, "pause_subscription", `{"subscription":"`+subID+`","immediately":true}`, false); err == nil || f.status != "active" {
+		t.Fatalf("paused without the previewed values: %v", err)
+	}
+	r, err = invoke(m, "pause_subscription", with("active", "none", `"immediately":true`), false)
+	if err != nil || f.status != "paused" || r.Undo == nil || r.Undo.Action != "resume_subscription" || !strings.Contains(string(r.Undo.Input), `"expectedStatus":"paused"`) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if r, err := invoke(m, "pause_subscription", in, false); err != nil || !strings.Contains(string(r.Output), "paused already") {
@@ -205,11 +231,11 @@ func TestPaddleSubscriptionChanges(t *testing.T) {
 		}
 	}
 	r, err = invoke(m, "resume_subscription", in, true)
-	if err != nil || !strings.Contains(r.Plan.Summary, "bills the customer") || f.status != "paused" {
+	if err != nil || !strings.Contains(r.Plan.Summary, "bills the customer") || !strings.Contains(r.Plan.Summary, `expectedStatus "paused"`) || f.status != "paused" {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "resume_subscription", in, false)
-	if err != nil || f.status != "active" || r.Undo == nil || string(r.Undo.Input) != `{"immediately":true,"subscription":"`+subID+`"}` {
+	r, err = invoke(m, "resume_subscription", with("paused", "none"), false)
+	if err != nil || f.status != "active" || r.Undo == nil || string(r.Undo.Input) != `{"expectedScheduledChange":"none","expectedStatus":"active","immediately":true,"subscription":"`+subID+`"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 
@@ -218,7 +244,7 @@ func TestPaddleSubscriptionChanges(t *testing.T) {
 	if err != nil || !strings.Contains(r.Plan.Summary, "can't be undone") {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "cancel_subscription", `{"subscription":"`+subID+`","immediately":true}`, false)
+	r, err = invoke(m, "cancel_subscription", with("active", "none", `"immediately":true`), false)
 	if err != nil || f.status != "canceled" || r.Undo != nil {
 		t.Fatalf("%+v %v", r, err)
 	}

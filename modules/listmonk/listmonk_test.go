@@ -26,7 +26,8 @@ type fake struct {
 func newFake() *fake {
 	return &fake{campaigns: map[int]map[string]any{
 		1: {"id": 1, "name": "October", "subject": "News for October", "status": "finished", "lists": []any{map[string]any{"id": 1, "name": "Newsletter"}}, "sent": 120, "to_send": 120, "views": 80, "clicks": 12, "bounces": 1},
-		2: {"id": 2, "name": "November", "subject": "News for November", "status": "draft", "lists": []any{map[string]any{"id": 1, "name": "Newsletter"}, map[string]any{"id": 2, "name": "Beta"}}},
+		2: {"id": 2, "name": "November", "subject": "News for November", "status": "draft", "lists": []any{map[string]any{"id": 1, "name": "Newsletter"}, map[string]any{"id": 2, "name": "Beta"}},
+			"body": "# Hi", "content_type": "markdown", "template_id": 1, "messenger": "email"},
 	}}
 }
 
@@ -160,10 +161,27 @@ func TestListmonk(t *testing.T) {
 
 	// Sending: the preview shows each list's reach and sends nothing.
 	p, err = invoke(m, "send_campaign", `{"campaign":2}`, true)
-	if err != nil || p.Plan == nil || !strings.Contains(p.Plan.Summary, "up to 150 subscribers now: Newsletter (120), Beta (30)") || len(f.statusPut) != 0 {
+	sum := shaIn(p)
+	if err != nil || p.Plan == nil || p.Plan.Summary != `Email "News for November" to up to 150 subscribers now: Newsletter (120), Beta (30) (campaign sha256 `+sum+`). Sent emails can't be recalled. To run it, give that sha256; it's refused if the campaign changed.` || len(f.statusPut) != 0 {
 		t.Fatal(p.Plan, err)
 	}
-	if _, err := invoke(m, "send_campaign", `{"campaign":2}`, false); err != nil || f.statusPut[0] != "2=running" {
+	// The run needs the sha256 the preview showed, of the campaign as it is.
+	if _, err := invoke(m, "send_campaign", `{"campaign":2}`, false); err == nil || len(f.statusPut) != 0 || !strings.Contains(err.Error(), sum) {
+		t.Fatal("sent without the previewed sha256", err)
+	}
+	n := len(f.seen)
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sha256":"ABC"}`, false); err == nil || len(f.seen) != n {
+		t.Fatal("took a malformed sha256", err)
+	}
+	f.campaigns[2]["body"] = "# Hi, changed"
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sha256":"`+sum+`"}`, false); err == nil || len(f.statusPut) != 0 || !strings.Contains(err.Error(), "changed since it was previewed") {
+		t.Fatal("sent a changed campaign", err)
+	}
+	if p, err := invoke(m, "send_campaign", `{"campaign":2,"sha256":"`+sum+`"}`, true); err != nil || !strings.Contains(p.Plan.Summary, "will be refused") {
+		t.Fatal(p.Plan, err)
+	}
+	f.campaigns[2]["body"] = "# Hi"
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sha256":"`+sum+`"}`, false); err != nil || f.statusPut[0] != "2=running" {
 		t.Fatal(err, f.statusPut)
 	}
 	r, err = invoke(m, "campaign", `{"campaign":2}`, false)
@@ -174,11 +192,11 @@ func TestListmonk(t *testing.T) {
 		t.Fatal("deleted a running campaign")
 	}
 	r, err = invoke(m, "pause_campaign", `{"campaign":2}`, false)
-	if err != nil || r.Undo == nil || r.Undo.Action != "send_campaign" || f.statusPut[1] != "2=paused" {
+	if err != nil || r.Undo == nil || r.Undo.Action != "send_campaign" || f.statusPut[1] != "2=paused" || string(r.Undo.Input) != `{"campaign":2,"sha256":"`+sum+`"}` {
 		t.Fatal(r, err)
 	}
 	p, err = invoke(m, "send_campaign", string(r.Undo.Input), true)
-	if err != nil || !strings.HasPrefix(p.Plan.Summary, "Resume emailing") {
+	if err != nil || !strings.HasPrefix(p.Plan.Summary, "Resume emailing") || strings.Contains(p.Plan.Summary, "To run it") {
 		t.Fatal(p.Plan, err)
 	}
 	if _, err := invoke(m, "send_campaign", `{"campaign":1}`, false); err == nil || !strings.Contains(err.Error(), "finished") {
@@ -188,24 +206,25 @@ func TestListmonk(t *testing.T) {
 	// A draft with a future send time is scheduled, not sent now.
 	f.campaigns[2]["status"], f.campaigns[2]["send_at"] = "draft", "2026-11-10T09:00:00Z"
 	p, err = invoke(m, "send_campaign", `{"campaign":2}`, true)
-	if err != nil || !strings.HasPrefix(p.Plan.Summary, "Schedule emailing") {
+	if err != nil || !strings.HasPrefix(p.Plan.Summary, "Schedule emailing") || strings.Contains(p.Plan.Summary, sum) {
 		t.Fatal(p.Plan, err)
 	}
-	if _, err := invoke(m, "send_campaign", `{"campaign":2}`, false); err != nil || f.statusPut[2] != "2=scheduled" {
+	sum = shaIn(p)
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sha256":"`+sum+`"}`, false); err != nil || f.statusPut[2] != "2=scheduled" {
 		t.Fatal(err, f.statusPut)
 	}
 
 	// Pausing a scheduled campaign: undo schedules it again for its
 	// original time, instead of sending it now.
 	r, err = invoke(m, "pause_campaign", `{"campaign":2}`, false)
-	if err != nil || r.Undo == nil || string(r.Undo.Input) != `{"campaign":2,"sendAt":"2026-11-10T09:00:00Z"}` {
+	if err != nil || r.Undo == nil || string(r.Undo.Input) != `{"campaign":2,"sendAt":"2026-11-10T09:00:00Z","sha256":"`+sum+`"}` {
 		t.Fatal(r.Undo, err)
 	}
 	p, err = invoke(m, "send_campaign", string(r.Undo.Input), true)
 	if err != nil || !strings.HasPrefix(p.Plan.Summary, "Schedule emailing") || !strings.Contains(p.Plan.Summary, "at 2026-11-10T09:00:00Z") {
 		t.Fatal(p.Plan, err)
 	}
-	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sendAt":"2026-11-11T09:00:00Z"}`, false); err == nil {
+	if _, err := invoke(m, "send_campaign", `{"campaign":2,"sendAt":"2026-11-11T09:00:00Z","sha256":"`+sum+`"}`, false); err == nil {
 		t.Fatal("scheduled for a time the campaign doesn't have")
 	}
 	if _, err := invoke(m, "send_campaign", string(r.Undo.Input), false); err != nil || f.statusPut[len(f.statusPut)-1] != "2=scheduled" {
@@ -265,4 +284,16 @@ func TestListmonkRefusesCrossHostRedirect(t *testing.T) {
 	if h := m.Health(context.Background(), "l"); h.Status != "down" || hit {
 		t.Fatalf("followed the redirect: %+v", h)
 	}
+}
+
+// shaIn is the campaign sha256 a send preview shows.
+func shaIn(r sdk.Result) string {
+	if r.Plan == nil {
+		return ""
+	}
+	_, after, _ := strings.Cut(r.Plan.Summary, "sha256 ")
+	if len(after) < 64 || !shaRe.MatchString(after[:64]) {
+		return ""
+	}
+	return after[:64]
 }

@@ -201,25 +201,41 @@ func TestLemonSqueezyReads(t *testing.T) {
 func TestLemonSqueezyRefund(t *testing.T) {
 	m, f := setup(t, good)
 	r, err := invoke(m, "refund_order", `{"order":"1001","amount":1500}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Partial refund of 15.00 USD to customer 55 (order #42, id 1001, test mode)" || f.refunded != 0 {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Partial refund of 15.00 USD to customer 55 (order #42, id 1001, test mode). To run it, give expectedRefunded "0.00 USD" (the order as previewed); it's refused if the order changed.` || f.refunded != 0 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	plan, _ := json.Marshal(r.Plan)
 	if strings.Contains(string(plan), "jane") || strings.Contains(string(plan), "Jane") {
 		t.Fatalf("the preview has personal data: %s", plan)
 	}
-	r, err = invoke(m, "refund_order", `{"order":1001,"amount":1500}`, false)
+	// The run needs what the preview showed.
+	if _, err := invoke(m, "refund_order", `{"order":1001,"amount":1500}`, false); err == nil || f.refunded != 0 || !strings.Contains(err.Error(), `expectedRefunded "0.00 USD"`) {
+		t.Fatalf("refunded without the previewed values: %v", err)
+	}
+	for _, bad := range []string{"0.00 EUR", "nothing", "0.001", "5"} {
+		if _, err := invoke(m, "refund_order", `{"order":1001,"amount":1500,"expectedRefunded":"`+bad+`"}`, false); err == nil || f.refunded != 0 {
+			t.Fatalf("%s: %v", bad, err)
+		}
+	}
+	r, err = invoke(m, "refund_order", `{"order":1001,"amount":1500,"expectedRefunded":"0.00 USD"}`, false)
 	if err != nil || f.refunded != 1500 || r.Undo != nil || !strings.Contains(string(r.Output), `"status":"partial_refund"`) {
 		t.Fatalf("%s %v", r.Output, err)
+	}
+	// The same approved call retried is refused: the order changed.
+	if _, err := invoke(m, "refund_order", `{"order":1001,"amount":1500,"expectedRefunded":"0.00 USD"}`, false); err == nil || f.refunded != 1500 || !strings.Contains(err.Error(), "expectedRefunded is 15.00 USD now, not 0.00 USD") {
+		t.Fatalf("refunded twice: %v", err)
+	}
+	if r, err := invoke(m, "refund_order", `{"order":1001,"amount":1500,"expectedRefunded":"0"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "will be refused") {
+		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	if _, err := invoke(m, "refund_order", `{"order":"1001","amount":4000}`, false); err == nil || !strings.Contains(err.Error(), "only 34.00 USD") {
 		t.Fatal(err)
 	}
 	r, err = invoke(m, "refund_order", `{"order":"1001"}`, true)
-	if err != nil || !strings.HasPrefix(r.Plan.Summary, "Partial refund of 34.00 USD") {
+	if err != nil || !strings.HasPrefix(r.Plan.Summary, "Partial refund of 34.00 USD") || !strings.Contains(r.Plan.Summary, `expectedRefunded "15.00 USD"`) {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if _, err := invoke(m, "refund_order", `{"order":"1001"}`, false); err != nil || f.refunded != 4900 {
+	if _, err := invoke(m, "refund_order", `{"order":"1001","expectedRefunded":"15 usd"}`, false); err != nil || f.refunded != 4900 {
 		t.Fatal(err)
 	}
 	if _, err := invoke(m, "refund_order", `{"order":"1001"}`, false); err == nil || !strings.Contains(err.Error(), "is refunded") {
@@ -233,22 +249,32 @@ func TestLemonSqueezyRefund(t *testing.T) {
 func TestLemonSqueezyCancel(t *testing.T) {
 	m, f := setup(t, good)
 	r, err := invoke(m, "cancel_subscription", `{"subscription":"301"}`, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "runs until the paid period ends (2026-12-01") || f.cancelled {
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "runs until the paid period ends (2026-12-01") || !strings.HasSuffix(r.Plan.Summary, `To run it, give expectedStatus "active" (the subscription as previewed); it's refused if the subscription changed.`) || f.cancelled {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "cancel_subscription", `{"subscription":301}`, false)
-	if err != nil || !f.cancelled || r.Undo == nil || r.Undo.Action != "resume_subscription" || string(r.Undo.Input) != `{"subscription":"301"}` {
+	if _, err := invoke(m, "cancel_subscription", `{"subscription":301}`, false); err == nil || f.cancelled || !strings.Contains(err.Error(), `expectedStatus "active"`) {
+		t.Fatalf("cancelled without the previewed status: %v", err)
+	}
+	if _, err := invoke(m, "cancel_subscription", `{"subscription":301,"expectedStatus":"past_due"}`, false); err == nil || f.cancelled || !strings.Contains(err.Error(), "changed since the preview") {
+		t.Fatalf("cancelled a changed subscription: %v", err)
+	}
+	r, err = invoke(m, "cancel_subscription", `{"subscription":301,"expectedStatus":"active"}`, false)
+	if err != nil || !f.cancelled || r.Undo == nil || r.Undo.Action != "resume_subscription" || string(r.Undo.Input) != `{"expectedStatus":"cancelled","subscription":"301"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if r, err := invoke(m, "cancel_subscription", `{"subscription":"301"}`, false); err != nil || !strings.Contains(string(r.Output), "cancelled already") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
+	undo := r.Undo
 	r, err = invoke(m, "resume_subscription", `{"subscription":"301"}`, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "bills again") || !f.cancelled {
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "bills again") || !strings.Contains(r.Plan.Summary, `expectedStatus "cancelled"`) || !f.cancelled {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "resume_subscription", `{"subscription":"301"}`, false)
-	if err != nil || f.cancelled || r.Undo == nil || r.Undo.Action != "cancel_subscription" {
+	if _, err := invoke(m, "resume_subscription", `{"subscription":"301"}`, false); err == nil || !f.cancelled {
+		t.Fatalf("resumed without the previewed status: %v", err)
+	}
+	r, err = invoke(m, undo.Action, string(undo.Input), false)
+	if err != nil || f.cancelled || r.Undo == nil || r.Undo.Action != "cancel_subscription" || string(r.Undo.Input) != `{"expectedStatus":"active","subscription":"301"}` {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if r, err := invoke(m, "resume_subscription", `{"subscription":"301"}`, false); err != nil || !strings.Contains(string(r.Output), "isn't cancelled") {

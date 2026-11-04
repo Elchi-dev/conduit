@@ -24,12 +24,17 @@ so; a publishable key (`pk_…`) is refused. Start with a test-mode key
 | `payouts` | read | Amount, status, arrival date, method, failure. |
 | `disputes` | read | Amount, reason, status, charge and the evidence deadline. |
 | `invoices` | read | Number, status, due, paid and remaining amounts, customer id, subscription, due date. |
-| `refund` | destructive | Refunds a payment intent (`pi_…`) or charge (`ch_…`): the whole remaining amount, or `amount` in the smallest unit (cents) for a partial refund, with an optional `reason`. The preview shows the amount and currency, the customer id, what was charged and already refunded, the description and whether it's live. Refuses failed, uncaptured, disputed or fully refunded charges and amounts above what's left. Money goes back to the customer: there is no undo. |
-| `cancel_subscription` | destructive | Cancels at the end of the paid period by default (undo keeps the subscription), or `immediately` (optionally `prorate`, `invoiceNow`), which can't be undone. The preview shows the customer id, the plan and the period end. |
-| `keep_subscription` | destructive | Takes back a cancellation scheduled for the period end, so the customer is billed again (that's why it's destructive); undo schedules it again. |
+| `refund` | destructive | Refunds a payment intent (`pi_…`) or charge (`ch_…`): the whole remaining amount, or `amount` in the smallest unit (cents) for a partial refund, with an optional `reason`. The preview shows the amount and currency, the customer id, what was charged and already refunded, the description and whether it's live. Refuses failed, uncaptured, disputed or fully refunded charges and amounts above what's left. The run must give `expectedRefunded`, what was refunded before as the preview showed it (like `0.00 USD`). Money goes back to the customer: there is no undo. |
+| `cancel_subscription` | destructive | Cancels at the end of the paid period by default (undo keeps the subscription), or `immediately` (optionally `prorate`, `invoiceNow`), which can't be undone. The preview shows the customer id, the plan and the period end; the run must give `expectedStatus` and `expectedPeriodEnd` as the preview showed them. |
+| `keep_subscription` | destructive | Takes back a cancellation scheduled for the period end, so the customer is billed again (that's why it's destructive). The run must give `expectedStatus` and `expectedPeriodEnd`; undo schedules it again, carrying both. |
 
 Lists return `items`, `hasMore` and `next` (pass it as `after` for the next
 page).
+
+The changes name the values to pass in their preview. To run it, pass the
+values the preview shows; the run is refused if the payment or
+subscription changed in between. Undo tokens carry them too, so an undo
+runs only while the subscription is as the change left it.
 
 **Personal and card data.** Stripe never returns full card numbers; this
 module returns only the brand and last four digits. Billing details,
@@ -41,7 +46,9 @@ previews name the customer by id, not by name or email, because previews
 are kept with approvals.
 
 **Safety.** Every POST carries an `Idempotency-Key` (random per call, or
-the `idempotencyKey` you pass, so a retried refund can't refund twice).
+the `idempotencyKey` you pass, so a retried refund can't refund twice);
+a retry with a new key still names what was refunded before
+(`expectedRefunded`), so it's refused once the first try went through.
 Ids are checked by prefix and shape before they reach a request path, the
 key goes in the `Authorization` header, and the client won't follow a
 redirect to another host. Keep `refund` and `cancel_subscription` on ask in

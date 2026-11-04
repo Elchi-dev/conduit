@@ -30,6 +30,10 @@ type fakeShopify struct {
 	lastFulfill map[string]any
 	// usd makes the customer pay in USD (1.10 per EUR) in the EUR shop.
 	usd bool
+	// financial is the order's payment state (PAID when empty).
+	financial string
+	// total is the order's total (49.00 when empty).
+	total string
 }
 
 func (f *fakeShopify) order() map[string]any {
@@ -60,13 +64,21 @@ func (f *fakeShopify) order() map[string]any {
 			"presentmentMoney": map[string]any{"amount": jsonNum(f.refunded), "currencyCode": "USD"}}
 	}
 	pres := "EUR"
-	total := ms("49.00")
+	amt := "49.00"
+	if f.total != "" {
+		amt = f.total
+	}
+	total := ms(amt)
+	fin := "PAID"
+	if f.financial != "" {
+		fin = f.financial
+	}
 	if f.usd {
 		pres = "USD"
 		total["presentmentMoney"] = map[string]any{"amount": "53.90", "currencyCode": "USD"}
 	}
 	return map[string]any{"presentmentCurrencyCode": pres, "id": "gid://shopify/Order/1001", "name": "#1001", "createdAt": "2026-11-01T10:00:00Z", "cancelledAt": cancelledAt, "test": true,
-		"displayFinancialStatus": "PAID", "displayFulfillmentStatus": fStatus, "subtotalLineItemsQuantity": 2, "email": "jane@example.org", "phone": "+4915112345678",
+		"displayFinancialStatus": fin, "displayFulfillmentStatus": fStatus, "subtotalLineItemsQuantity": 2, "email": "jane@example.org", "phone": "+4915112345678",
 		"totalPriceSet": total, "totalRefundedSet": ms(jsonNum(f.refunded)), "totalReceivedSet": ms("49.00"),
 		"customer":        map[string]any{"id": "gid://shopify/Customer/5", "displayName": "Jane Doe"},
 		"shippingAddress": map[string]any{"name": "Jane Doe", "address1": "1 Main St", "city": "Berlin", "zip": "10115", "countryCodeV2": "DE"},
@@ -283,16 +295,35 @@ func TestShopifyFulfil(t *testing.T) {
 func TestShopifyRefundAndCancel(t *testing.T) {
 	m, f := setup(t, "secret://shop")
 	r, err := invoke(m, "refund_order", `{"order":"#1001","amount":"10.5"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Partial refund of 10.50 EUR on order #1001 via shopify_payments (test order)" || f.refunded != 0 {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Partial refund of 10.50 EUR on order #1001 via shopify_payments (test order). To run it, give expectedTotal "49.00 EUR" and expectedRefunded "0.00 EUR" (the order as previewed); it's refused if the order changed.` || f.refunded != 0 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	plan, _ := json.Marshal(r.Plan)
 	if strings.Contains(string(plan), "jane") || strings.Contains(string(plan), "Jane") {
 		t.Fatalf("the preview has personal data: %s", plan)
 	}
-	r, err = invoke(m, "refund_order", `{"order":"#1001","amount":10.5,"idempotencyKey":"retry-key-1"}`, false)
+	// The run needs the values the preview showed.
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":10.5}`, false); err == nil || f.refunded != 0 || !strings.Contains(err.Error(), `expectedTotal "49.00 EUR"`) {
+		t.Fatalf("refunded without the previewed values: %v", err)
+	}
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":10.5,"expectedTotal":"49.00 EUR"}`, false); err == nil || f.refunded != 0 || !strings.Contains(err.Error(), `expectedRefunded "0.00 EUR"`) {
+		t.Fatalf("refunded without the previewed values: %v", err)
+	}
+	for _, bad := range []string{`"expectedTotal":"49.00 USD","expectedRefunded":"0"`, `"expectedTotal":"lots","expectedRefunded":"0"`, `"expectedTotal":"50","expectedRefunded":"0"`} {
+		if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":10.5,`+bad+`}`, false); err == nil || f.refunded != 0 {
+			t.Fatalf("%s: %v", bad, err)
+		}
+	}
+	r, err = invoke(m, "refund_order", `{"order":"#1001","amount":10.5,"idempotencyKey":"retry-key-1","expectedTotal":"49.00 EUR","expectedRefunded":"0.00 EUR"}`, false)
 	if err != nil || f.refunded != 10.5 || r.Undo != nil || !strings.Contains(string(r.Output), `"idempotencyKey":"retry-key-1"`) {
 		t.Fatalf("%s %v", r.Output, err)
+	}
+	// The same approved call retried (with a new key) is refused: the order changed.
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":10.5,"expectedTotal":"49.00 EUR","expectedRefunded":"0.00 EUR"}`, false); err == nil || f.refunded != 10.5 || !strings.Contains(err.Error(), "expectedRefunded is 10.50 EUR now, not 0.00 EUR") {
+		t.Fatalf("refunded twice: %v", err)
+	}
+	if r, err := invoke(m, "refund_order", `{"order":"#1001","amount":10.5,"expectedTotal":"49.00 EUR","expectedRefunded":"0.00 EUR"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "will be refused") {
+		t.Fatalf("%+v %v", r.Plan, err)
 	}
 	tx := f.lastRefund["input"].(map[string]any)["transactions"].([]any)[0].(map[string]any)
 	if tx["amount"] != "10.50" || tx["parentId"] != "gid://shopify/OrderTransaction/9" || tx["kind"] != "REFUND" {
@@ -304,19 +335,25 @@ func TestShopifyRefundAndCancel(t *testing.T) {
 	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":"1.005"}`, false); err == nil || !strings.Contains(err.Error(), "2 decimals") {
 		t.Fatal(err)
 	}
-	if _, err := invoke(m, "refund_order", `{"order":"#1001"}`, false); err != nil || f.refunded != 49 {
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","expectedTotal":"49","expectedRefunded":"10.50 eur"}`, false); err != nil || f.refunded != 49 {
 		t.Fatal(err, f.refunded)
 	}
-	if _, err := invoke(m, "refund_order", `{"order":"#1001"}`, false); err == nil || !strings.Contains(err.Error(), "nothing left") {
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","expectedTotal":"49","expectedRefunded":"49"}`, false); err == nil || !strings.Contains(err.Error(), "nothing left") {
 		t.Fatal(err)
 	}
 
 	// Everything was refunded already, so cancelling refunds nothing more.
 	r, err = invoke(m, "cancel_order", `{"order":"#1001","refund":true,"reason":"customer"}`, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "refunds 0.00 EUR to the original payment methods") || f.cancelled {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Cancel order #1001 (total 49.00 EUR): refunds 0.00 EUR to the original payment methods, test order. To run it, give expectedRefund "0.00 EUR" (the order as previewed); it's refused if the order changed.` || f.cancelled {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	r, err = invoke(m, "cancel_order", `{"order":"#1001","refund":true,"reason":"customer"}`, false)
+	if _, err := invoke(m, "cancel_order", `{"order":"#1001","refund":true,"reason":"customer"}`, false); err == nil || f.cancelled || !strings.Contains(err.Error(), `expectedRefund "0.00 EUR"`) {
+		t.Fatalf("cancelled without the previewed refund: %v", err)
+	}
+	if _, err := invoke(m, "cancel_order", `{"order":"#1001","refund":true,"expectedRefund":"49.00 EUR"}`, false); err == nil || f.cancelled || !strings.Contains(err.Error(), "changed since the preview") {
+		t.Fatalf("cancelled with another refund: %v", err)
+	}
+	r, err = invoke(m, "cancel_order", `{"order":"#1001","refund":true,"reason":"customer","expectedRefund":"0.00 EUR"}`, false)
 	if err != nil || !f.cancelled || r.Undo != nil || f.lastCancel["reason"] != "CUSTOMER" || f.lastCancel["restock"] != true || f.lastCancel["refundMethod"] == nil {
 		t.Fatalf("%+v %v %v", r, err, f.lastCancel)
 	}
@@ -422,10 +459,10 @@ func TestShopifyRefundInCustomerCurrency(t *testing.T) {
 	m, f := setup(t, "secret://shop")
 	f.usd = true
 	r, err := invoke(m, "refund_order", `{"order":"#1001"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Full refund of 53.90 USD on order #1001 via shopify_payments (test order)" {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Full refund of 53.90 USD on order #1001 via shopify_payments (test order). To run it, give expectedTotal "53.90 USD" and expectedRefunded "0.00 USD" (the order as previewed); it's refused if the order changed.` {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":"50"}`, false); err != nil {
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":"50","expectedTotal":"53.90 USD","expectedRefunded":"0.00 USD"}`, false); err != nil {
 		t.Fatal(err)
 	}
 	in := f.lastRefund["input"].(map[string]any)
@@ -433,13 +470,42 @@ func TestShopifyRefundInCustomerCurrency(t *testing.T) {
 	if in["currency"] != "USD" || tx["amount"] != "50.00" {
 		t.Fatal(in)
 	}
-	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":"4"}`, false); err == nil || !strings.Contains(err.Error(), "only 3.90 USD of 53.90 USD") {
+	if _, err := invoke(m, "refund_order", `{"order":"#1001","amount":"4","expectedTotal":"53.90 USD","expectedRefunded":"50.00 USD"}`, false); err == nil || !strings.Contains(err.Error(), "only 3.90 USD of 53.90 USD") {
 		t.Fatal(err)
 	}
 	// A cancellation's preview counts what's left after earlier refunds.
 	f.usd, f.refunded = false, 10
 	r, err = invoke(m, "cancel_order", `{"order":"#1001","refund":true}`, true)
-	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "refunds 39.00 EUR") {
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "refunds 39.00 EUR") || !strings.Contains(r.Plan.Summary, `expectedRefund "39.00 EUR"`) {
 		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	// Without a refund, a cancellation needs nothing more.
+	if r, err := invoke(m, "cancel_order", `{"order":"#1001"}`, true); err != nil || strings.Contains(r.Plan.Summary, "To run it") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "cancel_order", `{"order":"#1001"}`, false); err != nil || !f.cancelled || f.lastCancel["refundMethod"] != nil {
+		t.Fatal(err, f.lastCancel)
+	}
+}
+
+// Fulfilling an order whose payment is only authorised can capture it, so
+// that run must name the total the preview showed.
+func TestShopifyFulfilCanCharge(t *testing.T) {
+	m, f := setup(t, "secret://shop")
+	f.financial = "AUTHORIZED"
+	r, err := invoke(m, "fulfill_order", `{"order":"#1001"}`, true)
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Fulfil 2 items of order #1001 (the customer isn't notified, test order). Its payment is authorized, so a store that captures on fulfilment charges the customer now (total 49.00 EUR). To run it, give expectedTotal "49.00 EUR" (the order as previewed); it's refused if the order changed.` {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if _, err := invoke(m, "fulfill_order", `{"order":"#1001"}`, false); err == nil || f.fulfilled || !strings.Contains(err.Error(), `expectedTotal "49.00 EUR"`) {
+		t.Fatalf("fulfilled without the previewed total: %v", err)
+	}
+	f.total = "59.00"
+	if _, err := invoke(m, "fulfill_order", `{"order":"#1001","expectedTotal":"49.00 EUR"}`, false); err == nil || f.fulfilled || !strings.Contains(err.Error(), "expectedTotal is 59.00 EUR now") {
+		t.Fatalf("fulfilled a changed order: %v", err)
+	}
+	r, err = invoke(m, "fulfill_order", `{"order":"#1001","expectedTotal":"59.00 EUR"}`, false)
+	if err != nil || !f.fulfilled || r.Undo == nil || r.Undo.Action != "cancel_fulfillment" {
+		t.Fatalf("%+v %v", r, err)
 	}
 }

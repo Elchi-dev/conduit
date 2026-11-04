@@ -103,14 +103,14 @@ func (m *Module) Manifest() sdk.Manifest {
 				Input: sdk.Schema(`{"type":"object","properties":{"search":{"type":"string","description":"Words to look for in titles, vendors and types"},"status":{"type":"string","enum":["","active","draft","archived"]},` + page + `}}`)},
 			{Name: "inventory", Title: "Inventory levels", Description: "Stock per location: available, on hand, committed and incoming for each item, optionally only what's running low.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"location":{"type":"string","description":"Location id (numeric or gid://shopify/Location/…); every active location when empty"},"below":{"type":"integer","minimum":1,"description":"Only items with fewer than this many available"},"limit":{"type":"integer","default":50,"minimum":1,"maximum":250}}}`)},
-			{Name: "fulfill_order", Title: "Fulfil an order", Description: "Marks every open item of an order as fulfilled, with tracking details if given. The customer is emailed only when notifyCustomer is on; stores that capture payment on fulfilment charge the customer. Undo cancels the fulfilment.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
-				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"notifyCustomer":{"type":"boolean","default":false},"trackingNumber":{"type":"string"},"trackingCompany":{"type":"string","description":"Carrier, e.g. UPS or DHL Express"},"trackingUrl":{"type":"string","description":"https link to the carrier's tracking page"}}}`)},
+			{Name: "fulfill_order", Title: "Fulfil an order", Description: "Marks every open item of an order as fulfilled, with tracking details if given. The customer is emailed only when notifyCustomer is on; stores that capture payment on fulfilment charge the customer, so for an order with a payment still to capture the run must give the total the preview showed. Undo cancels the fulfilment.", Risk: sdk.RiskDestructive, DryRun: true, Reversible: true,
+				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"notifyCustomer":{"type":"boolean","default":false},"expectedTotal":{"type":"string","description":"The order's total as the preview shows it, like 49.00 EUR; needed to run when a payment is still to capture, refused if the order changed since"},"trackingNumber":{"type":"string"},"trackingCompany":{"type":"string","description":"Carrier, e.g. UPS or DHL Express"},"trackingUrl":{"type":"string","description":"https link to the carrier's tracking page"}}}`)},
 			{Name: "cancel_fulfillment", Title: "Cancel a fulfilment", Description: "Cancels a fulfilment, so its items are open to fulfil again. Can't be undone from here; fulfil the order again instead.", Risk: sdk.RiskDestructive, DryRun: true,
 				Input: sdk.Schema(`{"type":"object","required":["fulfillment"],"properties":{"fulfillment":{"type":"string","description":"Fulfilment id (numeric or gid://shopify/Fulfillment/…, see order)"}}}`)},
-			{Name: "cancel_order", Title: "Cancel an order", Description: "Cancels an order, optionally refunding it to the original payment methods and restocking its items. Can't be undone. The preview shows the total and what happens to the money.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"reason":{"type":"string","enum":["CUSTOMER","DECLINED","FRAUD","INVENTORY","STAFF","OTHER"],"default":"OTHER"},"refund":{"type":"boolean","default":false,"description":"Refund what was paid to the original payment methods"},"restock":{"type":"boolean","default":true},"notifyCustomer":{"type":"boolean","default":false},"staffNote":{"type":"string","maxLength":255}}}`)},
-			{Name: "refund_order", Title: "Refund an order", Description: "Refunds an amount of an order to its original payment, fully or partly. Money goes back to the customer and can't be taken back. Items aren't restocked.", Risk: sdk.RiskDestructive, DryRun: true,
-				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"amount":{"type":"string","description":"Like 12.50, in the currency the customer paid in (the preview shows it); the whole remaining amount when empty"},"note":{"type":"string","maxLength":255},"notifyCustomer":{"type":"boolean","default":false},"idempotencyKey":{"type":"string","description":"Reuse to make a retried refund safe; one is made up otherwise"}}}`)},
+			{Name: "cancel_order", Title: "Cancel an order", Description: "Cancels an order, optionally refunding it to the original payment methods and restocking its items. Can't be undone. The preview shows the total and what happens to the money; with refund on, the run must give the refund the preview showed.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"reason":{"type":"string","enum":["CUSTOMER","DECLINED","FRAUD","INVENTORY","STAFF","OTHER"],"default":"OTHER"},"refund":{"type":"boolean","default":false,"description":"Refund what was paid to the original payment methods"},"restock":{"type":"boolean","default":true},"notifyCustomer":{"type":"boolean","default":false},"staffNote":{"type":"string","maxLength":255},"expectedRefund":{"type":"string","description":"What the cancellation refunds, as the preview shows it, like 49.00 EUR; needed to run with refund on, refused if the order changed since"}}}`)},
+			{Name: "refund_order", Title: "Refund an order", Description: "Refunds an amount of an order to its original payment, fully or partly. Money goes back to the customer and can't be taken back. Items aren't restocked. The run must give the total and earlier refunds the preview showed.", Risk: sdk.RiskDestructive, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["order"],"properties":{` + order + `,"amount":{"type":"string","description":"Like 12.50, in the currency the customer paid in (the preview shows it); the whole remaining amount when empty"},"note":{"type":"string","maxLength":255},"notifyCustomer":{"type":"boolean","default":false},"idempotencyKey":{"type":"string","description":"Reuse to make a retried refund safe; one is made up otherwise"},"expectedTotal":{"type":"string","description":"The order's total as the preview shows it, like 49.00 EUR; needed to run"},"expectedRefunded":{"type":"string","description":"What was refunded before, as the preview shows it, like 0.00 EUR; needed to run, refused if the order changed since (so a retried refund can't go through twice)"}}}`)},
 		},
 	}
 }
@@ -413,6 +413,61 @@ type input struct {
 	Amount            any    `json:"amount"`
 	Note              string `json:"note"`
 	IdempotencyKey    string `json:"idempotencyKey"`
+	// What the preview showed, checked again when the change runs.
+	ExpectedTotal    string `json:"expectedTotal"`
+	ExpectedRefunded string `json:"expectedRefunded"`
+	ExpectedRefund   string `json:"expectedRefund"`
+}
+
+// errNotPreviewed starts the error of a change run without the values its
+// preview showed.
+const errNotPreviewed = "give the values the preview showed"
+
+// expectAmount checks an amount the preview showed (like 49.00 or
+// 49.00 EUR) against the order now. Orders change between a preview and its
+// approval (another refund, an edit, a capture), so the run goes ahead only
+// on the order that was approved.
+func expectAmount(field, given string, now int64, cur string) error {
+	g := strings.TrimSpace(given)
+	if g == "" {
+		return fmt.Errorf("%s: %s %q", errNotPreviewed, field, money(now, cur))
+	}
+	n, c, _ := strings.Cut(g, " ")
+	v, err := parseAmount(n)
+	if err != nil || (c != "" && !strings.EqualFold(strings.TrimSpace(c), cur)) {
+		return fmt.Errorf("%s is an amount like %q, as the preview showed it", field, money(now, cur))
+	}
+	if v != now {
+		return fmt.Errorf("the order changed since the preview: %s is %s now, not %s; preview it again", field, money(now, cur), clip(g, 40))
+	}
+	return nil
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
+// runNote is added to a preview whose run would be refused as it stands.
+func runNote(errs ...error) string {
+	var missing []string
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		m, ok := strings.CutPrefix(err.Error(), errNotPreviewed+": ")
+		if !ok {
+			return " Running this call will be refused: " + err.Error() + "."
+		}
+		missing = append(missing, m)
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return " To run it, give " + strings.Join(missing, " and ") + " (the order as previewed); it's refused if the order changed."
 }
 
 func limit(n, def, max int) int {
@@ -911,6 +966,9 @@ func (c *conn) inventory(ctx context.Context, p input) (sdk.Result, error) {
 	return sdk.JSON(map[string]any{"locations": out})
 }
 
+// chargeable are the payment states in which fulfilling can capture money.
+var chargeable = map[string]bool{"AUTHORIZED": true, "PARTIALLY_PAID": true}
+
 func mustJSON(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
@@ -987,6 +1045,16 @@ func (c *conn) fulfill(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 	if p.NotifyCustomer {
 		notify = "the customer is emailed"
 	}
+	// A store that captures payment on fulfilment charges the customer
+	// what's still authorised, so such an order runs only at the total
+	// that was approved.
+	var expect error
+	charge := ""
+	if chargeable[o.DisplayFinancialStatus] {
+		total, tcur := o.TotalPriceSet.customer()
+		expect = expectAmount("expectedTotal", p.ExpectedTotal, total, tcur)
+		charge = fmt.Sprintf(". Its payment is %s, so a store that captures on fulfilment charges the customer now (total %s).%s", strings.ToLower(strings.ReplaceAll(o.DisplayFinancialStatus, "_", " ")), money(total, tcur), runNote(expect))
+	}
 	if call.DryRun {
 		mode := ""
 		if o.Test {
@@ -997,8 +1065,11 @@ func (c *conn) fulfill(ctx context.Context, call sdk.Call, p input) (sdk.Result,
 		if tracking != nil {
 			after["tracking"] = tracking
 		}
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Fulfil %d items of order %s (%s%s)", items, o.Name, notify, mode),
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Fulfil %d items of order %s (%s%s)%s", items, o.Name, notify, mode, charge),
 			Changes: []sdk.Change{{Target: "order " + o.Name, Op: "fulfill", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
+	}
+	if expect != nil {
+		return sdk.Result{}, expect
 	}
 	in := map[string]any{"lineItemsByFulfillmentOrder": open, "notifyCustomer": p.NotifyCustomer}
 	if tracking != nil {
@@ -1117,6 +1188,7 @@ func (c *conn) cancelOrder(ctx context.Context, call sdk.Call, p input) (sdk.Res
 		return sdk.JSON(map[string]any{"order": o.Name, "cancelledAt": *o.CancelledAt, "note": "nothing to change: it's cancelled already"})
 	}
 	pay := "payments kept (authorised payments are voided)"
+	var expect error
 	if p.Refund {
 		// What a cancellation refunds is what was received less what was
 		// refunded already.
@@ -1124,7 +1196,9 @@ func (c *conn) cancelOrder(ctx context.Context, call sdk.Call, p input) (sdk.Res
 		if net < 0 {
 			net = 0
 		}
-		pay = "refunds " + money(net, o.TotalReceivedSet.ShopMoney.CurrencyCode) + " to the original payment methods"
+		cur := o.TotalReceivedSet.ShopMoney.CurrencyCode
+		pay = "refunds " + money(net, cur) + " to the original payment methods"
+		expect = expectAmount("expectedRefund", p.ExpectedRefund, net, cur)
 	}
 	if call.DryRun {
 		mode := ""
@@ -1133,8 +1207,15 @@ func (c *conn) cancelOrder(ctx context.Context, call sdk.Call, p input) (sdk.Res
 		}
 		before := map[string]any{"financialStatus": o.DisplayFinancialStatus, "fulfillmentStatus": o.DisplayFulfillmentStatus, "total": o.TotalPriceSet.String(), "received": o.TotalReceivedSet.String(), "refunded": o.TotalRefundedSet.String()}
 		after := map[string]any{"cancelled": true, "reason": reason, "refund": p.Refund, "restock": restock, "notifyCustomer": p.NotifyCustomer}
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Cancel order %s (total %s): %s%s", o.Name, o.TotalPriceSet.String(), pay, mode),
+		note := ""
+		if p.Refund {
+			note = "." + runNote(expect)
+		}
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("Cancel order %s (total %s): %s%s%s", o.Name, o.TotalPriceSet.String(), pay, mode, note),
 			Changes: []sdk.Change{{Target: "order " + o.Name, Op: "cancel", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
+	}
+	if expect != nil {
+		return sdk.Result{}, expect
 	}
 	vars := map[string]any{"orderId": o.ID, "reason": reason, "restock": restock, "notifyCustomer": p.NotifyCustomer}
 	if p.Refund {
@@ -1267,19 +1348,28 @@ func (c *conn) refund(ctx context.Context, call sdk.Call, p input) (sdk.Result, 
 	if amount < left || refunded > 0 {
 		kind = "Partial refund"
 	}
+	// Naming what was refunded before keeps a refund retried with a new
+	// idempotency key from going through twice.
+	total, tcur := o.TotalPriceSet.customer()
+	expTotal, expRefunded := expectAmount("expectedTotal", p.ExpectedTotal, total, tcur), expectAmount("expectedRefunded", p.ExpectedRefunded, refunded, cur)
 	if call.DryRun {
 		mode := "LIVE"
 		if o.Test || parent.Test {
 			mode = "test order"
 		}
-		total, tcur := o.TotalPriceSet.customer()
 		before := map[string]any{"total": money(total, tcur), "paid": money(paid, cur), "refunded": money(refunded, cur), "financialStatus": o.DisplayFinancialStatus}
 		if shopCur := o.TotalPriceSet.ShopMoney.CurrencyCode; shopCur != "" && shopCur != cur {
 			before["shopTotal"] = o.TotalPriceSet.String()
 		}
 		after := map[string]any{"refund": money(amount, cur), "gateway": parent.Gateway, "refundedAfter": money(refunded+amount, cur), "notifyCustomer": p.NotifyCustomer}
-		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s of %s on order %s via %s (%s)", kind, money(amount, cur), o.Name, parent.Gateway, mode),
+		return sdk.Result{Plan: &sdk.Plan{Summary: fmt.Sprintf("%s of %s on order %s via %s (%s).%s", kind, money(amount, cur), o.Name, parent.Gateway, mode, runNote(expTotal, expRefunded)),
 			Changes: []sdk.Change{{Target: "order " + o.Name, Op: "refund", Before: mustJSON(before), After: mustJSON(after)}}}}, nil
+	}
+	if expTotal != nil {
+		return sdk.Result{}, expTotal
+	}
+	if expRefunded != nil {
+		return sdk.Result{}, expRefunded
 	}
 	key := p.IdempotencyKey
 	if key == "" {

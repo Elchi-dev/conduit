@@ -207,10 +207,30 @@ func TestInvoiceNinja(t *testing.T) {
 
 	// Email: the preview names the client, recipients and amount; nothing is sent.
 	r, err = invoke(m, "email_invoice", `{"invoice":"Inv1"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Email invoice 0041 for 1200.00 (balance 899.50) to Acme Ltd: ada@acme.test" || len(f.emailed) != 0 {
+	sum := shaOf(r)
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Email invoice 0041 for 1200.00 (balance 899.50) to Acme Ltd: ada@acme.test. To run it, give sha256 "`+sum+`" (the invoice as previewed); it's refused if the invoice changed.` || len(f.emailed) != 0 {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if r, err := invoke(m, "email_invoice", `{"invoice":"Inv1"}`, false); err != nil || len(f.emailed) != 1 || !strings.Contains(string(r.Output), `"emailedTo":["ada@acme.test"]`) {
+	// The run needs the sha256 the preview showed, of the invoice as it is.
+	if _, err := invoke(m, "email_invoice", `{"invoice":"Inv1"}`, false); err == nil || len(f.emailed) != 0 || !strings.Contains(err.Error(), sum) {
+		t.Fatalf("emailed without the previewed sha256: %v", err)
+	}
+	n := len(f.seen)
+	if _, err := invoke(m, "email_invoice", `{"invoice":"Inv1","sha256":"XYZ"}`, false); err == nil || len(f.emailed) != 0 || len(f.seen) != n {
+		t.Fatalf("took a malformed sha256: %v", err)
+	}
+	f.invoices["Inv1"].amount = "1300"
+	if _, err := invoke(m, "email_invoice", `{"invoice":"Inv1","sha256":"`+sum+`"}`, false); err == nil || len(f.emailed) != 0 || !strings.Contains(err.Error(), "changed since the preview") {
+		t.Fatalf("emailed a changed invoice: %v", err)
+	}
+	if r, err := invoke(m, "email_invoice", `{"invoice":"Inv1","sha256":"`+sum+`"}`, true); err != nil || !strings.Contains(r.Plan.Summary, "will be refused") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	f.invoices["Inv1"].amount = "1200"
+	if r, err := invoke(m, "email_invoice", `{"invoice":"Inv1","sha256":"`+sum+`"}`, true); err != nil || !strings.HasSuffix(r.Plan.Summary, "(sha256 "+sum+").") {
+		t.Fatalf("%+v %v", r.Plan, err)
+	}
+	if r, err := invoke(m, "email_invoice", `{"invoice":"Inv1","sha256":"`+sum+`"}`, false); err != nil || len(f.emailed) != 1 || !strings.Contains(string(r.Output), `"emailedTo":["ada@acme.test"]`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
 
@@ -227,19 +247,38 @@ func TestInvoiceNinja(t *testing.T) {
 
 	// Record a payment: the balance by default, exact decimals.
 	if r, err := invoke(m, "record_payment", `{"invoice":"Inv1","amount":"100.25"}`, true); err != nil || r.Plan == nil ||
-		r.Plan.Summary != "Record a payment of 100.25 from Acme Ltd on 2026-11-04 against invoice 0041 (balance 899.50, then 799.25)" || len(f.payments) != 0 {
+		r.Plan.Summary != `Record a payment of 100.25 from Acme Ltd on 2026-11-04 against invoice 0041 (balance 899.50, then 799.25). To run it, give expectedBalance "899.50" (the invoice as previewed); it's refused if the invoice changed.` || len(f.payments) != 0 {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","reference":"SEPA-2"}`, false); err != nil || len(f.payments) != 1 {
+	// The run needs the balance the preview showed, and the invoice as it was.
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","reference":"SEPA-2"}`, false); err == nil || len(f.payments) != 0 || !strings.Contains(err.Error(), `expectedBalance "899.50"`) {
+		t.Fatalf("recorded without the previewed balance: %v", err)
+	}
+	for _, bad := range []string{"899.49", "lots", "899.50 EUR"} {
+		if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","expectedBalance":"`+bad+`"}`, false); err == nil || len(f.payments) != 0 {
+			t.Fatalf("%s: %v", bad, err)
+		}
+	}
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","reference":"SEPA-2","expectedBalance":"899.5"}`, false); err != nil || len(f.payments) != 1 {
 		t.Fatal(err)
 	}
+	// Retried after the payment went through: the balance moved, so it's refused.
+	f.invoices["Inv1"].balance = "0"
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","reference":"SEPA-2","expectedBalance":"899.50"}`, false); err != nil || len(f.payments) != 1 {
+		t.Fatal(err)
+	}
+	f.invoices["Inv1"].balance = "100"
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","reference":"SEPA-2","expectedBalance":"899.50"}`, false); err == nil || len(f.payments) != 1 || !strings.Contains(err.Error(), "its balance is 100.00 now, not 899.50") {
+		t.Fatalf("recorded twice: %v", err)
+	}
+	f.invoices["Inv1"].balance = "899.5"
 	if got := fmt.Sprint(f.payments[0]["amount"], f.payments[0]["invoices"], f.payments[0]["transaction_reference"]); got != "899.50[map[amount:899.50 invoice_id:Inv1]]SEPA-2" {
 		t.Fatal(got)
 	}
 	if r, err := invoke(m, "record_payment", `{"invoice":"Paid1"}`, false); err != nil || !strings.Contains(string(r.Output), "nothing to change") {
 		t.Fatalf("%s %v", r.Output, err)
 	}
-	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","amount":"5000"}`, false); err == nil || !strings.Contains(err.Error(), "more than the balance") {
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","amount":"5000","expectedBalance":"899.50"}`, false); err == nil || !strings.Contains(err.Error(), "more than the balance") {
 		t.Fatal(err)
 	}
 
@@ -264,10 +303,10 @@ func TestInvoiceNinja(t *testing.T) {
 func TestInvoiceNinjaEmailRecipientsAreTheInvitations(t *testing.T) {
 	m, f := setup(t, "secret://n")
 	r, err := invoke(m, "email_invoice", `{"invoice":"Inv2"}`, true)
-	if err != nil || r.Plan == nil || !strings.HasSuffix(r.Plan.Summary, "to Acme Ltd: ada@acme.test, bob@acme.test") {
+	if err != nil || r.Plan == nil || !strings.Contains(r.Plan.Summary, "to Acme Ltd: ada@acme.test, bob@acme.test. To run it") {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if r, err := invoke(m, "email_invoice", `{"invoice":"Inv2"}`, false); err != nil || !strings.Contains(string(r.Output), `"emailedTo":["ada@acme.test","bob@acme.test"]`) {
+	if r, err := invoke(m, "email_invoice", `{"invoice":"Inv2","sha256":"`+shaOf(r)+`"}`, false); err != nil || !strings.Contains(string(r.Output), `"emailedTo":["ada@acme.test","bob@acme.test"]`) {
 		t.Fatalf("%s %v", r.Output, err)
 	}
 	if _, err := invoke(m, "email_invoice", `{"invoice":"Gone1"}`, false); err == nil || !strings.Contains(err.Error(), "no longer on the client") || len(f.emailed) != 1 {
@@ -280,13 +319,16 @@ func TestInvoiceNinjaEmailRecipientsAreTheInvitations(t *testing.T) {
 func TestInvoiceNinjaPaymentKeepsDecimals(t *testing.T) {
 	m, f := setup(t, "secret://n")
 	r, err := invoke(m, "record_payment", `{"invoice":"Inv2"}`, true)
-	if err != nil || r.Plan == nil || r.Plan.Summary != "Record a payment of 10.125 from Acme Ltd on 2026-11-04 against invoice 0043 (balance 10.125, then 0.00)" {
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Record a payment of 10.125 from Acme Ltd on 2026-11-04 against invoice 0043 (balance 10.125, then 0.00). To run it, give expectedBalance "10.125" (the invoice as previewed); it's refused if the invoice changed.` {
 		t.Fatalf("%+v %v", r.Plan, err)
 	}
-	if _, err := invoke(m, "record_payment", `{"invoice":"Inv2"}`, false); err != nil || fmt.Sprint(f.payments[0]["amount"]) != "10.125" {
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv2","expectedBalance":"10.12"}`, false); err == nil || len(f.payments) != 0 {
+		t.Fatalf("a rounded balance was taken: %v", err)
+	}
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv2","expectedBalance":"10.125"}`, false); err != nil || fmt.Sprint(f.payments[0]["amount"]) != "10.125" {
 		t.Fatalf("%v %v", f.payments, err)
 	}
-	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","amount":"0.0049"}`, false); err != nil || fmt.Sprint(f.payments[1]["amount"]) != "0.0049" {
+	if _, err := invoke(m, "record_payment", `{"invoice":"Inv1","amount":"0.0049","expectedBalance":"899.50"}`, false); err != nil || fmt.Sprint(f.payments[1]["amount"]) != "0.0049" {
 		t.Fatalf("%v %v", f.payments, err)
 	}
 	if r, _ := invoke(m, "invoices", `{}`, false); !strings.Contains(string(r.Output), `"balance":"10.125"`) {
@@ -364,4 +406,16 @@ func TestInvoiceNinjaRefusesCrossHostRedirect(t *testing.T) {
 	if h := m.Health(context.Background(), "n"); h.Status != "down" || leaked != "" {
 		t.Fatalf("followed the redirect: %+v %q", h, leaked)
 	}
+}
+
+// shaOf is the sha256 an email preview shows.
+func shaOf(r sdk.Result) string {
+	if r.Plan == nil || len(r.Plan.Changes) == 0 {
+		return ""
+	}
+	var a struct {
+		SHA256 string `json:"sha256"`
+	}
+	json.Unmarshal(r.Plan.Changes[0].After, &a)
+	return a.SHA256
 }

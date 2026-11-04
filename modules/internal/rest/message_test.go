@@ -30,3 +30,11 @@ func TestMessage(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONMessageClipped(t *testing.T) {
+	long := strings.Repeat("word ", 300)
+	got := message("400 Bad Request", []byte(`{"message":"`+long+`\nsecond line"}`))
+	if len(got) > maxJSONMessage+len("…") || strings.Contains(got, "\n") {
+		t.Fatalf("not clipped to one line: %d bytes", len(got))
+	}
+}

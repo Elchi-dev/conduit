@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Client calls one API.
@@ -128,12 +129,29 @@ func redact(s string) string {
 // line.
 func message(status string, raw []byte) string {
 	if m := jsonMessage(raw); m != "" {
-		return redact(m)
+		return clipMessage(redact(m))
 	}
 	if t := strings.TrimSpace(string(raw)); t != "" && len(t) <= maxRawMessage && !strings.HasPrefix(t, "<") && !strings.ContainsAny(t, "\r\n") {
 		return status + ": " + redact(t)
 	}
 	return status
+}
+
+// maxJSONMessage is the longest message taken from a JSON error body. It is
+// cut after redaction, so a cut never leaves part of a credential behind.
+const maxJSONMessage = 500
+
+// clipMessage keeps a server's message to one line of maxJSONMessage bytes.
+func clipMessage(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) <= maxJSONMessage {
+		return s
+	}
+	cut := maxJSONMessage
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // jsonMessage reads the message out of a JSON error body, or "".

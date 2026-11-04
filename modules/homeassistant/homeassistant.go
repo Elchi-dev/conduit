@@ -1,6 +1,9 @@
 // Package homeassistant controls a Home Assistant installation: entities,
 // lights and switches, scenes and services. Toggles and light changes can be
-// undone.
+// undone. Locks, covers (garage doors, gates, doors, windows), alarms,
+// cameras, valves, heating and sirens (by domain, device class or name), and
+// entities listed in criticalEntities, are kept apart behind a destructive
+// action, turn_critical.
 package homeassistant
 
 import (
@@ -23,9 +26,16 @@ import (
 type Config struct {
 	URL   string `json:"url"`   // e.g. http://homeassistant.local:8123
 	Token string `json:"token"` // secret:// long-lived access token
+	// CriticalEntities are entity ids, or patterns like switch.garage_*,
+	// that need turn_critical, like a plug feeding a server or a gate
+	// opener behind a plain switch.
+	CriticalEntities []string `json:"criticalEntities"`
 }
 
-type home struct{ api *rest.Client }
+type home struct {
+	api      *rest.Client
+	critical []string // entity ids and globs, lowercased
+}
 
 // Module implements sdk.Module.
 type Module struct {
@@ -41,20 +51,24 @@ var entityRe = regexp.MustCompile(`^[a-z_]+\.[a-z0-9_]+$`)
 // Manifest implements sdk.Module.
 func (m *Module) Manifest() sdk.Manifest {
 	ent := `"entity":{"type":"string","description":"Entity id, e.g. light.desk"}`
+	plain := " Critical entities (locks, garage doors, gates, doors, windows, alarms, cameras, valves, heating, sirens, scripts, or in criticalEntities) are refused: use turn_critical. Undo puts the previous on/off state back."
 	return sdk.Manifest{
 		ID: "homeassistant", Name: "Home Assistant", Version: "0.1.0", Category: "Smart home", Icon: "home",
 		Description: "Lights, switches, scenes and anything else in your Home Assistant.",
 		Presets:     []string{"homelab", "gamer"},
 		ConfigSchema: sdk.Schema(`{"type":"object","required":["url","token"],"properties":{
 			"url":{"type":"string","description":"Home Assistant's address, e.g. http://homeassistant.local:8123"},
-			"token":{"type":"string","x-secret":true,"description":"A long-lived access token (your profile, Security)"}}}`),
+			"token":{"type":"string","x-secret":true,"description":"A long-lived access token (your profile, Security)"},
+			"criticalEntities":{"type":"array","maxItems":200,"items":{"type":"string","maxLength":255},"description":"Entity ids, or patterns like switch.garage_*, that need turn_critical, like a plug feeding a server or a gate opener behind a plain switch. Locks, covers, alarms, valves, climate, water heaters, cameras, sirens, humidifiers and scripts, entities with a garage, gate, door, window, lock, shutter, gas or water device class, and entities whose id or name contains garage, gate, door, lock, window, alarm, siren, camera, valve, heat or the German words (Tor, Tür, Schloss, Fenster, Heizung …) are critical without being listed."}}}`),
 		Actions: []sdk.ActionSpec{
 			{Name: "entities", Title: "Entities", Description: "Everything Home Assistant knows, with its state.", Risk: sdk.RiskRead,
 				Input: sdk.Schema(`{"type":"object","properties":{"domain":{"type":"string","description":"e.g. light, switch, sensor"},"search":{"type":"string"}}}`)},
 			{Name: "state", Title: "State of one entity", Risk: sdk.RiskRead, Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `}}`)},
-			{Name: "turn_on", Title: "Turn on", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `}}`)},
-			{Name: "turn_off", Title: "Turn off", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `}}`)},
-			{Name: "toggle", Title: "Toggle", Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `}}`)},
+			{Name: "turn_on", Title: "Turn on", Description: "Turns on a light, switch, fan …" + plain, Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `}}`)},
+			{Name: "turn_off", Title: "Turn off", Description: "Turns off a light, switch, fan …" + plain, Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `}}`)},
+			{Name: "toggle", Title: "Toggle", Description: "Toggles a light, switch, fan …" + plain, Risk: sdk.RiskWrite, Reversible: true, Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `}}`)},
+			{Name: "turn_critical", Title: "Turn a critical entity on or off", Description: "Turns a critical entity on or off, or toggles one whose state is known: this can open a garage door, gate, door or window, open a valve, sound a siren, turn a camera off, change the heating or run a script. The preview says which. Undo puts the previous state back where that's exact. Locks and alarm panels need call_service.", Risk: sdk.RiskDestructive, Reversible: true, DryRun: true,
+				Input: sdk.Schema(`{"type":"object","required":["entity","action"],"properties":{` + ent + `,"action":{"type":"string","enum":["on","off","toggle"],"description":"on (opens a cover or valve), off (closes it), or toggle (only when the state is known)"}}}`)},
 			{Name: "set_light", Title: "Set a light", Description: "Colour and brightness, e.g. for a status light.", Risk: sdk.RiskWrite, Reversible: true,
 				Input: sdk.Schema(`{"type":"object","required":["entity"],"properties":{` + ent + `,
 					"color":{"type":"string","description":"A name (red, green, amber, blue, white) or #rrggbb"},
@@ -80,6 +94,10 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if err := rest.ValidBase(c.URL); err != nil {
 		return err
 	}
+	crit, err := validCritical(c.CriticalEntities)
+	if err != nil {
+		return err
+	}
 	tok := c.Token
 	api := rest.New(strings.TrimRight(c.URL, "/")+"/api", func(ctx context.Context, r *http.Request) error {
 		t, err := h.Secret(ctx, tok)
@@ -92,7 +110,7 @@ func (m *Module) Configure(_ context.Context, h sdk.Host, id string, raw json.Ra
 	if m.HTTP != nil {
 		api.HTTP = m.HTTP
 	}
-	m.set.Put(id, &home{api: api})
+	m.set.Put(id, &home{api: api, critical: crit})
 	return nil
 }
 
@@ -122,6 +140,7 @@ type State struct {
 	State      string         `json:"state"`
 	Unit       string         `json:"unit,omitempty"`
 	Changed    string         `json:"changed"`
+	Critical   bool           `json:"critical,omitempty"`
 	Attributes map[string]any `json:"-"`
 }
 
@@ -145,7 +164,7 @@ func (h *home) state(ctx context.Context, entity string) (haState, error) {
 	}
 	_, err := h.api.Do(ctx, "GET", "/states/"+entity, nil, nil, &s)
 	if rest.IsStatus(err, 404) {
-		return s, fmt.Errorf("Home Assistant has no entity %s", entity)
+		return s, fmt.Errorf("%w %s", errNoEntity, entity)
 	}
 	return s, err
 }
@@ -219,6 +238,7 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		Scene      string         `json:"scene"`
 		Service    string         `json:"service"`
 		Data       map[string]any `json:"data"`
+		Act        string         `json:"action"`
 	}
 	if err := sdk.Decode(c, &p); err != nil {
 		return sdk.Result{}, err
@@ -233,6 +253,7 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		q := strings.ToLower(p.Search)
 		for _, s := range ss {
 			r := s.row()
+			r.Critical = h.why(s) != ""
 			if p.Domain != "" && domainOf(s.EntityID) != p.Domain {
 				continue
 			}
@@ -249,12 +270,24 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 		if err != nil {
 			return sdk.Result{}, err
 		}
-		return sdk.JSON(map[string]any{"entity": s.EntityID, "state": s.State, "changed": s.LastChanged, "attributes": s.Attributes})
+		out := map[string]any{"entity": s.EntityID, "state": s.State, "changed": s.LastChanged, "attributes": s.Attributes}
+		if why := h.why(s); why != "" {
+			out["critical"] = true
+			out["criticalBecause"] = why
+		}
+		return sdk.JSON(out)
 
 	case "turn_on", "turn_off", "toggle":
 		before, err := h.state(ctx, p.Entity)
-		if err != nil {
+		if errors.Is(err, errNoEntity) || !entityRe.MatchString(p.Entity) {
 			return sdk.Result{}, err
+		}
+		if err != nil {
+			// What it is can't be told, so it's treated as critical.
+			return sdk.Result{}, plainRefusal(p.Entity, c.Action, "its state couldn't be read, so what it controls can't be checked")
+		}
+		if why := h.why(before); why != "" {
+			return sdk.Result{}, plainRefusal(p.Entity, c.Action, why)
 		}
 		if err := h.service(ctx, domainOf(p.Entity), c.Action, map[string]any{"entity_id": p.Entity}); err != nil {
 			return sdk.Result{}, err
@@ -266,6 +299,9 @@ func (m *Module) Invoke(ctx context.Context, c sdk.Call) (sdk.Result, error) {
 			r.Undo = sdk.UndoWith(back, map[string]string{"entity": p.Entity}, fmt.Sprintf("Turn %s back %s", p.Entity, before.State))
 		}
 		return r, nil
+
+	case "turn_critical":
+		return h.turnCritical(ctx, c, p.Entity, p.Act)
 
 	case "set_light":
 		if domainOf(p.Entity) != "light" {

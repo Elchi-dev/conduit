@@ -60,6 +60,10 @@ func (f *fakeHA) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		case strings.HasSuffix(svc, "/turn_off"):
 			s.State = "off"
+		case strings.HasSuffix(svc, "/open_cover"), strings.HasSuffix(svc, "/open_valve"):
+			s.State = "open"
+		case strings.HasSuffix(svc, "/close_cover"), strings.HasSuffix(svc, "/close_valve"):
+			s.State = "closed"
 		case strings.HasSuffix(svc, "/toggle"):
 			s.State = map[string]string{"on": "off", "off": "on"}[s.State]
 		}

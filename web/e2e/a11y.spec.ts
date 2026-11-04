@@ -12,6 +12,9 @@ const pages = [
   ["Approvals", "/approvals"],
   ["Timeline", "/timeline"],
   ["Settings", "/settings"],
+  ["Standards", "/i/standards"],
+  ["Networks", "/networks"],
+  ["Marketplace", "/modules/registry"],
 ] as const;
 
 for (const scheme of ["dark", "light"] as const) {

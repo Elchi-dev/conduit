@@ -240,7 +240,7 @@ function StandardCard({ s, onOpen }: { s: Row; onOpen: () => void }) {
 function ToolkitTile({ kit, lib, onEdit }: { kit: Toolkit; lib: Library; onEdit: () => void }) {
   const members = kit.standards.map((id) => lib.standards.find((s) => s.id === id)).filter((s): s is Row => !!s);
   return (
-    <button className="std-kit" onClick={onEdit} aria-label={t("Edit toolkit {name}", { name: kit.title })}>
+    <button className="std-kit" onClick={onEdit} title={t("Edit toolkit {name}", { name: kit.title })}>
       <span className="std-spines" aria-hidden="true">
         {members.map((s) => (
           <span key={s.id} className="std-spine" data-off={!s.enabled || undefined} style={{ background: categoryHue[s.category], height: `${40 + s.priority * 0.4}%` }} title={s.title} />

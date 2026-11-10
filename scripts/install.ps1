@@ -87,6 +87,24 @@ if ($env:CONDUIT_DOWNLOAD_BASE) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("conduit-" + [Guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
+    if (-not $env:CONDUIT_DOWNLOAD_BASE) {
+        # Ask the API first, so a missing release reads as one, not as a
+        # dropped connection (github.com answers a missing file abruptly).
+        $api = if ($Version -eq "latest") { "https://api.github.com/repos/$Repo/releases/latest" } else { "https://api.github.com/repos/$Repo/releases/tags/$Version" }
+        try {
+            $rel = Invoke-RestMethod -UseBasicParsing -Uri $api -Headers @{ "User-Agent" = "conduit-install" }
+        } catch {
+            $code = $null
+            if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+            if ($code -eq 404) {
+                throw "There is no Conduit release$(if ($Version -ne 'latest') { " $Version" }) yet on https://github.com/$Repo/releases. Try again once one is published, or build from source (see README.md)."
+            }
+            throw "Couldn't reach GitHub to find the release: $($_.Exception.Message)"
+        }
+        if (-not ($rel.assets | Where-Object { $_.name -eq $asset })) {
+            throw "Release $($rel.tag_name) has no $asset."
+        }
+    }
     Write-Host "Downloading $asset ($Version)..."
     Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile (Join-Path $tmp $asset)
     Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS" -OutFile (Join-Path $tmp "SHA256SUMS")

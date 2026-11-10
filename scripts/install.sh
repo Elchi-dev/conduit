@@ -166,7 +166,12 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 say "Downloading $ASSET ($VERSION)…"
-fetch "$BASE/$ASSET" "$TMP/$ASSET" || fail "couldn't download $BASE/$ASSET"
+if ! fetch "$BASE/$ASSET" "$TMP/$ASSET"; then
+	if [ -z "${CONDUIT_DOWNLOAD_BASE:-}" ] && ! fetch "https://api.github.com/repos/$REPO/releases/$( [ "$VERSION" = latest ] && echo latest || echo "tags/$VERSION" )" "$TMP/release.json" 2>/dev/null; then
+		fail "there is no Conduit release${VERSION:+ ($VERSION)} yet on https://github.com/$REPO/releases; try again once one is published, or build from source (see README.md)"
+	fi
+	fail "couldn't download $BASE/$ASSET"
+fi
 fetch "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" || fail "couldn't download $BASE/SHA256SUMS"
 
 WANT="$(awk -v f="$ASSET" '{ n = $2; sub(/^\*/, "", n); if (n == f) print $1 }' "$TMP/SHA256SUMS")"
